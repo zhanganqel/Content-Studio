@@ -68,6 +68,230 @@ export const messages = {
       itemPlaceholder: ({ sectionTitle, itemTitle }) =>
         `${sectionTitle} / ${itemTitle} 页面内容将在这里接入。`,
     },
+    brandProfile: {
+      title: '品牌档案',
+      description:
+        '用于沉淀公司基础信息、公司资质、服务能力与可信背书，作为 AI 生成 SEO 内容时可引用的品牌事实基础。',
+      edit: '编辑',
+      save: '保存',
+      cancel: '取消',
+      add: '添加',
+      saveSuccess: '保存成功',
+      discardTitle: '放弃更改？',
+      discardBody: '当前页面有未保存的修改，放弃后将恢复到上次保存的内容。',
+      discardChanges: '放弃更改',
+      continueEditing: '继续编辑',
+      selectPlaceholder: '请选择',
+      tagInputPlaceholder: '输入后按 Enter 添加',
+      linkInputPlaceholder: '输入链接后按 Enter 添加',
+      removeTag: '删除',
+      validation: {
+        invalidWebsite: '请输入有效链接地址，例如 https://www.rejincnc.com/',
+        invalidLink: '请输入有效链接地址，必须以 http:// 或 https:// 开头',
+      },
+      sections: {
+        basicInfo: {
+          title: '基础信息',
+          hint: '用于识别企业身份、行业和主要市场。',
+        },
+        brandFacts: {
+          title: '品牌事实',
+          hint: '用于存放可被 AI 生成内容引用的事实素材。',
+        },
+        referenceLinks: {
+          title: '参考链接',
+          hint: '用于保存官网、服务页、案例页、FAQ 等可信来源。',
+        },
+        brandStyle: {
+          title: '品牌风格',
+          hint: '用于约束内容生成时的定位、语气和写作要求。',
+        },
+      },
+      fields: {
+        companyName: {
+          label: '公司全称',
+          placeholder: '请输入公司正式英文名称（全称）',
+        },
+        brandName: {
+          label: '品牌名称',
+          placeholder: '请输入对外使用的品牌名，区分大小写',
+        },
+        website: {
+          label: '品牌官网',
+          placeholder: '请输入官网首页链接地址',
+        },
+        industry: {
+          label: '所属行业',
+          placeholder: '请输入所属行业',
+        },
+        coreMarkets: {
+          label: '核心市场',
+          placeholder: '选择国家/地区',
+        },
+        coreCategories: {
+          label: '核心品类',
+          placeholder: '请输入公司主营产品品类（大类）',
+        },
+        companyIntroduction: {
+          label: '公司简介',
+          placeholder: '请输入经人工确认的标准公司介绍',
+        },
+        certifications: {
+          label: '资质认证',
+          placeholder: '请输入公司资质，如 ISO、CE、专利、检测报告、行业认证等',
+        },
+        coreAdvantages: {
+          label: '核心优势',
+          placeholder: '请输入公司的能力等优势，如生产、定制、出口、安装、售后、工程支持等',
+        },
+        companyLinks: {
+          label: '公司相关链接',
+          placeholder: '请输入公司相关链接',
+        },
+        authorityLinks: {
+          label: '权威参考链接',
+          placeholder: '请输入权威参考链接',
+        },
+        brandPositioning: {
+          label: '品牌定位',
+          placeholder: '请输入公司希望在客户心中的印象',
+        },
+        brandRequirements: {
+          label: '品牌要求',
+          placeholder: '请输入品牌要求，如客户特殊需求、博客写作风格等',
+        },
+      },
+    },
+    audiencePersona: {
+      title: '受众画像',
+      description:
+        '用于沉淀目标客户身份、搜索诉求与内容偏好，作为 AI 生成 SEO 内容时的人群策略依据。',
+      create: '新建画像',
+      edit: '编辑',
+      duplicate: '复制',
+      delete: '删除',
+      cancel: '取消',
+      save: '保存画像',
+      close: '关闭',
+      remove: '移除',
+      copySuffix: '副本',
+      confirmDelete: '确认删除',
+      deleteTitle: '删除受众画像',
+      deleteBody: (name) => `确认删除「${name}」吗？删除后该画像将无法在内容策略中继续引用。`,
+      discardTitle: '放弃更改？',
+      discardBody: '当前画像表单有未保存的修改，放弃后将恢复到上次保存的内容。',
+      discardChanges: '放弃更改',
+      continueEditing: '继续编辑',
+      selectPlaceholder: '请选择',
+      updatedAt: '更新时间',
+      listDescription: '用于 SEO 选题、内容生成与搜索意图匹配',
+      listCount: (count) => `共 ${count} 个受众画像`,
+      filters: {
+        searchPlaceholder: '搜索画像名称 / 行业 / 职位',
+        depthLabel: '内容深度',
+        typeLabel: '内容类型',
+        allDepths: '内容深度',
+        allTypes: '内容类型',
+      },
+      usage: {
+        title: '如何使用？',
+        steps: [
+          {
+            title: '完善画像特征',
+            body: '输入真实的业务场景和受众诉求，帮助 AI 更精准地理解目标客户群体。',
+          },
+          {
+            title: '驱动内容生成',
+            body: '在「内容工厂」创建任务时选择对应的受众画像，AI 将自动匹配相应的专业深度与表达风格。',
+          },
+          {
+            title: '阶段精细化',
+            body: '建议针对不同生命周期客户（如初次了解、技术评估、采购决策）建立独立的画像卡片。',
+          },
+        ],
+      },
+      drawer: {
+        createTitle: '新建受众画像',
+        editTitle: '编辑受众画像',
+      },
+      sections: {
+        identity: {
+          title: '受众身份',
+          description: '描述这个受众是谁，包括个人身份和组织身份。',
+        },
+        searchPreference: {
+          title: '搜索偏好',
+          description: '描述这个受众在什么场景下搜索、想解决什么问题、希望达成什么结果。',
+        },
+        readingPreference: {
+          title: '阅读偏好',
+          description: '描述这个客户更愿意看什么内容，以及哪些信息能影响决策。',
+        },
+      },
+      fields: {
+        name: {
+          label: '画像名称',
+          placeholder: '请输入画像名称',
+        },
+        organizationType: {
+          label: '组织类型',
+        },
+        organizationScale: {
+          label: '组织规模',
+        },
+        industry: {
+          label: '所属行业',
+          placeholder: '请输入所属行业',
+        },
+        jobTitle: {
+          label: '所属职位',
+        },
+        businessDescription: {
+          label: '业务描述（选填）',
+          placeholder: '请输入对客户业务的详细描述',
+        },
+        painPoints: {
+          label: '需求痛点（选填）',
+          placeholder: '请输入受众遇到的痛点或问题',
+        },
+        searchGoal: {
+          label: '搜索目标',
+          placeholder: '请输入受众的搜索目标',
+        },
+        commonQuestions: {
+          label: '常见问题（选填）',
+          placeholder: '请输入受众的常见问题',
+        },
+        preferredContentTypes: {
+          label: '偏好内容类型',
+          placeholder: '请选择偏好内容类型',
+        },
+        preferredContentDepth: {
+          label: '偏好内容深度',
+        },
+        preferredExpressionStyles: {
+          label: '偏好表达风格',
+          placeholder: '请选择偏好表达风格',
+        },
+        audienceFocus: {
+          label: '受众关注点（选填）',
+          placeholder: '请输入受众在进行决策时的关注点',
+        },
+      },
+      validation: {
+        required: '请填写必填项',
+        multiRequired: '请至少选择一项',
+      },
+      toast: {
+        created: '受众画像已创建',
+        saved: '受众画像已保存',
+        deleted: '受众画像已删除',
+      },
+      empty: {
+        title: '暂无受众画像',
+        body: '创建画像后，可在内容策略中复用目标受众的身份与偏好。',
+      },
+    },
   },
   'en-US': {
     navSections: {
@@ -131,6 +355,230 @@ export const messages = {
         'Expand a primary module on the left and choose a secondary module to start building the export marketing workspace.',
       itemPlaceholder: ({ sectionTitle, itemTitle }) =>
         `${sectionTitle} / ${itemTitle} content will be connected here.`,
+    },
+    brandProfile: {
+      title: 'Brand Profile',
+      description:
+        'Store company basics, qualifications, service capability, and trust signals as reusable brand facts for AI-assisted SEO content.',
+      edit: 'Edit',
+      save: 'Save',
+      cancel: 'Cancel',
+      add: 'Add',
+      saveSuccess: 'Saved successfully',
+      discardTitle: 'Discard changes?',
+      discardBody: 'This page has unsaved changes. Discarding will restore the last saved version.',
+      discardChanges: 'Discard Changes',
+      continueEditing: 'Continue Editing',
+      selectPlaceholder: 'Select',
+      tagInputPlaceholder: 'Type and press Enter to add',
+      linkInputPlaceholder: 'Type a link and press Enter to add',
+      removeTag: 'Remove',
+      validation: {
+        invalidWebsite: 'Enter a valid URL, for example https://www.rejincnc.com/',
+        invalidLink: 'Enter a valid URL that starts with http:// or https://',
+      },
+      sections: {
+        basicInfo: {
+          title: 'Basic Information',
+          hint: 'Identify the company, industry, core markets, and major categories.',
+        },
+        brandFacts: {
+          title: 'Brand Facts',
+          hint: 'Store factual source material that AI-generated content can cite or reuse.',
+        },
+        referenceLinks: {
+          title: 'Reference Links',
+          hint: 'Save trusted sources such as official pages, service pages, cases, and FAQs.',
+        },
+        brandStyle: {
+          title: 'Brand Style',
+          hint: 'Guide positioning, tone, and writing requirements for generated content.',
+        },
+      },
+      fields: {
+        companyName: {
+          label: 'Company Legal Name',
+          placeholder: 'Enter the official English company name',
+        },
+        brandName: {
+          label: 'Brand Name',
+          placeholder: 'Enter the public-facing brand name with correct capitalization',
+        },
+        website: {
+          label: 'Brand Website',
+          placeholder: 'Enter the official homepage URL',
+        },
+        industry: {
+          label: 'Industry',
+          placeholder: 'Enter the industry',
+        },
+        coreMarkets: {
+          label: 'Core Markets',
+          placeholder: 'Select countries or regions',
+        },
+        coreCategories: {
+          label: 'Core Categories',
+          placeholder: 'Enter major product or service categories',
+        },
+        companyIntroduction: {
+          label: 'Company Introduction',
+          placeholder: 'Enter the approved standard company introduction',
+        },
+        certifications: {
+          label: 'Certifications',
+          placeholder: 'Enter qualifications such as ISO, CE, patents, reports, or industry certifications',
+        },
+        coreAdvantages: {
+          label: 'Core Advantages',
+          placeholder: 'Enter advantages such as production, customization, export, installation, after-sales, or engineering support',
+        },
+        companyLinks: {
+          label: 'Company Links',
+          placeholder: 'Enter company-related links',
+        },
+        authorityLinks: {
+          label: 'Authority Reference Links',
+          placeholder: 'Enter authoritative reference links',
+        },
+        brandPositioning: {
+          label: 'Brand Positioning',
+          placeholder: 'Enter the impression the company wants to build in customers’ minds',
+        },
+        brandRequirements: {
+          label: 'Brand Requirements',
+          placeholder: 'Enter brand requirements such as customer needs or blog writing style',
+        },
+      },
+    },
+    audiencePersona: {
+      title: 'Audience Personas',
+      description:
+        'Store target customer identity, search needs, and content preferences as audience strategy inputs for AI-assisted SEO content.',
+      create: 'New Persona',
+      edit: 'Edit',
+      duplicate: 'Duplicate',
+      delete: 'Delete',
+      cancel: 'Cancel',
+      save: 'Save Persona',
+      close: 'Close',
+      remove: 'Remove',
+      copySuffix: 'Copy',
+      confirmDelete: 'Confirm Delete',
+      deleteTitle: 'Delete Audience Persona',
+      deleteBody: (name) => `Delete "${name}"? This persona can no longer be referenced in content strategy.`,
+      discardTitle: 'Discard changes?',
+      discardBody: 'This persona form has unsaved changes. Discarding will restore the last saved version.',
+      discardChanges: 'Discard Changes',
+      continueEditing: 'Continue Editing',
+      selectPlaceholder: 'Select',
+      updatedAt: 'Updated',
+      listDescription: 'Used for SEO topics, content generation, and search intent matching',
+      listCount: (count) => `${count} audience persona${count === 1 ? '' : 's'}`,
+      filters: {
+        searchPlaceholder: 'Search persona name / industry / role',
+        depthLabel: 'Content Depth',
+        typeLabel: 'Content Type',
+        allDepths: 'Content Depth',
+        allTypes: 'Content Type',
+      },
+      usage: {
+        title: 'How to use?',
+        steps: [
+          {
+            title: 'Complete persona traits',
+            body: 'Enter real business scenarios and audience needs so AI can understand the target customer group more accurately.',
+          },
+          {
+            title: 'Drive content generation',
+            body: 'Select a matching persona when creating tasks in Content Factory. AI will apply the right depth and expression style.',
+          },
+          {
+            title: 'Refine by lifecycle stage',
+            body: 'Create separate persona cards for lifecycle stages such as discovery, technical evaluation, and purchasing decision.',
+          },
+        ],
+      },
+      drawer: {
+        createTitle: 'New Audience Persona',
+        editTitle: 'Edit Audience Persona',
+      },
+      sections: {
+        identity: {
+          title: 'Audience Identity',
+          description: 'Describe who this audience is, including both personal and organizational identity.',
+        },
+        searchPreference: {
+          title: 'Search Preference',
+          description: 'Describe when they search, which problem they want to solve, and what outcome they expect.',
+        },
+        readingPreference: {
+          title: 'Reading Preference',
+          description: 'Describe what content they prefer and which information influences their decisions.',
+        },
+      },
+      fields: {
+        name: {
+          label: 'Persona Name',
+          placeholder: 'Enter persona name',
+        },
+        organizationType: {
+          label: 'Organization Type',
+        },
+        organizationScale: {
+          label: 'Organization Size',
+        },
+        industry: {
+          label: 'Industry',
+          placeholder: 'Enter industry',
+        },
+        jobTitle: {
+          label: 'Role',
+        },
+        businessDescription: {
+          label: 'Business Description (Optional)',
+          placeholder: 'Enter a detailed description of the customer business',
+        },
+        painPoints: {
+          label: 'Pain Points (Optional)',
+          placeholder: 'Enter audience pain points or problems',
+        },
+        searchGoal: {
+          label: 'Search Goal',
+          placeholder: 'Enter the audience search goal',
+        },
+        commonQuestions: {
+          label: 'Common Questions (Optional)',
+          placeholder: 'Enter common audience questions',
+        },
+        preferredContentTypes: {
+          label: 'Preferred Content Types',
+          placeholder: 'Select preferred content types',
+        },
+        preferredContentDepth: {
+          label: 'Preferred Content Depth',
+        },
+        preferredExpressionStyles: {
+          label: 'Preferred Expression Styles',
+          placeholder: 'Select preferred expression styles',
+        },
+        audienceFocus: {
+          label: 'Audience Focus (Optional)',
+          placeholder: 'Enter what the audience focuses on during decisions',
+        },
+      },
+      validation: {
+        required: 'This field is required',
+        multiRequired: 'Select at least one option',
+      },
+      toast: {
+        created: 'Audience persona created',
+        saved: 'Audience persona saved',
+        deleted: 'Audience persona deleted',
+      },
+      empty: {
+        title: 'No audience personas yet',
+        body: 'Create personas to reuse target audience identity and preferences in content strategy.',
+      },
     },
   },
 };

@@ -48,9 +48,11 @@ export default function Sidebar({
   return (
     <aside className="fixed inset-y-0 left-0 z-30 flex w-[300px] flex-col bg-slate-950 px-6 py-8 text-slate-100">
       <div className="mb-7">
-        <h1 className="text-[32px] font-bold leading-[1.05] tracking-normal text-white">
-          Content
-          <span className="block">Studio</span>
+        <h1 className="tracking-normal">
+          <span className="block text-[38px] font-extrabold leading-[0.95] text-blue-500">
+            Content
+          </span>
+          <span className="mt-1 block text-[30px] font-bold leading-none text-white">Studio</span>
         </h1>
       </div>
 
