@@ -1,4 +1,4 @@
-const storageKeyPrefix = 'content-studio-knowledge-items:v1';
+const storageKeyPrefix = 'content-studio-knowledge-items:v2';
 
 export const knowledgeFieldTypes = [
   'shortText',
@@ -215,6 +215,19 @@ function createRowsForProject(project) {
       return;
     }
 
+    if (typeId === 'solutions') {
+      rows[typeId].push(
+        createRow(type, index, {
+          solutionName: item.title,
+          targetScenario: inferSolutionScenario(item.title),
+          solutionContent: item.summary,
+          relatedService: inferRelatedService(item.title),
+          tags,
+        }),
+      );
+      return;
+    }
+
     if (typeId === 'cases') {
       rows[typeId].push(
         createRow(type, index, {
@@ -241,6 +254,34 @@ function createRowsForProject(project) {
   });
 
   return rows;
+}
+
+function inferSolutionScenario(title) {
+  const lowerTitle = title.toLowerCase();
+  if (lowerTitle.includes('startup') || lowerTitle.includes('prototype')) {
+    return 'Prototype validation and low-volume production';
+  }
+  if (lowerTitle.includes('sourcing') || lowerTitle.includes('overseas')) {
+    return 'Export sourcing and supplier consolidation';
+  }
+  if (lowerTitle.includes('robotics') || lowerTitle.includes('automation')) {
+    return 'Robotics and automation component manufacturing';
+  }
+  return 'Custom metal parts manufacturing';
+}
+
+function inferRelatedService(title) {
+  const lowerTitle = title.toLowerCase();
+  if (lowerTitle.includes('startup') || lowerTitle.includes('prototype')) {
+    return 'DFM Support';
+  }
+  if (lowerTitle.includes('sourcing') || lowerTitle.includes('overseas')) {
+    return 'CNC Machining and Sheet Metal Fabrication';
+  }
+  if (lowerTitle.includes('robotics') || lowerTitle.includes('automation')) {
+    return '5-Axis CNC Machining';
+  }
+  return 'Custom CNC Machining';
 }
 
 function inferCaseIndustry(title) {

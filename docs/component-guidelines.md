@@ -9,6 +9,24 @@ The active component guideline source is now managed in the isolated guidelines 
 
 Before building a new Content Studio screen, open the guidelines project and follow its components first. If a new visual variant is needed, update the guidelines project and Markdown document before implementing the feature.
 
+## Button
+
+- Page-level primary and secondary actions must use the shared `src/components/ui/Button.jsx` component.
+- Default button size is `h-9 px-4`, with `text-sm font-semibold`, `rounded-md`, and a 16px icon.
+- `primary` is a blue filled button for save, edit, create, apply, and other main actions.
+- `secondary` is a white button with blue border/text for export, add field, and other important auxiliary actions.
+- `neutral` is a white button with light gray border/text for cancel, continue editing, and low-risk actions.
+- `danger` is reserved for destructive confirmations such as discard changes or delete confirmation.
+- Do not hand-write page-level primary/secondary button Tailwind classes inside feature pages. Reuse the shared component and keep table icon buttons, navigation items, and segmented tabs as separate compact controls.
+
+## Page Header
+
+- Top intro cards with title, description, and right-side actions must use the shared `src/components/ui/PageHeader.jsx` component.
+- Page header cards use `rounded-lg bg-slate-50 px-7 py-6`.
+- Right-side actions use `flex flex-none flex-wrap items-start gap-3` and align near the top of the card on desktop.
+- On narrow screens, actions stack below the title and description instead of compressing the copy.
+- Do not hand-write page header action alignment inside feature pages. Matching positions across pages must come from the shared component.
+
 ## Toast
 
 - Toast must use the shared `src/components/ui/Toast.jsx` component.

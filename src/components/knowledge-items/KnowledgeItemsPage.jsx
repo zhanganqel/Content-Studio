@@ -17,6 +17,8 @@ import {
   X,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { adaptivePageLayout } from '../layoutClasses.js';
+import Button from '../ui/Button.jsx';
 import Toast from '../ui/Toast.jsx';
 import {
   createBlankRow,
@@ -263,17 +265,16 @@ function KnowledgeTypePanel({
   const customTypes = types.filter((type) => !type.preset);
 
   return (
-    <aside className="flex h-full min-h-0 flex-col rounded-lg border border-slate-200 bg-white p-6">
+    <aside className={`${adaptivePageLayout.scrollPanel} p-6`}>
       <div className="flex flex-none items-center justify-between gap-4">
         <h3 className="text-xl font-bold tracking-normal text-slate-800">{copy.typePanelTitle}</h3>
-        <button
-          type="button"
-          className="inline-flex h-11 flex-none items-center gap-2 rounded-md bg-blue-600 px-4 text-sm font-semibold text-white transition hover:bg-blue-500"
+        <Button
+          className="flex-none"
+          icon={Plus}
           onClick={onCreate}
         >
-          <Plus className="h-4 w-4" />
           {copy.createType}
-        </button>
+        </Button>
       </div>
 
       <div className="mt-7 min-h-0 flex-1 space-y-7 overflow-y-auto pr-1">
@@ -356,28 +357,27 @@ function SheetToolbar({ copy, editing, fieldView, onFieldViewChange }) {
   const fieldViewOptions = ['all', 'required'];
 
   return (
-    <div className="flex h-12 items-center justify-between gap-4 border-b border-slate-200 bg-slate-50 px-6 text-slate-500">
-      <div className="flex items-center gap-3">
+    <div className="flex h-12 items-center gap-3 border-b border-slate-200 bg-slate-50 px-6 text-slate-500">
+      <div className="flex min-w-0 flex-wrap items-center gap-3">
         <span className="inline-flex h-7 items-center rounded-md bg-white px-3 text-xs font-bold text-slate-600 ring-1 ring-slate-200">
           {editing ? copy.table.editMode : copy.table.browseMode}
         </span>
-        <span className="text-sm font-semibold text-slate-500">{copy.table.toolbarHint}</span>
-      </div>
-      <div className="flex items-center overflow-hidden rounded-md border border-slate-200 bg-white">
-        {fieldViewOptions.map((mode) => (
-          <button
-            key={mode}
-            type="button"
-            className={`h-8 border-r border-slate-200 px-3 text-xs font-semibold last:border-r-0 ${
-              fieldView === mode
-                ? 'bg-blue-600 text-white'
-                : 'text-slate-500 transition hover:bg-slate-50 hover:text-slate-800'
-            }`}
-            onClick={() => onFieldViewChange(mode)}
-          >
-            {copy.table.fieldViews[mode]}
-          </button>
-        ))}
+        <div className="flex h-7 items-center overflow-hidden rounded-md border border-slate-200 bg-white">
+          {fieldViewOptions.map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              className={`h-full border-r border-slate-200 px-3 text-xs font-bold last:border-r-0 ${
+                fieldView === mode
+                  ? 'bg-blue-600 text-white'
+                  : 'text-slate-500 transition hover:bg-slate-50 hover:text-slate-800'
+              }`}
+              onClick={() => onFieldViewChange(mode)}
+            >
+              {copy.table.fieldViews[mode]}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -447,6 +447,21 @@ function KnowledgeTable({
     onCellChange(selectedRow.id, selectedField.key, value);
   }
 
+  function getBodyCellBackground(field) {
+    const isNameColumn = field.key === type.nameFieldKey;
+    const isSystemField = field.key === 'knowledgeId';
+
+    if (editing) {
+      if (isNameColumn) return 'bg-slate-50';
+      if (isSystemField) return 'bg-slate-50';
+      return 'bg-white';
+    }
+
+    if (isNameColumn) return 'bg-slate-100/80';
+    if (isSystemField) return 'bg-slate-50';
+    return 'bg-white';
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white">
       <SheetToolbar copy={copy} editing={editing} fieldView={fieldView} onFieldViewChange={setFieldView} />
@@ -495,18 +510,18 @@ function KnowledgeTable({
           {visibleRows.map((row) => (
             <div key={row.id} className="group flex border-b border-slate-200">
               {visibleFields.map((field) => {
-                const isNameColumn = field.key === type.nameFieldKey;
                 const isSystemField = field.key === 'knowledgeId';
                 const error = errors[`${row.id}:${field.key}`];
                 const value = getDisplayCellValue(row, field, type, copy);
                 const isSelected = selectedCell?.rowId === row.id && selectedCell?.fieldKey === field.key;
+                const backgroundClass = error ? 'bg-red-50' : getBodyCellBackground(field);
 
                 return (
                   <div
                     key={field.key}
                     className={`relative flex h-12 flex-none items-center border-r border-slate-200 px-3 text-sm ${
-                      error ? 'bg-red-50 ring-1 ring-inset ring-red-300' : ''
-                    } ${isNameColumn ? 'bg-slate-100/80' : isSystemField ? 'bg-slate-50' : 'bg-white'} ${
+                      error ? 'ring-1 ring-inset ring-red-300' : ''
+                    } ${backgroundClass} ${
                       isSelected ? 'z-[1] ring-2 ring-inset ring-blue-500' : ''
                     }`}
                     onMouseDown={() => setSelectedCell({ fieldKey: field.key, rowId: row.id })}
@@ -557,22 +572,18 @@ function ConfirmDialog({ cancelLabel, confirmLabel, danger = false, message, onC
         <h3 className="text-xl font-bold text-slate-900">{title}</h3>
         <p className="mt-3 text-sm leading-6 text-slate-500">{message}</p>
         <div className="mt-6 flex justify-end gap-3">
-          <button
-            type="button"
-            className="rounded-md border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+          <Button
+            variant="neutral"
             onClick={onCancel}
           >
             {cancelLabel}
-          </button>
-          <button
-            type="button"
-            className={`rounded-md px-4 py-2 text-sm font-semibold text-white transition ${
-              danger ? 'bg-red-600 hover:bg-red-500' : 'bg-slate-900 hover:bg-slate-700'
-            }`}
+          </Button>
+          <Button
+            variant={danger ? 'danger' : 'primary'}
             onClick={onConfirm}
           >
             {confirmLabel}
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -729,33 +740,31 @@ function KnowledgeTypeDrawer({
                   </div>
                 ))}
               </div>
-              <button
-                type="button"
-                className="mt-4 inline-flex h-10 items-center gap-2 rounded-md border border-blue-600 px-4 text-sm font-semibold text-blue-600 transition hover:bg-blue-50"
+              <Button
+                className="mt-4"
+                icon={Plus}
+                variant="secondary"
                 onClick={onAddField}
               >
-                <Plus className="h-4 w-4" />
                 {copy.addField}
-              </button>
+              </Button>
             </section>
           </div>
         </div>
 
         <div className="flex flex-none justify-end gap-3 border-t border-slate-200 bg-white px-7 py-5">
-          <button
-            type="button"
-            className="rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+          <Button
+            variant="neutral"
             onClick={onCancel}
           >
             {copy.cancel}
-          </button>
-          <button
+          </Button>
+          <Button
             type="submit"
-            className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-500"
+            icon={Check}
           >
-            <Check className="h-4 w-4" />
             {copy.save}
-          </button>
+          </Button>
         </div>
       </form>
     </div>
@@ -808,19 +817,17 @@ function FieldDialog({ copy, data, errors, onCancel, onChange, onSave }) {
           </label>
         </div>
         <div className="mt-6 flex justify-end gap-3">
-          <button
-            type="button"
-            className="rounded-md border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+          <Button
+            variant="neutral"
             onClick={onCancel}
           >
             {copy.cancel}
-          </button>
-          <button
+          </Button>
+          <Button
             type="submit"
-            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-500"
           >
             {copy.saveField}
-          </button>
+          </Button>
         </div>
       </form>
     </div>
@@ -1217,10 +1224,10 @@ export default function KnowledgeItemsPage({ project, t }) {
   if (!activeType) return null;
 
   return (
-    <div className="space-y-7">
+    <div className={adaptivePageLayout.pageStack}>
       <PageIntro copy={copy} />
 
-      <div className="grid h-[calc(100vh-244px)] min-h-[620px] items-stretch gap-7 overflow-hidden xl:grid-cols-[300px_minmax(0,1fr)]">
+      <div className={`${adaptivePageLayout.workArea} xl:grid-cols-[300px_minmax(0,1fr)]`}>
         <KnowledgeTypePanel
           activeTypeId={activeType.id}
           copy={copy}
@@ -1238,51 +1245,41 @@ export default function KnowledgeItemsPage({ project, t }) {
             </h3>
             <div className="flex flex-wrap items-center gap-3">
               {editing && !activeType.preset ? (
-                <button
-                  type="button"
-                  className="inline-flex h-11 items-center gap-2 rounded-md border border-blue-600 px-4 text-sm font-semibold text-blue-600 transition hover:bg-blue-50"
+                <Button
+                  icon={Plus}
+                  variant="secondary"
                   onClick={openFieldDialog}
                 >
-                  <Plus className="h-4 w-4" />
                   {copy.addField}
-                </button>
+                </Button>
               ) : null}
               {!editing ? (
                 <>
-                  <button
-                    type="button"
-                    className="inline-flex h-11 items-center gap-2 rounded-md border border-blue-600 px-4 text-sm font-semibold text-blue-600 transition hover:bg-blue-50"
-                  >
-                    <Download className="h-4 w-4" />
+                  <Button icon={Download} variant="secondary">
                     {copy.export}
-                  </button>
-                  <button
-                    type="button"
-                    className="inline-flex h-11 items-center gap-2 rounded-md bg-blue-600 px-5 text-sm font-semibold text-white transition hover:bg-blue-500"
+                  </Button>
+                  <Button
+                    icon={Pencil}
                     onClick={startEditing}
                   >
-                    <Pencil className="h-4 w-4" />
                     {copy.edit}
-                  </button>
+                  </Button>
                 </>
               ) : (
                 <>
-                  <button
-                    type="button"
-                    className="inline-flex h-11 items-center gap-2 rounded-md border border-slate-200 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                  <Button
+                    icon={X}
+                    variant="neutral"
                     onClick={cancelEditing}
                   >
-                    <X className="h-4 w-4" />
                     {copy.cancel}
-                  </button>
-                  <button
-                    type="button"
-                    className="inline-flex h-11 items-center gap-2 rounded-md bg-blue-600 px-5 text-sm font-semibold text-white transition hover:bg-blue-500"
+                  </Button>
+                  <Button
+                    icon={Save}
                     onClick={saveRows}
                   >
-                    <Save className="h-4 w-4" />
                     {copy.save}
-                  </button>
+                  </Button>
                 </>
               )}
             </div>
@@ -1336,6 +1333,7 @@ export default function KnowledgeItemsPage({ project, t }) {
         <ConfirmDialog
           cancelLabel={copy.continueEditing}
           confirmLabel={copy.discardChanges}
+          danger
           message={copy.discardBody}
           onCancel={() => setShowDiscardDialog(false)}
           onConfirm={discardTableChanges}

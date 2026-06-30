@@ -1,8 +1,9 @@
 import BrandProfilePage from './brand-profile/BrandProfilePage.jsx';
 import AudiencePersonaPage from './audience-persona/AudiencePersonaPage.jsx';
+import BlogArticlePage from './blog-article/BlogArticlePage.jsx';
 import KnowledgeItemsPage from './knowledge-items/KnowledgeItemsPage.jsx';
 
-export default function MainContent({ activeItem, activeProject, t }) {
+export default function MainContent({ activeItem, activeProject, onOpenBlogArticleEditor, t }) {
   if (activeItem?.id === 'brand-profile') {
     return (
       <main className="ml-[300px] h-screen overflow-y-auto bg-white pt-[72px]">
@@ -28,6 +29,20 @@ export default function MainContent({ activeItem, activeProject, t }) {
       <main className="ml-[300px] h-screen overflow-y-auto bg-white pt-[72px]">
         <div className="min-h-[calc(100vh-72px)] p-8">
           <KnowledgeItemsPage project={activeProject} t={t} />
+        </div>
+      </main>
+    );
+  }
+
+  if (activeItem?.id === 'blog-article') {
+    return (
+      <main className="ml-[300px] h-screen overflow-y-auto bg-white pt-[72px]">
+        <div className="min-h-[calc(100vh-72px)] p-8">
+          <BlogArticlePage
+            onOpenEditor={onOpenBlogArticleEditor}
+            project={activeProject}
+            t={t}
+          />
         </div>
       </main>
     );

@@ -5,6 +5,7 @@ export const rejinCncProject = {
   industry: 'Precision CNC machining and custom metal parts manufacturing',
   description: 'Demo project for an export-oriented precision CNC machining supplier.',
   defaultContentLanguage: 'en-US',
+  demoDataVersion: 3,
   contact: {
     email: 'info@rejincnc.com',
     phone: '+86 135 9033 6784',
@@ -54,6 +55,12 @@ export const rejinCncProject = {
       detail:
         'Public service pages cover CNC turning, CNC milling, 5-axis machining, sheet metal fabrication, surface treatments, and DFM support.',
       sourceUrl: 'https://www.rejincnc.com/service/',
+    },
+    {
+      title: 'DFM and prototype support',
+      detail:
+        'The demo project includes design-for-manufacturing guidance and prototype support for teams validating custom metal parts before production.',
+      sourceUrl: 'https://www.rejincnc.com/service/support-dfm-service/',
     },
   ],
   audiencePersonas: [
@@ -207,6 +214,31 @@ export const rejinCncProject = {
         'https://www.rejincnc.com/custom-cnc-turned-nut-stud-brass-aluminum-stainless-steel-fasteners/',
     },
     {
+      id: 'precision-prototyping-solution',
+      type: 'solution',
+      title: 'Precision Prototyping for Hardware Startups',
+      summary:
+        'A manufacturing solution for hardware startups that need DFM feedback, prototype machining, surface treatment choices, and a practical path from small-batch validation to production.',
+      sourceUrl: 'https://www.rejincnc.com/service/support-dfm-service/',
+    },
+    {
+      id: 'custom-metal-parts-sourcing-solution',
+      type: 'solution',
+      title: 'Custom Metal Parts Sourcing for Overseas Buyers',
+      summary:
+        'A sourcing solution for overseas procurement teams that need one supplier to coordinate CNC turning, CNC milling, sheet metal fabrication, finishing, quotation review, and export communication.',
+      sourceUrl: 'https://www.rejincnc.com/service/',
+    },
+    {
+      id: 'robotics-automation-components-solution',
+      type: 'solution',
+      title: 'Robotics and Automation Component Manufacturing',
+      summary:
+        'A solution for robotics and automation teams that need precise structural parts, robot joint components, stable tolerances, and repeatable finishing for custom equipment builds.',
+      sourceUrl:
+        'https://www.rejincnc.com/custom-cnc-machined-robot-joint-structural-parts-precision-metal-components/',
+    },
+    {
       id: 'automotive-connector-case',
       type: 'case',
       title: 'Automotive Stainless Steel Connector Assembly',
@@ -222,6 +254,15 @@ export const rejinCncProject = {
       summary: 'An audio hardware case about custom enclosures for premium audio brands.',
       sourceUrl:
         'https://www.rejincnc.com/case/audio-hardware-custom-enclosures-for-premium-audio-brands-customer-testimonials/',
+    },
+    {
+      id: 'medical-device-prototype-case',
+      type: 'case',
+      title: 'Medical Device Metal Parts Prototype Support',
+      summary:
+        'A demo case scenario for stainless steel and aluminum medical device parts that require prototype validation, stable machining quality, and controlled finishing.',
+      sourceUrl:
+        'https://www.rejincnc.com/custom-cnc-machined-medical-device-metal-parts-stainless-steel-aluminum-oem-service/',
     },
     {
       id: 'how-to-order-custom-parts',
@@ -372,6 +413,24 @@ export const rejinCncProject = {
       url: 'https://www.rejincnc.com/custom-cnc-turned-nut-stud-brass-aluminum-stainless-steel-fasteners/',
     },
     {
+      id: 'source-precision-prototyping-solution',
+      type: 'solution',
+      title: 'Precision Prototyping for Hardware Startups',
+      url: 'https://www.rejincnc.com/service/support-dfm-service/',
+    },
+    {
+      id: 'source-custom-metal-parts-sourcing-solution',
+      type: 'solution',
+      title: 'Custom Metal Parts Sourcing for Overseas Buyers',
+      url: 'https://www.rejincnc.com/service/',
+    },
+    {
+      id: 'source-robotics-automation-components-solution',
+      type: 'solution',
+      title: 'Robotics and Automation Component Manufacturing',
+      url: 'https://www.rejincnc.com/custom-cnc-machined-robot-joint-structural-parts-precision-metal-components/',
+    },
+    {
       id: 'source-automotive-connector-case',
       type: 'case',
       title: 'Automotive Stainless Steel Connector Assembly',
@@ -382,6 +441,12 @@ export const rejinCncProject = {
       type: 'case',
       title: 'Custom Audio Hardware Enclosures',
       url: 'https://www.rejincnc.com/case/audio-hardware-custom-enclosures-for-premium-audio-brands-customer-testimonials/',
+    },
+    {
+      id: 'source-medical-device-prototype-case',
+      type: 'case',
+      title: 'Medical Device Metal Parts Prototype Support',
+      url: 'https://www.rejincnc.com/custom-cnc-machined-medical-device-metal-parts-stainless-steel-aluminum-oem-service/',
     },
     {
       id: 'source-order-custom-parts',
@@ -440,6 +505,17 @@ export const rejinCncProject = {
       title: 'Prototype Support Outreach for Hardware Startups',
       audiencePersonaId: 'hardware-startup-founder',
       relatedKnowledgeItemIds: ['dfm-support', 'five-axis-cnc-machining', 'sheet-metal-fabrication'],
+    },
+    {
+      id: 'social-robotics-component-sourcing',
+      type: 'social',
+      title: 'Robotics Component Sourcing Post',
+      audiencePersonaId: 'supply-chain-lead',
+      relatedKnowledgeItemIds: [
+        'robotics-automation-components-solution',
+        'robot-joint-parts',
+        'five-axis-cnc-machining',
+      ],
     },
   ],
 };

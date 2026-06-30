@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import AppShell from './components/AppShell.jsx';
+import BlogArticleEditor from './components/blog-article/BlogArticleEditor.jsx';
 import { navSections, projects, searchScopes, userMenuItems } from './data/navigation.js';
 import { defaultLocale, messages } from './i18n/messages.js';
 
@@ -21,6 +22,7 @@ export default function App() {
   const [activeItemId, setActiveItemId] = useState(null);
   const [searchScope, setSearchScope] = useState(searchScopes[0]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [blogEditorArticle, setBlogEditorArticle] = useState(null);
   const t = messages[locale] ?? messages[defaultLocale];
 
   useEffect(() => {
@@ -75,6 +77,17 @@ export default function App() {
     );
   }
 
+  if (blogEditorArticle) {
+    return (
+      <BlogArticleEditor
+        article={blogEditorArticle}
+        onClose={() => setBlogEditorArticle(null)}
+        project={activeProject}
+        t={t}
+      />
+    );
+  }
+
   return (
     <AppShell
       activeItem={activeItem}
@@ -90,6 +103,7 @@ export default function App() {
       t={t}
       userMenuItems={localizedUserMenuItems}
       onLocaleChange={setLocale}
+      onOpenBlogArticleEditor={setBlogEditorArticle}
       onProjectChange={setActiveProjectId}
       onSearchQueryChange={setSearchQuery}
       onSearchScopeChange={setSearchScope}

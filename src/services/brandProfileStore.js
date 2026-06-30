@@ -1,4 +1,5 @@
 const storageKeyPrefix = 'content-studio-brand-profile:';
+const storageSchemaVersion = 2;
 
 export const marketOptions = [
   'United States',
@@ -26,6 +27,21 @@ export const marketOptions = [
 
 function getStorageKey(projectId) {
   return `${storageKeyPrefix}${projectId}`;
+}
+
+function serializeBrandProfile(data) {
+  return JSON.stringify({
+    schemaVersion: storageSchemaVersion,
+    data,
+  });
+}
+
+function isPlainObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function shouldRefreshDemoBrandProfile(project, schemaVersion) {
+  return Boolean(project?.demoProject) && schemaVersion !== storageSchemaVersion;
 }
 
 function safeJoin(items) {
@@ -84,10 +100,34 @@ export function getBrandProfileDraft(project) {
   }
 
   try {
-    return {
-      ...createDefaultBrandProfile(project),
-      ...JSON.parse(stored),
-    };
+    const parsed = JSON.parse(stored);
+    const defaultProfile = createDefaultBrandProfile(project);
+
+    if (isPlainObject(parsed) && isPlainObject(parsed.data)) {
+      if (shouldRefreshDemoBrandProfile(project, parsed.schemaVersion)) {
+        window.localStorage.setItem(getStorageKey(project.id), serializeBrandProfile(defaultProfile));
+        return defaultProfile;
+      }
+
+      return {
+        ...defaultProfile,
+        ...parsed.data,
+      };
+    }
+
+    if (isPlainObject(parsed)) {
+      if (shouldRefreshDemoBrandProfile(project)) {
+        window.localStorage.setItem(getStorageKey(project.id), serializeBrandProfile(defaultProfile));
+        return defaultProfile;
+      }
+
+      return {
+        ...defaultProfile,
+        ...parsed,
+      };
+    }
+
+    return defaultProfile;
   } catch {
     return createDefaultBrandProfile(project);
   }
@@ -98,7 +138,7 @@ export function saveBrandProfileDraft(projectId, data) {
     return data;
   }
 
-  window.localStorage.setItem(getStorageKey(projectId), JSON.stringify(data));
+  window.localStorage.setItem(getStorageKey(projectId), serializeBrandProfile(data));
   return data;
 }
 

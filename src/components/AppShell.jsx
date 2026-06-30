@@ -16,6 +16,7 @@ export default function AppShell({
   t,
   userMenuItems,
   onLocaleChange,
+  onOpenBlogArticleEditor,
   onProjectChange,
   onSearchQueryChange,
   onSearchScopeChange,
@@ -46,7 +47,12 @@ export default function AppShell({
         onSearchQueryChange={onSearchQueryChange}
         onSearchScopeChange={onSearchScopeChange}
       />
-      <MainContent activeItem={activeItem} activeProject={activeProject} t={t} />
+      <MainContent
+        activeItem={activeItem}
+        activeProject={activeProject}
+        onOpenBlogArticleEditor={onOpenBlogArticleEditor}
+        t={t}
+      />
     </div>
   );
 }

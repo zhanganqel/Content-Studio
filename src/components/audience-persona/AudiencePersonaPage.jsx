@@ -2,7 +2,6 @@ import {
   BookOpenText,
   BriefcaseBusiness,
   Building2,
-  CalendarClock,
   Check,
   ChevronDown,
   Copy,
@@ -12,12 +11,15 @@ import {
   Plus,
   Search,
   SearchCheck,
+  SlidersHorizontal,
   Trash2,
   UserRound,
   UsersRound,
   X,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { adaptivePageLayout } from '../layoutClasses.js';
+import Button from '../ui/Button.jsx';
 import Toast from '../ui/Toast.jsx';
 import {
   contentDepthOptions,
@@ -283,9 +285,9 @@ function MultiSelectField({
   );
 }
 
-function FilterSelect({ label, onChange, options, value }) {
+function FilterSelect({ className = 'w-full sm:w-56', label, onChange, options, value }) {
   return (
-    <span className="relative block w-full sm:w-56">
+    <span className={`relative block ${className}`}>
       <select
         className="h-11 w-full appearance-none rounded-md border border-slate-200 bg-white px-3 pr-10 text-base text-slate-700 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
         onChange={(event) => onChange(event.target.value)}
@@ -331,46 +333,33 @@ function PersonaCard({ copy, onDelete, onDuplicate, onEdit, persona }) {
             </div>
           </div>
 
-          <div className="mt-5 flex flex-wrap gap-2">
-            {persona.preferredContentTypes.map((type) => (
-              <Tag key={type} disabled t={copy}>
-                {type}
-              </Tag>
-            ))}
-          </div>
         </div>
 
-        <div className="flex flex-none flex-col gap-5 lg:items-end">
-          <div className="flex items-center gap-4">
-            <button
-              type="button"
-              className="inline-flex items-center gap-1.5 text-sm font-semibold text-blue-600 transition hover:text-blue-500"
-              onClick={() => onEdit(persona)}
-            >
-              <Pencil className="h-4 w-4" />
-              {copy.edit}
-            </button>
-            <button
-              type="button"
-              className="inline-flex items-center gap-1.5 text-sm font-semibold text-blue-600 transition hover:text-blue-500"
-              onClick={() => onDuplicate(persona)}
-            >
-              <Copy className="h-4 w-4" />
-              {copy.duplicate}
-            </button>
-            <button
-              type="button"
-              className="inline-flex items-center gap-1.5 text-sm font-semibold text-red-500 transition hover:text-red-400"
-              onClick={() => onDelete(persona)}
-            >
-              <Trash2 className="h-4 w-4" />
-              {copy.delete}
-            </button>
-          </div>
-          <span className="inline-flex items-center gap-2 text-sm font-medium text-slate-400">
-            <CalendarClock className="h-4 w-4" />
-            {copy.updatedAt}: {persona.updatedAt}
-          </span>
+        <div className="flex flex-none items-center gap-4">
+          <button
+            type="button"
+            className="inline-flex items-center gap-1.5 text-sm font-semibold text-blue-600 transition hover:text-blue-500"
+            onClick={() => onEdit(persona)}
+          >
+            <Pencil className="h-4 w-4" />
+            {copy.edit}
+          </button>
+          <button
+            type="button"
+            className="inline-flex items-center gap-1.5 text-sm font-semibold text-blue-600 transition hover:text-blue-500"
+            onClick={() => onDuplicate(persona)}
+          >
+            <Copy className="h-4 w-4" />
+            {copy.duplicate}
+          </button>
+          <button
+            type="button"
+            className="inline-flex items-center gap-1.5 text-sm font-semibold text-red-500 transition hover:text-red-400"
+            onClick={() => onDelete(persona)}
+          >
+            <Trash2 className="h-4 w-4" />
+            {copy.delete}
+          </button>
         </div>
       </div>
     </article>
@@ -379,7 +368,7 @@ function PersonaCard({ copy, onDelete, onDuplicate, onEdit, persona }) {
 
 function UsagePanel({ copy }) {
   return (
-    <aside className="rounded-lg bg-slate-50 p-7">
+    <aside className="h-full min-h-0 overflow-y-auto rounded-lg bg-slate-50 p-7">
       <div className="flex items-center gap-3">
         <IconBadge tone="amber">
           <Lightbulb className="h-5 w-5" />
@@ -614,20 +603,18 @@ function PersonaDrawer({
         </div>
 
         <div className="flex flex-none justify-end gap-3 border-t border-slate-200 bg-white px-7 py-5">
-          <button
-            type="button"
-            className="rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+          <Button
+            variant="neutral"
             onClick={onCancel}
           >
             {copy.cancel}
-          </button>
-          <button
+          </Button>
+          <Button
             type="submit"
-            className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-500"
+            icon={Check}
           >
-            <Check className="h-4 w-4" />
             {copy.save}
-          </button>
+          </Button>
         </div>
       </form>
     </div>
@@ -641,22 +628,18 @@ function ConfirmDialog({ cancelLabel, confirmLabel, danger = false, message, onC
         <h3 className="text-xl font-bold text-slate-900">{title}</h3>
         <p className="mt-3 text-sm leading-6 text-slate-500">{message}</p>
         <div className="mt-6 flex justify-end gap-3">
-          <button
-            type="button"
-            className="rounded-md border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+          <Button
+            variant="neutral"
             onClick={onCancel}
           >
             {cancelLabel}
-          </button>
-          <button
-            type="button"
-            className={`rounded-md px-4 py-2 text-sm font-semibold text-white transition ${
-              danger ? 'bg-red-600 hover:bg-red-500' : 'bg-slate-900 hover:bg-slate-700'
-            }`}
+          </Button>
+          <Button
+            variant={danger ? 'danger' : 'primary'}
             onClick={onConfirm}
           >
             {confirmLabel}
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -668,11 +651,16 @@ export default function AudiencePersonaPage({ project, t }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [depthFilter, setDepthFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [draftSearchQuery, setDraftSearchQuery] = useState('');
+  const [draftDepthFilter, setDraftDepthFilter] = useState('all');
+  const [draftTypeFilter, setDraftTypeFilter] = useState('all');
   const [drawerState, setDrawerState] = useState(null);
   const [errors, setErrors] = useState({});
   const [toast, setToast] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [showDiscardDialog, setShowDiscardDialog] = useState(false);
+  const filterRef = useRef(null);
   const copy = t.audiencePersona;
 
   useEffect(() => {
@@ -680,6 +668,10 @@ export default function AudiencePersonaPage({ project, t }) {
     setSearchQuery('');
     setDepthFilter('all');
     setTypeFilter('all');
+    setDraftSearchQuery('');
+    setDraftDepthFilter('all');
+    setDraftTypeFilter('all');
+    setFilterOpen(false);
     setDrawerState(null);
     setErrors({});
   }, [project]);
@@ -692,6 +684,20 @@ export default function AudiencePersonaPage({ project, t }) {
     const timer = window.setTimeout(() => setToast(null), 2200);
     return () => window.clearTimeout(timer);
   }, [toast]);
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (filterRef.current && !filterRef.current.contains(event.target)) {
+        setFilterOpen(false);
+      }
+    }
+
+    if (filterOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [filterOpen]);
 
   const filteredPersonas = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -709,6 +715,8 @@ export default function AudiencePersonaPage({ project, t }) {
   const hasDrawerChanges = drawerState
     ? !valuesEqual(drawerState.initialData, drawerState.data)
     : false;
+  const hasActiveFilters =
+    Boolean(searchQuery.trim()) || depthFilter !== 'all' || typeFilter !== 'all';
 
   function persist(nextPersonas, message) {
     const saved = saveAudiencePersonaDrafts(project.id, nextPersonas);
@@ -815,6 +823,30 @@ export default function AudiencePersonaPage({ project, t }) {
     setDeleteTarget(null);
   }
 
+  function toggleFilterPopover() {
+    setDraftSearchQuery(searchQuery);
+    setDraftDepthFilter(depthFilter);
+    setDraftTypeFilter(typeFilter);
+    setFilterOpen((current) => !current);
+  }
+
+  function applyFilters() {
+    setSearchQuery(draftSearchQuery);
+    setDepthFilter(draftDepthFilter);
+    setTypeFilter(draftTypeFilter);
+    setFilterOpen(false);
+  }
+
+  function clearFilters() {
+    setSearchQuery('');
+    setDepthFilter('all');
+    setTypeFilter('all');
+    setDraftSearchQuery('');
+    setDraftDepthFilter('all');
+    setDraftTypeFilter('all');
+    setFilterOpen(false);
+  }
+
   const depthFilterOptions = [
     { value: 'all', label: copy.filters.allDepths },
     ...contentDepthOptions.map((option) => ({ value: option, label: option })),
@@ -825,7 +857,7 @@ export default function AudiencePersonaPage({ project, t }) {
   ];
 
   return (
-    <div className="mx-auto max-w-[1600px] space-y-8">
+    <div className={`mx-auto max-w-[1600px] ${adaptivePageLayout.pageStack}`}>
       {toast ? (
         <Toast
           key={toast.id}
@@ -851,6 +883,7 @@ export default function AudiencePersonaPage({ project, t }) {
         <ConfirmDialog
           cancelLabel={copy.continueEditing}
           confirmLabel={copy.discardChanges}
+          danger
           message={copy.discardBody}
           onCancel={() => setShowDiscardDialog(false)}
           onConfirm={discardDrawerChanges}
@@ -879,87 +912,158 @@ export default function AudiencePersonaPage({ project, t }) {
         </div>
       </header>
 
-      <section className="rounded-lg border border-slate-200 bg-white p-7">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-center">
-          <div className="flex flex-1 flex-col gap-4 lg:flex-row">
-            <label className="relative block w-full max-w-md">
-              <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
-              <input
-                className="h-11 w-full rounded-md border border-slate-200 bg-white pl-10 pr-3 text-base text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder={copy.filters.searchPlaceholder}
-                type="search"
-                value={searchQuery}
-              />
-            </label>
-            <FilterSelect
-              label={copy.filters.depthLabel}
-              onChange={setDepthFilter}
-              options={depthFilterOptions}
-              value={depthFilter}
-            />
-            <FilterSelect
-              label={copy.filters.typeLabel}
-              onChange={setTypeFilter}
-              options={typeFilterOptions}
-              value={typeFilter}
-            />
-          </div>
-        </div>
-      </section>
-
-      <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_minmax(320px,420px)]">
-        <section className="rounded-lg border border-slate-200 bg-white p-7">
-          <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+      <div className={`${adaptivePageLayout.workArea} xl:grid-cols-[minmax(0,1fr)_minmax(320px,420px)]`}>
+        <section className={`${adaptivePageLayout.scrollPanel} p-7`}>
+          <div className="mb-5 flex flex-none flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <h3 className="text-xl font-bold text-slate-800">{copy.title}</h3>
             </div>
-            {filteredPersonas.length ? (
-              <button
-                type="button"
-                className="inline-flex items-center justify-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-500"
-                onClick={openCreateDrawer}
-              >
-                <Plus className="h-4 w-4" />
-                {copy.create}
-              </button>
-            ) : null}
-          </div>
-
-          {filteredPersonas.length ? (
-            <div className="space-y-6">
-              {filteredPersonas.map((persona) => (
-                <PersonaCard
-                  key={persona.id}
-                  copy={copy}
-                  onDelete={setDeleteTarget}
-                  onDuplicate={openDuplicateDrawer}
-                  onEdit={openEditDrawer}
-                  persona={persona}
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="grid min-h-[420px] place-items-center rounded-lg border border-dashed border-slate-200 bg-slate-50 px-6 text-center">
-              <div>
-                <IconBadge tone="slate">
-                  <UsersRound className="h-5 w-5" />
-                </IconBadge>
-                <h3 className="mt-5 text-xl font-bold text-slate-800">{copy.empty.title}</h3>
-                <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-slate-500">
-                  {copy.empty.body}
-                </p>
+            <div className="flex items-center gap-3">
+              <div ref={filterRef} className="relative">
                 <button
                   type="button"
-                  className="mt-6 inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-500"
+                  className={`relative inline-flex h-9 w-9 items-center justify-center rounded-md border text-sm font-semibold transition ${
+                    hasActiveFilters || filterOpen
+                      ? 'border-blue-200 bg-blue-50 text-blue-600'
+                      : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-700'
+                  }`}
+                  onClick={toggleFilterPopover}
+                  aria-expanded={filterOpen}
+                  aria-label={copy.filters.title}
+                >
+                  <SlidersHorizontal className="h-4 w-4" />
+                  {hasActiveFilters ? (
+                    <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-blue-600" />
+                  ) : null}
+                </button>
+
+                {filterOpen ? (
+                  <form
+                    className="absolute right-0 top-[calc(100%+8px)] z-40 w-[calc(100vw-64px)] rounded-lg border border-slate-200 bg-white p-4 shadow-menu sm:w-[360px]"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      applyFilters();
+                    }}
+                  >
+                    <div className="mb-4 flex items-center justify-between">
+                      <h4 className="text-base font-bold text-slate-800">{copy.filters.title}</h4>
+                      <button
+                        type="button"
+                        className="rounded-full p-1 text-slate-400 transition hover:bg-slate-50 hover:text-slate-700"
+                        onClick={() => setFilterOpen(false)}
+                        aria-label={copy.filters.close}
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+
+                    <div className="space-y-4">
+                      <label className="block">
+                        <span className="mb-2 block text-sm font-medium text-slate-500">
+                          {copy.filters.searchLabel}
+                        </span>
+                        <span className="relative block">
+                          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                          <input
+                            className="h-11 w-full rounded-md border border-slate-200 bg-white pl-10 pr-3 text-base text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                            onChange={(event) => setDraftSearchQuery(event.target.value)}
+                            placeholder={copy.filters.searchPlaceholder}
+                            type="search"
+                            value={draftSearchQuery}
+                          />
+                        </span>
+                      </label>
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <label className="block">
+                          <span className="mb-2 block text-sm font-medium text-slate-500">
+                            {copy.filters.depthLabel}
+                          </span>
+                          <FilterSelect
+                            className="w-full"
+                            label={copy.filters.depthLabel}
+                            onChange={setDraftDepthFilter}
+                            options={depthFilterOptions}
+                            value={draftDepthFilter}
+                          />
+                        </label>
+                        <label className="block">
+                          <span className="mb-2 block text-sm font-medium text-slate-500">
+                            {copy.filters.typeLabel}
+                          </span>
+                          <FilterSelect
+                            className="w-full"
+                            label={copy.filters.typeLabel}
+                            onChange={setDraftTypeFilter}
+                            options={typeFilterOptions}
+                            value={draftTypeFilter}
+                          />
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="mt-5 flex justify-end gap-3">
+                      <Button
+                        variant="neutral"
+                        onClick={clearFilters}
+                      >
+                        {copy.filters.clear}
+                      </Button>
+                      <Button
+                        type="submit"
+                      >
+                        {copy.filters.apply}
+                      </Button>
+                    </div>
+                  </form>
+                ) : null}
+              </div>
+
+              {filteredPersonas.length ? (
+                <Button
+                  icon={Plus}
                   onClick={openCreateDrawer}
                 >
-                  <Plus className="h-4 w-4" />
                   {copy.create}
-                </button>
-              </div>
+                </Button>
+              ) : null}
             </div>
-          )}
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {filteredPersonas.length ? (
+              <div className="space-y-6">
+                {filteredPersonas.map((persona) => (
+                  <PersonaCard
+                    key={persona.id}
+                    copy={copy}
+                    onDelete={setDeleteTarget}
+                    onDuplicate={openDuplicateDrawer}
+                    onEdit={openEditDrawer}
+                    persona={persona}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="grid h-full min-h-[420px] place-items-center rounded-lg border border-dashed border-slate-200 bg-slate-50 px-6 text-center">
+                <div>
+                  <IconBadge tone="slate">
+                    <UsersRound className="h-5 w-5" />
+                  </IconBadge>
+                  <h3 className="mt-5 text-xl font-bold text-slate-800">{copy.empty.title}</h3>
+                  <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-slate-500">
+                    {copy.empty.body}
+                  </p>
+                  <Button
+                    className="mt-6"
+                    icon={Plus}
+                    onClick={openCreateDrawer}
+                  >
+                    {copy.create}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
         </section>
 
         <UsagePanel copy={copy} />

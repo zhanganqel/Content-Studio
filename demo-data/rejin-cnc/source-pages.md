@@ -31,6 +31,18 @@ These public pages are the selected source pages for the demo project.
 - Custom CNC Audio Knobs: https://www.rejincnc.com/custom-cnc-turned-aluminum-audio-knob-6063-aluminum-knurled-anodized/
 - Custom Fasteners: https://www.rejincnc.com/custom-cnc-turned-nut-stud-brass-aluminum-stainless-steel-fasteners/
 
+## Solution Source Pages
+
+- Precision Prototyping for Hardware Startups: https://www.rejincnc.com/service/support-dfm-service/
+- Custom Metal Parts Sourcing for Overseas Buyers: https://www.rejincnc.com/service/
+- Robotics and Automation Component Manufacturing: https://www.rejincnc.com/custom-cnc-machined-robot-joint-structural-parts-precision-metal-components/
+
+## Case Pages
+
+- Automotive Stainless Steel Connector Assembly: https://www.rejincnc.com/case/auto-parts-project-stainless-steel-connector-assembly-for-vehicle-fluid-systems/
+- Custom Audio Hardware Enclosures: https://www.rejincnc.com/case/audio-hardware-custom-enclosures-for-premium-audio-brands-customer-testimonials/
+- Medical Device Metal Parts Prototype Support: https://www.rejincnc.com/custom-cnc-machined-medical-device-metal-parts-stainless-steel-aluminum-oem-service/
+
 ## FAQ Pages
 
 - How do I order custom parts: https://www.rejincnc.com/faq/how-do-i-order-custom-parts/

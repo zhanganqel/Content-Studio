@@ -19,6 +19,7 @@ Rejin CNC Technology Co.,Ltd is used as the default demo project for an export-o
 - `audience-personas.md`: Target audiences for marketing content
 - `source-pages.md`: Public website pages used as sources
 - `services/`: Service knowledge items
+- `solutions/`: Reusable solution knowledge items
 - `products/`: Product and application examples
 - `cases/`: Case study examples
 - `faqs/`: FAQ knowledge items

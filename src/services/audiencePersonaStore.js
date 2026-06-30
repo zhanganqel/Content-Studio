@@ -1,5 +1,5 @@
 const storageKeyPrefix = 'content-studio-audience-personas:';
-const storageSchemaVersion = 2;
+const storageSchemaVersion = 3;
 
 export const organizationTypeOptions = [
   'B2B Company',
@@ -148,6 +148,48 @@ function getDemoPersonas(project) {
         'Technical detail, tolerance feasibility, material compatibility, process constraints, DFM guidance, and practical engineering examples.',
       updatedAt: '2026-06-25',
     },
+    'hardware-startup-founder': {
+      name: 'Hardware Startup Founder',
+      organizationType: 'Brand Owner',
+      organizationScale: '10-50 employees',
+      industry: 'Consumer electronics and connected hardware',
+      jobTitle: 'Founder / CEO',
+      businessDescription:
+        'Leads a small hardware team that needs prototype machining, DFM feedback, and practical manufacturing support before committing to larger production runs.',
+      painPoints:
+        'Limited in-house manufacturing experience, uncertainty about part cost, risk of prototype rework, pressure to validate product-market fit, and limited time to compare suppliers.',
+      searchGoal:
+        'Find a CNC machining partner that can review drawings, suggest manufacturable improvements, support small batches, and explain the route from prototype to production.',
+      commonQuestions:
+        'Can a supplier help improve my design before production? What is the minimum order quantity for prototype CNC parts? How can I reduce prototype cost without hurting function?',
+      preferredContentTypes: ['How-to Guides', 'Problem-Solving', 'FAQS'],
+      preferredContentDepth: 'Understanding',
+      preferredExpressionStyles: ['straightforward', 'educational', 'confident'],
+      audienceFocus:
+        'Prototype feasibility, DFM support, cost-control tradeoffs, small-batch production, fast communication, and clear next steps for RFQ submission.',
+      updatedAt: '2026-06-29',
+    },
+    'supply-chain-lead': {
+      name: 'Supply Chain Lead for Hardware Brands',
+      organizationType: 'B2B Company',
+      organizationScale: '500-1000 employees',
+      industry: 'Hardware brand manufacturing operations',
+      jobTitle: 'Supply Chain Lead',
+      businessDescription:
+        'Manages supplier risk, repeat order consistency, delivery planning, quality documentation, and communication across product teams and purchasing stakeholders.',
+      painPoints:
+        'Needs to reduce supplier fragmentation, avoid inconsistent batches, control delivery risk, and quickly explain supplier capability to internal engineering and procurement teams.',
+      searchGoal:
+        'Identify a reliable precision manufacturing supplier with broad process coverage, documented quality systems, stable communication, and experience supporting custom metal components.',
+      commonQuestions:
+        'Can one supplier cover multiple metal manufacturing processes? What quality controls are available for repeat orders? How should we compare CNC machining suppliers?',
+      preferredContentTypes: ['Comparison', 'Industry Insights', 'Problem-Solving'],
+      preferredContentDepth: 'Understanding',
+      preferredExpressionStyles: ['professional', 'objective', 'concise'],
+      audienceFocus:
+        'Supplier consolidation, repeatability, quality systems, delivery planning, export communication, and industry-specific application proof.',
+      updatedAt: '2026-06-29',
+    },
   };
 
   const mapped = demoPersonas.map((persona, index) => ({
@@ -156,11 +198,17 @@ function getDemoPersonas(project) {
     id: persona.id ?? `persona-${index + 1}`,
   }));
 
-  const selectedPersonas = mapped.filter((persona) =>
-    ['overseas-procurement-manager', 'mechanical-engineer'].includes(persona.id),
-  );
+  const preferredOrder = [
+    'overseas-procurement-manager',
+    'hardware-startup-founder',
+    'mechanical-engineer',
+    'supply-chain-lead',
+  ];
+  const selectedPersonas = preferredOrder
+    .map((id) => mapped.find((persona) => persona.id === id))
+    .filter(Boolean);
 
-  return (selectedPersonas.length ? selectedPersonas : mapped).slice(0, 2);
+  return (selectedPersonas.length ? selectedPersonas : mapped).slice(0, 4);
 }
 
 function isLegacyGeneratedPersonaSet(personas) {
@@ -190,6 +238,14 @@ function shouldMigrateLegacyPersonas(personas, project) {
   }
 
   return Boolean(project?.demoProject) && personas.length === 0;
+}
+
+function shouldRefreshDemoPersonas(personas, project, schemaVersion) {
+  if (!project?.demoProject) {
+    return false;
+  }
+
+  return schemaVersion !== storageSchemaVersion || personas.length < 3;
 }
 
 export function createEmptyAudiencePersona() {
@@ -231,6 +287,12 @@ export function getAudiencePersonaDrafts(project) {
     const parsed = JSON.parse(stored);
 
     if (parsed && Array.isArray(parsed.personas)) {
+      if (shouldRefreshDemoPersonas(parsed.personas, project, parsed.schemaVersion)) {
+        const nextPersonas = createDefaultAudiencePersonas(project);
+        window.localStorage.setItem(getStorageKey(project.id), serializePersonas(nextPersonas));
+        return nextPersonas;
+      }
+
       return parsed.personas;
     }
 
@@ -239,6 +301,12 @@ export function getAudiencePersonaDrafts(project) {
     }
 
     if (shouldMigrateLegacyPersonas(parsed, project)) {
+      const nextPersonas = createDefaultAudiencePersonas(project);
+      window.localStorage.setItem(getStorageKey(project.id), serializePersonas(nextPersonas));
+      return nextPersonas;
+    }
+
+    if (shouldRefreshDemoPersonas(parsed, project)) {
       const nextPersonas = createDefaultAudiencePersonas(project);
       window.localStorage.setItem(getStorageKey(project.id), serializePersonas(nextPersonas));
       return nextPersonas;

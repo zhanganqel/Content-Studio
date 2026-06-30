@@ -12,6 +12,8 @@ import {
   X,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import Button from '../ui/Button.jsx';
+import PageHeader from '../ui/PageHeader.jsx';
 import Toast from '../ui/Toast.jsx';
 import {
   getBrandProfileDraft,
@@ -289,14 +291,14 @@ function TagInput({
               placeholder={placeholder}
               value={inputValue}
             />
-            <button
-              type="button"
-              className="inline-flex items-center gap-1 rounded-md bg-slate-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-700"
+            <Button
+              className="flex-none"
+              icon={Plus}
+              variant="secondary"
               onClick={addTag}
             >
-              <Plus className="h-4 w-4" />
               {t.brandProfile.add}
-            </button>
+            </Button>
           </div>
         ) : null}
       </div>
@@ -436,22 +438,20 @@ function ConfirmDialog({ onContinue, onDiscard, t }) {
         <h3 className="text-xl font-bold text-slate-900">{t.brandProfile.discardTitle}</h3>
         <p className="mt-3 text-sm leading-6 text-slate-500">{t.brandProfile.discardBody}</p>
         <div className="mt-6 flex justify-end gap-3">
-          <button
+          <Button
             data-testid="discard-dialog-continue"
-            type="button"
-            className="rounded-md border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+            variant="neutral"
             onClick={onContinue}
           >
             {t.brandProfile.continueEditing}
-          </button>
-          <button
+          </Button>
+          <Button
             data-testid="discard-dialog-discard"
-            type="button"
-            className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700"
+            variant="danger"
             onClick={onDiscard}
           >
             {t.brandProfile.discardChanges}
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -546,46 +546,39 @@ export default function BrandProfilePage({ project, t }) {
         />
       ) : null}
 
-      <header className="flex items-start justify-between gap-6 rounded-lg bg-slate-50 px-7 py-6">
-        <div>
-          <h2 className="text-2xl font-bold tracking-normal text-slate-800">{copy.title}</h2>
-          <p className="mt-3 max-w-4xl text-base leading-7 text-slate-500">{copy.description}</p>
-        </div>
-        <div className="flex flex-none items-center gap-3">
-          {editing ? (
+      <PageHeader
+        actions={
+          editing ? (
             <>
-              <button
+              <Button
                 data-testid="brand-profile-cancel"
-                type="button"
-                className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                icon={X}
+                variant="neutral"
                 onClick={handleCancel}
               >
-                <X className="h-4 w-4" />
                 {copy.cancel}
-              </button>
-              <button
+              </Button>
+              <Button
                 data-testid="brand-profile-save"
-                type="button"
-                className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-500"
+                icon={Save}
                 onClick={handleSave}
               >
-                <Save className="h-4 w-4" />
                 {copy.save}
-              </button>
+              </Button>
             </>
           ) : (
-            <button
+            <Button
               data-testid="brand-profile-edit"
-              type="button"
-              className="inline-flex items-center gap-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700"
+              icon={Pencil}
               onClick={handleEdit}
             >
-              <Pencil className="h-4 w-4" />
               {copy.edit}
-            </button>
-          )}
-        </div>
-      </header>
+            </Button>
+          )
+        }
+        description={copy.description}
+        title={copy.title}
+      />
 
       <div className="grid gap-8 xl:grid-cols-[minmax(360px,0.9fr)_minmax(620px,1.8fr)]">
         <SectionShell
