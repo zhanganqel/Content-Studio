@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Button from '../ui/Button.jsx';
+import FixedPageLayout from '../ui/FixedPageLayout.jsx';
 import PageHeader from '../ui/PageHeader.jsx';
 import Toast from '../ui/Toast.jsx';
 import {
@@ -534,7 +535,7 @@ export default function BrandProfilePage({ project, t }) {
   }
 
   return (
-    <div className="mx-auto max-w-[1600px] space-y-8">
+    <div className="h-full min-h-0">
       {toast ? (
         <Toast key={toast.id} message={toast.message} testId="brand-profile-toast" type="success" />
       ) : null}
@@ -546,41 +547,45 @@ export default function BrandProfilePage({ project, t }) {
         />
       ) : null}
 
-      <PageHeader
-        actions={
-          editing ? (
-            <>
-              <Button
-                data-testid="brand-profile-cancel"
-                icon={X}
-                variant="neutral"
-                onClick={handleCancel}
-              >
-                {copy.cancel}
-              </Button>
-              <Button
-                data-testid="brand-profile-save"
-                icon={Save}
-                onClick={handleSave}
-              >
-                {copy.save}
-              </Button>
-            </>
-          ) : (
-            <Button
-              data-testid="brand-profile-edit"
-              icon={Pencil}
-              onClick={handleEdit}
-            >
-              {copy.edit}
-            </Button>
-          )
+      <FixedPageLayout
+        bodyClassName="pb-8"
+        header={
+          <PageHeader
+            actions={
+              editing ? (
+                <>
+                  <Button
+                    data-testid="brand-profile-cancel"
+                    icon={X}
+                    variant="neutral"
+                    onClick={handleCancel}
+                  >
+                    {copy.cancel}
+                  </Button>
+                  <Button
+                    data-testid="brand-profile-save"
+                    icon={Save}
+                    onClick={handleSave}
+                  >
+                    {copy.save}
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  data-testid="brand-profile-edit"
+                  icon={Pencil}
+                  onClick={handleEdit}
+                >
+                  {copy.edit}
+                </Button>
+              )
+            }
+            description={copy.description}
+            title={copy.title}
+          />
         }
-        description={copy.description}
-        title={copy.title}
-      />
-
-      <div className="grid gap-8 xl:grid-cols-[minmax(360px,0.9fr)_minmax(620px,1.8fr)]">
+      >
+        <div className="grid gap-8 xl:grid-cols-[minmax(360px,0.9fr)_minmax(620px,1.8fr)]">
         <SectionShell
           hint={copy.sections.basicInfo.hint}
           icon={Building2}
@@ -632,11 +637,11 @@ export default function BrandProfilePage({ project, t }) {
             <TagInput
               disabled={disabled}
               label={fields.coreCategories.label}
+              minHeightClass="min-h-[152px]"
               onChange={(value) => updateField('coreCategories', value)}
               placeholder={fields.coreCategories.placeholder || copy.tagInputPlaceholder}
               t={t}
               testId="brand-profile-core-categories"
-              variant="compact"
               values={draftData.coreCategories}
             />
           </div>
@@ -653,7 +658,7 @@ export default function BrandProfilePage({ project, t }) {
               <TextAreaField
                 disabled={disabled}
                 label={fields.companyIntroduction.label}
-                minHeightClass="min-h-[190px]"
+                minHeightClass="min-h-[260px]"
                 minRows={7}
                 onChange={(value) => updateField('companyIntroduction', value)}
                 placeholder={fields.companyIntroduction.placeholder}
@@ -768,7 +773,8 @@ export default function BrandProfilePage({ project, t }) {
             </FactPanel>
           </div>
         </SectionShell>
-      </div>
+        </div>
+      </FixedPageLayout>
     </div>
   );
 }

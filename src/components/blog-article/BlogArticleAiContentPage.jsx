@@ -1,0 +1,1440 @@
+import {
+  ArrowLeft,
+  BookOpen,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  ClipboardList,
+  ExternalLink,
+  FileText,
+  PauseCircle,
+  Save,
+  Sparkles,
+  X,
+} from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import Toast from '../ui/Toast.jsx';
+import {
+  createContentDemoData,
+  resetAiContentTask,
+  updateAiCreationTask,
+} from '../../services/blogArticleAiStore.js';
+import { createBlogArticleId, getTodayString, upsertBlogArticle } from '../../services/blogArticleStore.js';
+
+const stepItems = ['创建任务', '文章策划', '标题大纲', '内容生成'];
+
+function getArtifactIcon(type) {
+  if (type === 'evaluation') return ClipboardList;
+  if (type === 'tdk') return Sparkles;
+  if (type === 'references') return BookOpen;
+  return FileText;
+}
+
+function openAppViewInNewTab(params) {
+  if (typeof window === 'undefined') return;
+
+  const url = new URL(window.location.href);
+  url.search = '';
+  Object.entries(params).forEach(([key, value]) => {
+    if (value) url.searchParams.set(key, value);
+  });
+  window.open(url.toString(), '_blank', 'noopener,noreferrer');
+}
+
+function getArtifactIdsFromItem(item) {
+  return item?.artifactIds ?? (item?.artifactId ? [item.artifactId] : []);
+}
+
+function getTaskSteps(task) {
+  if (Array.isArray(task?.steps) && task.steps.length) {
+    return task.steps.map((step, index) => ({
+      ...step,
+      artifactIds: getArtifactIdsFromItem(step),
+      id: step.id ?? `${task.id}-step-${index}`,
+      thinking: step.thinking ?? [],
+    }));
+  }
+
+  return [
+    {
+      ...task,
+      artifactIds: getArtifactIdsFromItem(task),
+      id: task?.id,
+      thinking: task?.thinking ?? [],
+    },
+  ];
+}
+
+function getStepRevealCount(step) {
+  return (step?.thinking?.length ?? 0) + (step?.sourceList ? 1 : 0);
+}
+
+function getTaskArtifactIds(task) {
+  return getTaskSteps(task).flatMap((step) => step.artifactIds).filter(Boolean);
+}
+
+function getWorkflowArtifactIds(workflow) {
+  return workflow.flatMap((item) => getTaskArtifactIds(item)).filter(Boolean);
+}
+
+function getWorkflowThinkingCounts(workflow, endIndex = workflow.length) {
+  return Object.fromEntries(
+    workflow
+      .slice(0, endIndex)
+      .flatMap((item) => getTaskSteps(item).map((step) => [step.id, getStepRevealCount(step)])),
+  );
+}
+
+function isStepDone(step, visibleThinkingCounts, visibleArtifactIds) {
+  const thinkingCount = visibleThinkingCounts[step.id] ?? 0;
+  const allArtifactsVisible = step.artifactIds.every((artifactId) => visibleArtifactIds.includes(artifactId));
+  return thinkingCount >= getStepRevealCount(step) && allArtifactsVisible;
+}
+
+function isStepReachable(steps, stepIndex, visibleThinkingCounts, visibleArtifactIds, taskCompleted) {
+  if (taskCompleted) return true;
+  if (stepIndex === 0) return true;
+
+  return steps
+    .slice(0, stepIndex)
+    .every((step) => isStepDone(step, visibleThinkingCounts, visibleArtifactIds));
+}
+
+function getActiveStepState(task, visibleThinkingCounts, visibleArtifactIds) {
+  const steps = getTaskSteps(task);
+  const step = steps.find((candidate) => !isStepDone(candidate, visibleThinkingCounts, visibleArtifactIds));
+
+  if (!step) {
+    return {
+      allArtifactsVisible: true,
+      artifactIds: [],
+      complete: true,
+      hasMoreThinking: false,
+      step: null,
+      thinkingCount: 0,
+    };
+  }
+
+  const thinkingCount = visibleThinkingCounts[step.id] ?? 0;
+  const artifactIds = step.artifactIds;
+  const allArtifactsVisible = artifactIds.every((artifactId) => visibleArtifactIds.includes(artifactId));
+
+  return {
+    allArtifactsVisible,
+    artifactIds,
+    complete: false,
+    hasMoreThinking: thinkingCount < getStepRevealCount(step),
+    step,
+    thinkingCount,
+  };
+}
+
+function getInitialPlaybackState(workflow, task) {
+  const alreadyCompleted = task?.stage === 'content-completed';
+  const savedCompletedTaskIds = task?.content?.completedTaskIds ?? [];
+  const savedArtifactId = task?.content?.currentArtifactId ?? '';
+  const savedVisibleArtifactIds = task?.content?.visibleArtifactIds ?? [];
+
+  if (alreadyCompleted) {
+    return {
+      completedTaskIds: workflow.map((item) => item.id),
+      currentTaskIndex: workflow.length,
+      isComplete: true,
+      selectedArtifactId: savedArtifactId,
+      visibleArtifactIds: getWorkflowArtifactIds(workflow),
+      visibleThinkingCounts: getWorkflowThinkingCounts(workflow),
+    };
+  }
+
+  if (task?.stage === 'content-stopped' && savedCompletedTaskIds.length) {
+    const currentTaskIndex = Math.min(savedCompletedTaskIds.length, workflow.length - 1);
+    return {
+      completedTaskIds: savedCompletedTaskIds,
+      currentTaskIndex,
+      isComplete: false,
+      selectedArtifactId: savedArtifactId,
+      visibleArtifactIds: savedVisibleArtifactIds,
+      visibleThinkingCounts: getWorkflowThinkingCounts(workflow, currentTaskIndex + 1),
+    };
+  }
+
+  return {
+    completedTaskIds: [],
+    currentTaskIndex: 0,
+    isComplete: false,
+    selectedArtifactId: '',
+    visibleArtifactIds: [],
+    visibleThinkingCounts: {},
+  };
+}
+
+function Stepper() {
+  return (
+    <div className="flex flex-1 items-center justify-center gap-5">
+      {stepItems.map((step, index) => (
+        <div key={step} className="flex items-center gap-3">
+          <span
+            className={`inline-flex h-7 w-7 items-center justify-center rounded-full text-[14px] font-semibold ${
+              index === 3 ? 'bg-[#365EFF] text-white' : 'bg-[#E9ECF2] text-[#A8ABB2]'
+            }`}
+          >
+            {index + 1}
+          </span>
+          <span className={`text-[14px] font-semibold ${index === 3 ? 'text-[#303133]' : 'text-[#A8ABB2]'}`}>
+            {step}
+          </span>
+          {index < stepItems.length - 1 ? <span className="h-px w-16 bg-[#E4E7ED]" /> : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AgentAvatar({ agentTitle }) {
+  if (agentTitle === '用户') {
+    return (
+      <div className="flex h-10 w-10 flex-none items-center justify-center rounded-full border border-[#DDE3F0] bg-[#F7F8FB] text-[15px] font-bold text-[#606266]">
+        用
+      </div>
+    );
+  }
+
+  const isEvaluator = agentTitle.includes('评估');
+  return (
+    <div
+      className={`flex h-10 w-10 flex-none items-center justify-center rounded-full border text-[15px] font-bold ${
+        isEvaluator
+          ? 'border-[#BEE3FF] bg-[#EFF8FF] text-[#0284C7]'
+          : 'border-[#C7D2FE] bg-[#EEF2FF] text-[#365EFF]'
+      }`}
+    >
+      {isEvaluator ? '评' : agentTitle.includes('研究') ? '研' : '写'}
+    </div>
+  );
+}
+
+function StatusIcon({ completed, stopped }) {
+  if (completed) {
+    return (
+      <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-[#10B981] text-[#10B981]">
+        <Check className="h-3 w-3" />
+      </span>
+    );
+  }
+
+  if (stopped) {
+    return (
+      <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-[#F59E0B] text-[#F59E0B]">
+        <PauseCircle className="h-3 w-3" />
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border-2 border-[#365EFF] border-t-transparent">
+      <span className="h-1.5 w-1.5 rounded-full bg-[#365EFF]" />
+    </span>
+  );
+}
+
+function ThinkingBlock({ children }) {
+  const text = typeof children === 'string' ? children : '';
+  const emphasisMatch = text.match(/^\*\*(.*)\*\*$/);
+
+  return (
+    <div
+      className={`ml-2 border-l-2 pl-5 text-[14px] leading-[22px] ${
+        emphasisMatch
+          ? 'border-[#365EFF] font-semibold text-[#303133]'
+          : 'border-[#E4E7ED] text-[#606266]'
+      }`}
+      style={{ animation: 'aiContentFadeInUp 180ms ease-out both' }}
+    >
+      {emphasisMatch ? emphasisMatch[1] : children}
+    </div>
+  );
+}
+
+function ArtifactCard({ artifact, onClick, selected }) {
+  const Icon = getArtifactIcon(artifact.type);
+
+  return (
+    <button
+      type="button"
+      className={`ml-2 flex h-[78px] w-[520px] max-w-full items-center gap-3 rounded-[8px] border p-4 text-left transition hover:border-[#365EFF] hover:bg-[#F5F7FF] ${
+        selected ? 'border-[#365EFF] bg-[#EEF3FF]' : 'border-[#DCDFE6] bg-white'
+      }`}
+      onClick={onClick}
+    >
+      <span className="inline-flex h-11 w-11 flex-none items-center justify-center rounded-[8px] bg-[#5B7CFF] text-white">
+        <Icon className="h-5 w-5" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[14px] font-semibold leading-[22px] text-[#303133]">{artifact.title}</span>
+        <span className="mt-0.5 block truncate text-[13px] leading-[20px] text-[#606266]">{artifact.subtitle}</span>
+      </span>
+      <ChevronRight className="h-5 w-5 flex-none text-[#A8ABB2]" />
+    </button>
+  );
+}
+
+function StepSourceList({ sourceList }) {
+  const items = sourceList?.items ?? [];
+
+  return (
+    <div
+      className="ml-2 border-l-2 border-[#E4E7ED] pl-5"
+      style={{ animation: 'aiContentFadeInUp 180ms ease-out both' }}
+    >
+      {items.length ? (
+        sourceList.variant === 'knowledge-assets' ? (
+          <div className="flex flex-wrap gap-x-8 gap-y-3">
+            {items.map((item) => (
+              <span key={item.id} className="inline-flex min-w-0 max-w-[240px] items-center gap-2 text-[14px] leading-[22px] text-[#303133]">
+                <span className="inline-flex h-6 w-6 flex-none items-center justify-center rounded-[4px] bg-[#365EFF] text-white">
+                  <FileText className="h-3.5 w-3.5" />
+                </span>
+                <span className="truncate">{item.label}</span>
+              </span>
+            ))}
+          </div>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {items.map((item) => (
+              <span
+                key={item.id}
+                className="inline-flex max-w-[260px] items-center rounded-full border border-[#C7D2FE] bg-[#EEF3FF] px-3 py-1 text-[14px] font-semibold leading-[20px] text-[#365EFF]"
+              >
+                <span className="truncate">{item.label}</span>
+              </span>
+            ))}
+          </div>
+        )
+      ) : (
+        <div className="rounded-[6px] border border-dashed border-[#DCDFE6] bg-[#F7F8FB] px-3 py-2 text-[13px] leading-[20px] text-[#909399]">
+          {sourceList.emptyText}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RevisionRequestBox({ disabled, onChange, onSubmit, value }) {
+  return (
+    <form
+      className={`ml-14 mb-8 w-[560px] max-w-[calc(100%-56px)] rounded-[8px] border p-4 ${
+        disabled ? 'border-[#DCDFE6] bg-[#F7F8FB]' : 'border-[#C7D2FE] bg-[#F5F7FF]'
+      }`}
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSubmit();
+      }}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h3 className="text-[14px] font-semibold leading-[22px] text-[#303133]">修改要求</h3>
+          <p className="mt-0.5 text-[12px] leading-[18px] text-[#909399]">
+            {disabled ? '已提交，正在按要求修改' : '内容评估完成后，可继续让 AI 按要求修改并复评。'}
+          </p>
+        </div>
+        {disabled ? (
+          <span className="rounded-full bg-[#EEF3FF] px-2.5 py-1 text-[12px] font-semibold text-[#365EFF]">
+            处理中
+          </span>
+        ) : null}
+      </div>
+      <textarea
+        autoComplete="off"
+        className="mt-3 h-[88px] w-full resize-none rounded-[6px] border border-[#DCDFE6] bg-white px-3 py-2 text-[14px] leading-[22px] text-[#303133] outline-none transition placeholder:text-[#B4B8C2] focus:border-[#365EFF] focus:ring-2 focus:ring-[#E8EEFF] disabled:cursor-not-allowed disabled:bg-[#F5F7FA] disabled:text-[#606266]"
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder="请输入希望 AI 继续修改的要求，如加强采购转化、压缩篇幅、补充某类案例等"
+        value={value}
+      />
+      <div className="mt-3 flex items-center justify-between gap-3">
+        <p className="text-[12px] leading-[18px] text-[#909399]">
+          提交后会生成修改记录、文章终稿新版，并重新评估文章与 TDK。
+        </p>
+        <button
+          type="submit"
+          className="inline-flex h-8 flex-none items-center justify-center rounded-[6px] bg-[#365EFF] px-4 text-[13px] font-semibold text-white transition hover:bg-[#2547D0] disabled:cursor-not-allowed disabled:bg-[#A8B9FF]"
+          disabled={disabled || !value.trim()}
+        >
+          提交修改要求
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function WorkflowTask({
+  artifacts,
+  completed,
+  isCurrent,
+  isStopped,
+  onArtifactClick,
+  selectedArtifactId,
+  showArtifactIds,
+  task,
+  visibleThinkingCounts,
+}) {
+  const steps = getTaskSteps(task);
+
+  if (task.kind === 'user-request') {
+    const userStep = steps[0];
+    const thinkingCount = visibleThinkingCounts[userStep.id] ?? 0;
+    const visibleText = userStep.thinking.slice(0, thinkingCount).join('\n') || task.runningText;
+
+    return (
+      <section className="flex justify-end pb-8">
+        <div className="flex max-w-[74%] items-start justify-end gap-3">
+          <div className="min-w-0 text-right">
+            <div className="text-[13px] font-semibold leading-[20px] text-[#606266]">{task.completedText ?? task.taskName}</div>
+            <div
+              className="mt-2 whitespace-pre-wrap rounded-[8px] bg-[#365EFF] px-4 py-3 text-left text-[14px] leading-[22px] text-white shadow-[0_4px_12px_rgba(54,94,255,0.16)]"
+              style={{ animation: 'aiContentFadeInUp 180ms ease-out both' }}
+            >
+              {visibleText}
+            </div>
+          </div>
+          <AgentAvatar agentTitle={task.agentTitle} />
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="flex gap-4">
+      <AgentAvatar agentTitle={task.agentTitle} />
+      <div className="min-w-0 flex-1 pb-8">
+        <div className="text-[15px] font-semibold leading-[24px] text-[#303133]">{task.agentTitle}</div>
+        <div className="mt-3 space-y-5">
+          {steps.map((step, stepIndex) => {
+            const reachable = isStepReachable(steps, stepIndex, visibleThinkingCounts, showArtifactIds, completed);
+            if (!reachable) return null;
+
+            const stepCompleted = completed || isStepDone(step, visibleThinkingCounts, showArtifactIds);
+            const stepActive =
+              isCurrent &&
+              !completed &&
+              reachable &&
+              !stepCompleted &&
+              steps.slice(0, stepIndex).every((candidate) => isStepDone(candidate, visibleThinkingCounts, showArtifactIds));
+            const thinkingCount = visibleThinkingCounts[step.id] ?? 0;
+
+            return (
+              <div key={step.id} className="flex items-start gap-3">
+                <StatusIcon completed={stepCompleted} stopped={isStopped && stepActive} />
+                <div className="min-w-0 flex-1">
+                  <div className="text-[14px] font-semibold leading-[20px] text-[#303133]">
+                    {stepCompleted
+                      ? step.completedText ?? `${step.taskName}完成`
+                      : isStopped && stepActive
+                        ? `${step.taskName}已中止`
+                        : step.runningText}
+                  </div>
+                  <div className="mt-3 space-y-4">
+                    {step.thinking.slice(0, Math.min(thinkingCount, step.thinking.length)).map((paragraph, index) => (
+                      <ThinkingBlock key={`${step.id}-thinking-${index}`}>{paragraph}</ThinkingBlock>
+                    ))}
+                    {step.sourceList && thinkingCount >= getStepRevealCount(step) ? (
+                      <StepSourceList sourceList={step.sourceList} />
+                    ) : null}
+                    {step.artifactIds
+                      .filter((artifactId) => showArtifactIds.includes(artifactId))
+                      .map((artifactId) => {
+                        const artifact = artifacts[artifactId];
+                        if (!artifact) return null;
+                        return (
+                          <ArtifactCard
+                            key={artifactId}
+                            artifact={artifact}
+                            onClick={() => onArtifactClick(artifactId)}
+                            selected={selectedArtifactId === artifactId}
+                          />
+                        );
+                      })}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function EmptyPreview() {
+  return (
+    <div className="flex h-full items-center justify-center px-8 text-center">
+      <div>
+        <span className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-full bg-[#EEF3FF] text-[#365EFF]">
+          <FileText className="h-6 w-6" />
+        </span>
+        <h2 className="mt-4 text-[18px] font-semibold leading-[28px] text-[#303133]">选择左侧产物查看预览</h2>
+        <p className="mt-2 text-[14px] leading-[22px] text-[#909399]">
+          文章、评估报告、修改建议和 TDK 生成后不会自动切换，需要手动点击卡片查看。
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function RatingBadge({ rating }) {
+  const classes = {
+    High: 'bg-[#ECFDF5] text-[#00A85F]',
+    Medium: 'bg-[#FFF7E6] text-[#D97706]',
+    Low: 'bg-[#FFF1F0] text-[#D92D20]',
+  };
+
+  return (
+    <span className={`inline-flex h-6 items-center rounded-full px-2 text-[12px] font-semibold ${classes[rating]}`}>
+      {rating}
+    </span>
+  );
+}
+
+function ArticleBody({ content }) {
+  const lines = content.split('\n');
+  const blocks = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index].trim();
+    if (!line) continue;
+
+    if (line.startsWith('# ')) {
+      continue;
+    }
+
+    if (line.startsWith('## ')) {
+      blocks.push(
+        <h2 key={`heading-${index}`} className="mt-7 text-[18px] font-bold leading-[28px] text-[#303133]">
+          {line.replace(/^##\s*/, '')}
+        </h2>,
+      );
+      continue;
+    }
+
+    const imageMatch = line.match(/^!\[(.*)]\((.*)\)$/);
+    if (imageMatch) {
+      const captionLine = lines[index + 1]?.trim() ?? '';
+      const caption = captionLine.startsWith('Caption: ') ? captionLine.replace(/^Caption:\s*/, '') : '';
+      if (caption) index += 1;
+
+      blocks.push(
+        <figure key={`image-${index}`} className="my-6 overflow-hidden rounded-[8px] border border-[#EBEEF5] bg-[#F7F8FB]">
+          <img
+            alt={imageMatch[1]}
+            className="h-auto max-h-[340px] w-full object-cover"
+            loading="lazy"
+            src={imageMatch[2]}
+          />
+          {caption ? (
+            <figcaption className="border-t border-[#EBEEF5] px-4 py-3 text-[13px] leading-[20px] text-[#606266]">
+              {caption}
+            </figcaption>
+          ) : null}
+        </figure>,
+      );
+      continue;
+    }
+
+    blocks.push(
+      <p key={`paragraph-${index}`} className="mt-4 text-[15px] leading-[28px] text-[#3F3F46]">
+        {line}
+      </p>,
+    );
+  }
+
+  return blocks;
+}
+
+function ArticlePreview({ artifact }) {
+  const [highlight, setHighlight] = useState(true);
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex h-[58px] flex-none items-center justify-between border-b border-[#EBEEF5] px-6">
+        <h2 className="text-[16px] font-bold leading-[24px] text-[#303133]">{artifact.title}</h2>
+        <label className="inline-flex items-center gap-2 text-[13px] font-semibold text-[#606266]">
+          高亮引用
+          <input
+            type="checkbox"
+            className="h-4 w-4 accent-[#365EFF]"
+            checked={highlight}
+            onChange={(event) => setHighlight(event.target.checked)}
+          />
+        </label>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-7 py-6">
+        <h1 className="text-[22px] font-bold leading-[32px] text-[#303133]">{artifact.headline}</h1>
+        <div className="mt-3 flex flex-wrap gap-2 text-[13px] text-[#606266]">
+          {(artifact.keywords ?? []).map((keyword) => (
+            <span key={keyword} className="rounded-full bg-[#F5F7FA] px-2.5 py-1">
+              {keyword}
+            </span>
+          ))}
+        </div>
+        <article
+          className={`mt-6 ${
+            highlight ? '[&_strong]:rounded-sm [&_strong]:bg-[#FFF7D6] [&_strong]:px-1' : ''
+          }`}
+        >
+          <ArticleBody content={artifact.content} />
+        </article>
+      </div>
+    </div>
+  );
+}
+
+function EvaluationPreview({ artifact }) {
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex h-[58px] flex-none items-center justify-between border-b border-[#EBEEF5] px-6">
+        <div>
+          <h2 className="text-[16px] font-bold leading-[24px] text-[#303133]">{artifact.title}</h2>
+          <p className="mt-0.5 text-[13px] leading-[20px] text-[#909399]">{artifact.subtitle}</p>
+        </div>
+        <span
+          className={`rounded-full px-3 py-1 text-[13px] font-semibold ${
+            artifact.passed ? 'bg-[#ECFDF5] text-[#00A85F]' : 'bg-[#FFF1F0] text-[#D92D20]'
+          }`}
+        >
+          {artifact.passed ? '通过' : '未通过'}
+        </span>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto bg-[#F7F8FB] px-6 py-5">
+        <div className="rounded-[8px] bg-white p-4 text-[14px] leading-[22px] text-[#606266]">{artifact.summary}</div>
+        <div className="mt-4 space-y-4">
+          {artifact.groups.map((group) => (
+            <section key={group.name} className="rounded-[8px] bg-white p-4">
+              <h3 className="text-[15px] font-bold leading-[24px] text-[#303133]">{group.name}</h3>
+              <div className="mt-3 overflow-hidden rounded-[8px] border border-[#EBEEF5]">
+                <table className="w-full table-fixed text-left text-[13px]">
+                  <thead className="bg-[#F7F8FB] text-[#606266]">
+                    <tr>
+                      <th className="w-[28%] px-3 py-2 font-semibold">评估项</th>
+                      <th className="w-[14%] px-3 py-2 font-semibold">评级</th>
+                      <th className="w-[14%] px-3 py-2 font-semibold">结果</th>
+                      <th className="px-3 py-2 font-semibold">优化建议</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {group.items.map((item) => (
+                      <tr key={item.name} className="border-t border-[#EBEEF5]">
+                        <td className="px-3 py-2 font-medium text-[#303133]">{item.name}</td>
+                        <td className="px-3 py-2"><RatingBadge rating={item.rating} /></td>
+                        <td className={`px-3 py-2 font-semibold ${item.pass ? 'text-[#00A85F]' : 'text-[#D92D20]'}`}>
+                          {item.pass ? 'pass' : 'fail'}
+                        </td>
+                        <td className="px-3 py-2 leading-[20px] text-[#606266]">{item.suggestion || '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SuggestionPreview({ artifact }) {
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex h-[58px] flex-none items-center border-b border-[#EBEEF5] px-6">
+        <h2 className="text-[16px] font-bold leading-[24px] text-[#303133]">{artifact.title}</h2>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+        <div className="space-y-3">
+          {artifact.items.map((item) => (
+            <div key={`${item.group}-${item.metric}`} className="rounded-[8px] border border-[#EBEEF5] p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-[14px] font-bold text-[#303133]">{item.group} / {item.metric}</div>
+                <RatingBadge rating={item.rating} />
+              </div>
+              <p className="mt-2 text-[14px] leading-[22px] text-[#606266]">{item.suggestion}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RevisionPreview({ artifact }) {
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex h-[58px] flex-none items-center border-b border-[#EBEEF5] px-6">
+        <h2 className="text-[16px] font-bold leading-[24px] text-[#303133]">{artifact.title}</h2>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+        <div className="space-y-4">
+          {artifact.changes.map((change, index) => (
+            <div key={`${change.type}-${index}`} className="space-y-2">
+              {change.before ? (
+                <div className="rounded-[8px] bg-[#F5F7FA] px-4 py-3 text-[14px] leading-[22px] text-[#909399] line-through">
+                  {change.before}
+                </div>
+              ) : null}
+              {change.after ? (
+                <div className="rounded-[8px] border border-[#CDEFD8] bg-[#ECFDF5] px-4 py-3 text-[14px] leading-[22px] text-[#00A85F]">
+                  + {change.after}
+                </div>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TdkPreview({ artifact }) {
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex h-[58px] flex-none items-center border-b border-[#EBEEF5] px-6">
+        <h2 className="text-[16px] font-bold leading-[24px] text-[#303133]">文章元信息</h2>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-7 py-6">
+        <label className="block">
+          <span className="mb-2 block text-[14px] font-semibold text-[#303133]">标题</span>
+          <input className="h-10 w-full rounded-[6px] border border-[#DCDFE6] px-3 text-[14px]" readOnly value={artifact.tdk.title} />
+        </label>
+        <div className="mt-5">
+          <span className="mb-2 block text-[14px] font-semibold text-[#303133]">关键词</span>
+          <div className="flex min-h-10 flex-wrap gap-2 rounded-[6px] border border-[#DCDFE6] px-3 py-2">
+            {artifact.tdk.keywords.map((keyword) => (
+              <span key={keyword} className="rounded-full bg-[#EEF3FF] px-2.5 py-1 text-[13px] font-semibold text-[#365EFF]">
+                {keyword}
+              </span>
+            ))}
+          </div>
+        </div>
+        <label className="mt-5 block">
+          <span className="mb-2 block text-[14px] font-semibold text-[#303133]">描述</span>
+          <textarea
+            className="h-[180px] w-full resize-none rounded-[6px] border border-[#DCDFE6] px-3 py-2 text-[14px] leading-[22px]"
+            readOnly
+            value={artifact.tdk.description}
+          />
+        </label>
+      </div>
+    </div>
+  );
+}
+
+function ReferenceOutline({ outline }) {
+  if (!outline?.length) {
+    return <p className="text-[14px] leading-[22px] text-[#909399]">暂无可展示的大纲结构。</p>;
+  }
+
+  return (
+    <div className="space-y-3">
+      {outline.map((section, index) => (
+        <div key={`${section.title}-${index}`} className="space-y-2">
+          <div className="flex items-center gap-2 text-[14px] font-semibold text-[#303133]">
+            <span className="inline-flex h-5 items-center rounded-[4px] border border-[#C7D2FE] px-1.5 text-[12px] font-bold text-[#365EFF]">
+              {section.level}
+            </span>
+            {section.title}
+          </div>
+          {section.children?.length ? (
+            <ul className="ml-10 list-disc space-y-1 text-[13px] leading-[20px] text-[#606266]">
+              {section.children.map((child) => (
+                <li key={child}>{child}</li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ReferenceBlockCard({ block, expanded, onOpenKnowledgeItem, onOpenSourcePreview, onToggle }) {
+  const isReferenceWeb = block.blockKind === 'reference-web';
+  const isKnowledgeItem = block.blockKind === 'knowledge-item';
+  const isKnowledgeAsset = block.blockKind === 'knowledge-asset';
+
+  function handleSourceClick(event) {
+    event.stopPropagation();
+    if (isReferenceWeb && block.sourceUrl) {
+      window.open(block.sourceUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    if (isKnowledgeItem) {
+      onOpenKnowledgeItem(block);
+      return;
+    }
+
+    if (isKnowledgeAsset) {
+      onOpenSourcePreview(block);
+    }
+  }
+
+  return (
+    <article className={`rounded-[8px] border ${expanded ? 'border-[#6B7DFF] bg-[#F5F7FF]' : 'border-[#EBEEF5] bg-white'}`}>
+      <div className="flex items-start gap-3 p-4">
+        <button type="button" className="min-w-0 flex-1 text-left" onClick={onToggle}>
+          <div className="text-[14px] font-bold leading-[22px] text-[#303133]">标题：{block.title}</div>
+          <p className="mt-1 text-[14px] leading-[22px] text-[#606266]">内容：{block.content}</p>
+        </button>
+        <button
+          type="button"
+          className="inline-flex h-7 w-7 flex-none items-center justify-center rounded-[6px] text-[#909399] transition hover:bg-white hover:text-[#365EFF]"
+          onClick={onToggle}
+          aria-label={expanded ? '收起详情' : '展开详情'}
+        >
+          {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+        </button>
+      </div>
+
+      <div className="px-4 pb-4">
+        <div className="flex flex-wrap items-center gap-2 text-[13px] leading-[20px]">
+          <span className="text-[#A8ABB2]">{block.sourceLabel || '来源'}：</span>
+          <button
+            type="button"
+            className="inline-flex min-w-0 items-center gap-1 font-semibold text-[#365EFF] hover:text-[#2547D0]"
+            onClick={handleSourceClick}
+          >
+            <span className="truncate">{block.sourceName}</span>
+            {isReferenceWeb || isKnowledgeAsset ? <ExternalLink className="h-3.5 w-3.5 flex-none" /> : null}
+          </button>
+        </div>
+
+        {expanded ? (
+          <div className="mt-4 rounded-[8px] border border-[#EBEEF5] bg-white px-4 py-3">
+            {isReferenceWeb ? (
+              <ReferenceOutline outline={block.outline} />
+            ) : (
+              <p className="whitespace-pre-line text-[14px] leading-[24px] text-[#606266]">
+                {block.fullContent || block.content}
+              </p>
+            )}
+          </div>
+        ) : null}
+      </div>
+    </article>
+  );
+}
+
+function ReferencesPreview({ artifact, onOpenKnowledgeItem, onOpenSourcePreview }) {
+  const [activeTab, setActiveTab] = useState('knowledge');
+  const filteredBlocks = artifact.referenceBlocks.filter((block) =>
+    activeTab === 'knowledge' ? block.type === 'knowledge' : block.type === 'reference',
+  );
+  const [expandedId, setExpandedId] = useState(filteredBlocks[0]?.id ?? '');
+
+  useEffect(() => {
+    setExpandedId(filteredBlocks[0]?.id ?? '');
+  }, [activeTab, artifact.id]);
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex h-[58px] flex-none items-center justify-between border-b border-[#EBEEF5] px-6">
+        <h2 className="text-[16px] font-bold leading-[24px] text-[#303133]">参考资料</h2>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className={`rounded-[6px] px-3 py-1.5 text-[13px] font-semibold ${
+              activeTab === 'knowledge' ? 'bg-[#EEF3FF] text-[#365EFF]' : 'text-[#606266] hover:bg-[#F5F7FA]'
+            }`}
+            onClick={() => setActiveTab('knowledge')}
+          >
+            知识资料
+          </button>
+          <button
+            type="button"
+            className={`rounded-[6px] px-3 py-1.5 text-[13px] font-semibold ${
+              activeTab === 'reference' ? 'bg-[#EEF3FF] text-[#365EFF]' : 'text-[#606266] hover:bg-[#F5F7FA]'
+            }`}
+            onClick={() => setActiveTab('reference')}
+          >
+            参考网页
+          </button>
+        </div>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+        <p className="mb-4 text-[13px] leading-[20px] text-[#909399]">
+          {activeTab === 'knowledge'
+            ? '展示引用知识条目与检索到的知识资料文本块。文章生成前不展示引用标识。'
+            : '展示参考网页摘要，点击标题或右侧按钮可查看爬取到的网页大纲。'}
+        </p>
+        <div className="space-y-3">
+          {filteredBlocks.map((block) => (
+            <ReferenceBlockCard
+              key={block.id}
+              block={block}
+              expanded={expandedId === block.id}
+              onOpenKnowledgeItem={onOpenKnowledgeItem}
+              onOpenSourcePreview={onOpenSourcePreview}
+              onToggle={() => setExpandedId((current) => (current === block.id ? '' : block.id))}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PreviewPanel({ artifact, onOpenKnowledgeItem, onOpenSourcePreview }) {
+  if (!artifact) return <EmptyPreview />;
+  if (artifact.type === 'references') {
+    return (
+      <ReferencesPreview
+        artifact={artifact}
+        onOpenKnowledgeItem={onOpenKnowledgeItem}
+        onOpenSourcePreview={onOpenSourcePreview}
+      />
+    );
+  }
+  if (artifact.type === 'evaluation') return <EvaluationPreview artifact={artifact} />;
+  if (artifact.type === 'suggestion') return <SuggestionPreview artifact={artifact} />;
+  if (artifact.type === 'revision') return <RevisionPreview artifact={artifact} />;
+  if (artifact.type === 'tdk') return <TdkPreview artifact={artifact} />;
+  return <ArticlePreview artifact={artifact} />;
+}
+
+function ReferenceDrawer({
+  activeTab,
+  articleGenerated,
+  citationUsages,
+  onClose,
+  onOpenKnowledgeItem,
+  onOpenSourcePreview,
+  onTabChange,
+  references,
+}) {
+  const filtered = articleGenerated
+    ? citationUsages
+        .filter((item) => (activeTab === 'knowledge' ? item.sourceType === 'knowledge' : item.sourceType === 'reference'))
+        .map((usage) => ({
+          ...usage,
+          sourceBlock: references.find((block) => block.id === usage.sourceBlockId),
+        }))
+    : [];
+
+  function openCitationSource(usage) {
+    const block = usage.sourceBlock;
+    if (!block) return;
+
+    if (block.blockKind === 'reference-web' && block.sourceUrl) {
+      window.open(block.sourceUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    if (block.blockKind === 'knowledge-item') {
+      onOpenKnowledgeItem(block);
+      return;
+    }
+
+    if (block.blockKind === 'knowledge-asset') {
+      onOpenSourcePreview(block);
+    }
+  }
+
+  return (
+    <aside className="h-[calc(100vh-152px)] overflow-hidden rounded-[8px] bg-white shadow-[0_2px_10px_rgba(31,45,61,0.04)]">
+      <div className="flex h-[58px] items-center justify-between border-b border-[#EBEEF5] px-5">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className={`rounded-[6px] px-3 py-1.5 text-[14px] font-semibold ${
+              activeTab === 'knowledge' ? 'bg-[#EEF3FF] text-[#365EFF]' : 'text-[#606266]'
+            }`}
+            onClick={() => onTabChange('knowledge')}
+          >
+            知识资料
+          </button>
+          <button
+            type="button"
+            className={`rounded-[6px] px-3 py-1.5 text-[14px] font-semibold ${
+              activeTab === 'reference' ? 'bg-[#EEF3FF] text-[#365EFF]' : 'text-[#606266]'
+            }`}
+            onClick={() => onTabChange('reference')}
+          >
+            参考网页
+          </button>
+        </div>
+        <button
+          type="button"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-[6px] text-[#606266] hover:bg-[#F5F7FA]"
+          onClick={onClose}
+          aria-label="关闭引用内容"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="min-h-0 h-[calc(100%-58px)] overflow-y-auto p-4">
+        {!articleGenerated ? (
+          <div className="flex h-full items-center justify-center px-6 text-center">
+            <p className="text-[14px] leading-[22px] text-[#909399]">文章生成后将展示引用标识与对应内容。</p>
+          </div>
+        ) : (
+          <>
+            <div className="mb-4 text-[14px] leading-[22px] text-[#606266]">
+              总计 {filtered.length} 条实际引用，按文章生成内容对应展示。
+            </div>
+            <div className="space-y-3">
+              {filtered.map((item) => (
+                <article key={item.id} className="rounded-[8px] border border-[#6B7DFF] bg-[#F5F7FF] p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <button
+                      type="button"
+                      className="min-w-0 text-left text-[14px] font-bold leading-[22px] text-[#365EFF] hover:text-[#2547D0]"
+                      onClick={() => openCitationSource(item)}
+                    >
+                      <span className="mr-2 inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#E5E7EB] text-[12px] font-bold text-[#606266]">
+                        {item.marker}
+                      </span>
+                      {item.sourceName}
+                    </button>
+                  </div>
+                  <div className="mt-3 rounded-[8px] bg-white px-3 py-2">
+                    <div className="text-[12px] font-semibold text-[#A8ABB2]">来源文本块</div>
+                    <p className="mt-1 text-[13px] leading-[20px] text-[#606266]">{item.sourceSnippet}</p>
+                  </div>
+                  <div className="mt-3 rounded-[8px] border border-[#CDEFD8] bg-[#ECFDF5] px-3 py-2">
+                    <div className="text-[12px] font-semibold text-[#00A85F]">文章生成内容</div>
+                    <p className="mt-1 text-[13px] leading-[20px] text-[#26734D]">{item.generatedContent}</p>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    </aside>
+  );
+}
+
+export default function BlogArticleAiContentPage({ article, onBack, onSaveAndEdit, project, task }) {
+  const [revisionRequests, setRevisionRequests] = useState(() => task?.content?.revisionRequests ?? []);
+  const [revisionInput, setRevisionInput] = useState('');
+  const demoData = useMemo(
+    () => createContentDemoData(task, project, { revisionRequests }),
+    [project, revisionRequests, task],
+  );
+  const workflow = demoData.workflow;
+  const initialPlaybackState = useMemo(() => getInitialPlaybackState(workflow, task), [workflow, task]);
+  const [currentTaskIndex, setCurrentTaskIndex] = useState(initialPlaybackState.currentTaskIndex);
+  const [visibleThinkingCounts, setVisibleThinkingCounts] = useState(initialPlaybackState.visibleThinkingCounts);
+  const [visibleArtifactIds, setVisibleArtifactIds] = useState(initialPlaybackState.visibleArtifactIds);
+  const [completedTaskIds, setCompletedTaskIds] = useState(initialPlaybackState.completedTaskIds);
+  const [isComplete, setIsComplete] = useState(initialPlaybackState.isComplete);
+  const [isStopped, setIsStopped] = useState(task?.stage === 'content-stopped' || Boolean(task?.content?.isStopped));
+  const [selectedArtifactId, setSelectedArtifactId] = useState(initialPlaybackState.selectedArtifactId);
+  const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
+  const [referenceOpen, setReferenceOpen] = useState(false);
+  const [referenceTab, setReferenceTab] = useState('knowledge');
+  const [toast, setToast] = useState(null);
+  const workflowRef = useRef(null);
+
+  const currentTask = workflow[currentTaskIndex];
+  const visibleTaskList = workflow.slice(0, Math.min(currentTaskIndex + 1, workflow.length));
+  const selectedArtifact = selectedArtifactId ? demoData.artifacts[selectedArtifactId] : null;
+  const articleGenerated = visibleArtifactIds.some((artifactId) => demoData.artifacts[artifactId]?.type === 'article');
+  const finalEvaluationReady = visibleArtifactIds.includes('final-evaluation') || completedTaskIds.includes('final-evaluate');
+  const showRevisionRequestBox =
+    finalEvaluationReady && isComplete && !isStopped;
+
+  useEffect(() => {
+    setRevisionInput('');
+  }, [task.id]);
+
+  function buildContentPayload(data = demoData, overrides = {}) {
+    return {
+      articleVersions: data.articleVersions,
+      citationUsages: data.citationUsages,
+      completedTaskIds,
+      currentArtifactId: selectedArtifactId,
+      evaluationReports: data.evaluationReports,
+      finalEvaluationReport: data.latestEvaluationReport ?? data.finalEvaluationReport,
+      finalArticle: data.latestFinalArticle ?? data.finalArticle,
+      finalRevisionRounds: data.finalRevisionRounds,
+      isStopped,
+      latestEvaluationReportId: data.latestEvaluationReportId,
+      latestFinalArticleId: data.latestFinalArticleId,
+      latestTdkId: data.latestTdkId,
+      referenceBlocks: data.referenceBlocks,
+      revisionRecords: data.revisionRecords,
+      revisionRequests: data.revisionRequests,
+      revisionSuggestions: data.revisionSuggestions,
+      savedArticleId: task?.content?.savedArticleId,
+      tdk: data.latestTdk ?? data.tdk,
+      updatedAt: getTodayString(),
+      visibleArtifactIds,
+      ...overrides,
+    };
+  }
+
+  useEffect(() => {
+    updateAiCreationTask(project.id, task.id, {
+      stage: isComplete ? 'content-completed' : isStopped ? 'content-stopped' : 'content',
+      content: buildContentPayload(),
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!toast || toast.actionLabel) {
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => setToast(null), 2200);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
+
+  useEffect(() => {
+    if (isStopped || isComplete || !currentTask) {
+      return undefined;
+    }
+
+    const activeStepState = getActiveStepState(currentTask, visibleThinkingCounts, visibleArtifactIds);
+    const { allArtifactsVisible, artifactIds, complete, hasMoreThinking, step } = activeStepState;
+
+    const timer = window.setTimeout(() => {
+      if (step && hasMoreThinking) {
+        setVisibleThinkingCounts((current) => ({
+          ...current,
+          [step.id]: (current[step.id] ?? 0) + 1,
+        }));
+        return;
+      }
+
+      if (!complete && artifactIds.length && !allArtifactsVisible) {
+        setVisibleArtifactIds((current) => [...new Set([...current, ...artifactIds])]);
+        return;
+      }
+
+      const nextCompletedTaskIds = completedTaskIds.includes(currentTask.id)
+        ? completedTaskIds
+        : [...completedTaskIds, currentTask.id];
+      setCompletedTaskIds(nextCompletedTaskIds);
+
+      if (currentTaskIndex + 1 >= workflow.length) {
+        setIsComplete(true);
+        updateAiCreationTask(project.id, task.id, {
+          stage: 'content-completed',
+          content: buildContentPayload(demoData, {
+            completedTaskIds: nextCompletedTaskIds,
+            isStopped: false,
+            visibleArtifactIds: [...new Set([...visibleArtifactIds, ...getTaskArtifactIds(currentTask)])],
+          }),
+        });
+        return;
+      }
+
+      setCurrentTaskIndex((current) => current + 1);
+    }, hasMoreThinking ? 900 : 650);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    completedTaskIds,
+    currentTask,
+    currentTaskIndex,
+    demoData,
+    isComplete,
+    isStopped,
+    project.id,
+    selectedArtifactId,
+    task.id,
+    visibleArtifactIds,
+    visibleThinkingCounts,
+    workflow.length,
+  ]);
+
+  useEffect(() => {
+    const container = workflowRef.current;
+    if (!container || !autoScrollEnabled) return;
+
+    window.requestAnimationFrame(() => {
+      container.scrollTo({
+        top: container.scrollHeight,
+        behavior: 'smooth',
+      });
+    });
+  }, [autoScrollEnabled, completedTaskIds, currentTaskIndex, visibleArtifactIds, visibleThinkingCounts]);
+
+  function handleWorkflowScroll() {
+    const container = workflowRef.current;
+    if (!container) return;
+
+    const distanceToBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    setAutoScrollEnabled(distanceToBottom < 48);
+  }
+
+  function handleStopTask() {
+    if (isStopped || isComplete) return;
+
+    setIsStopped(true);
+    updateAiCreationTask(project.id, task.id, {
+      stage: 'content-stopped',
+      content: buildContentPayload(demoData, {
+        completedTaskIds,
+        currentArtifactId: selectedArtifactId,
+        isStopped: true,
+        updatedAt: getTodayString(),
+        visibleArtifactIds,
+      }),
+    });
+    setToast({
+      actionLabel: '重新生成',
+      message: '任务已中止，可返回上一步修改或重新生成',
+      type: 'warning',
+    });
+  }
+
+  function handleRegenerate() {
+    resetAiContentTask(project.id, task.id);
+    window.location.reload();
+  }
+
+  function handleSubmitRevisionRequest() {
+    const text = revisionInput.trim();
+    if (!text || !isComplete || isStopped) return;
+
+    const version = revisionRequests.length + 2;
+    const nextRevisionRequests = [
+      ...revisionRequests,
+      {
+        createdAt: getTodayString(),
+        id: `revision-request-${Date.now()}`,
+        status: 'submitted',
+        text,
+        version,
+      },
+    ];
+    const nextDemoData = createContentDemoData(task, project, { revisionRequests: nextRevisionRequests });
+    const nextCurrentTaskIndex = workflow.length;
+
+    setRevisionRequests(nextRevisionRequests);
+    setRevisionInput('');
+    setIsComplete(false);
+    setIsStopped(false);
+    setAutoScrollEnabled(true);
+    setCurrentTaskIndex(nextCurrentTaskIndex);
+    setVisibleThinkingCounts((current) => ({
+      ...current,
+      [getTaskSteps(nextDemoData.workflow[nextCurrentTaskIndex])[0]?.id]: 0,
+    }));
+    updateAiCreationTask(project.id, task.id, {
+      stage: 'content',
+      content: buildContentPayload(nextDemoData, {
+        completedTaskIds,
+        currentArtifactId: selectedArtifactId,
+        isStopped: false,
+        revisionRequests: nextDemoData.revisionRequests,
+        updatedAt: getTodayString(),
+        visibleArtifactIds,
+      }),
+    });
+  }
+
+  function handleSaveAndEdit() {
+    const finalArticle = demoData.latestFinalArticle;
+    const tdk = demoData.latestTdk;
+    const taskInput = task?.taskInput ?? {};
+    const nextArticle = {
+      ...article,
+      aiTaskId: task.id,
+      articleType: taskInput.articleType || article?.articleType || 'Comparison',
+      content: finalArticle.content,
+      embeddedMediaAssets: finalArticle.images ?? [],
+      evaluationReport: demoData.latestEvaluationReport,
+      id: article?.id || createBlogArticleId(),
+      keywords: [...new Set([...(tdk.keywords ?? []), taskInput.primaryKeyword, ...(taskInput.secondaryKeywords ?? [])].filter(Boolean))],
+      status: 'draft',
+      targetAudienceName: taskInput.targetAudience?.name || taskInput.targetAudienceName || article?.targetAudienceName || '',
+      tdk,
+      title: finalArticle.headline,
+      updatedAt: getTodayString(),
+      updatedBy: 'Angel',
+    };
+
+    upsertBlogArticle(project, nextArticle);
+    updateAiCreationTask(project.id, task.id, {
+      stage: 'content-completed',
+      content: buildContentPayload(demoData, {
+        completedTaskIds: workflow.map((item) => item.id),
+        isStopped: false,
+        savedArticleId: nextArticle.id,
+        updatedAt: getTodayString(),
+        visibleArtifactIds,
+      }),
+    });
+    onSaveAndEdit(nextArticle);
+  }
+
+  function handleOpenKnowledgeItem(block) {
+    openAppViewInNewTab({
+      knowledgeItemId: block.knowledgeItemId,
+      projectId: project.id,
+      view: 'knowledge-items',
+    });
+  }
+
+  function handleOpenSourcePreview(block) {
+    if (block.sourceFileId) {
+      openAppViewInNewTab({
+        fileId: block.sourceFileId,
+        projectId: project.id,
+        view: 'knowledge-file-preview',
+      });
+      return;
+    }
+
+    openAppViewInNewTab({
+      projectId: project.id,
+      sourceId: block.sourceId || block.id,
+      taskId: task.id,
+      view: 'knowledge-source-preview',
+    });
+  }
+
+  return (
+    <div className="min-h-screen bg-[#F7F8FB] text-[#303133]">
+      <style>
+        {`
+          @keyframes aiContentFadeInUp {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+          }
+        `}
+      </style>
+      <header className="fixed left-0 right-0 top-0 z-40 h-[52px] border-b border-[#EBEEF5] bg-white">
+        <div className="mx-auto flex h-full max-w-[1600px] items-center px-6">
+          <button
+            type="button"
+            className="mr-3 inline-flex h-8 w-8 items-center justify-center rounded-[6px] text-[#232E45] transition hover:bg-[#F5F7FA]"
+            onClick={onBack}
+            aria-label="返回"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </button>
+          <h1 className="w-[360px] text-[18px] font-bold leading-[28px] text-[#232E45]">AI 创作-内容生成</h1>
+          <Stepper />
+          <div className="flex w-[360px] justify-end">
+            <button
+              type="button"
+              className="inline-flex h-8 items-center justify-center gap-2 rounded-[6px] bg-white px-3 text-[14px] font-semibold text-[#365EFF] shadow-[0_2px_8px_rgba(31,45,61,0.12)] transition hover:bg-[#F5F7FF]"
+              onClick={() => setReferenceOpen((current) => !current)}
+            >
+              <BookOpen className="h-4 w-4" />
+              引用内容
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main
+        className={`mx-auto grid max-w-[1600px] gap-4 px-6 pb-[84px] pt-[68px] ${
+          referenceOpen ? 'grid-cols-[400px_minmax(0,1fr)_420px]' : 'grid-cols-2'
+        }`}
+      >
+        <section
+          ref={workflowRef}
+          className="h-[calc(100vh-152px)] overflow-y-auto rounded-[8px] bg-white px-8 py-7 shadow-[0_2px_10px_rgba(31,45,61,0.04)]"
+          onScroll={handleWorkflowScroll}
+        >
+          <div className="space-y-1">
+            {visibleTaskList.map((workflowTask) => {
+              const completed = completedTaskIds.includes(workflowTask.id);
+              const isCurrent = workflowTask.id === currentTask?.id && !completed;
+
+              return (
+                <WorkflowTask
+                  key={workflowTask.id}
+                  artifacts={demoData.artifacts}
+                  completed={completed}
+                  isCurrent={isCurrent}
+                  isStopped={isStopped}
+                  onArtifactClick={setSelectedArtifactId}
+                  selectedArtifactId={selectedArtifactId}
+                  showArtifactIds={visibleArtifactIds}
+                  task={workflowTask}
+                  visibleThinkingCounts={visibleThinkingCounts}
+                />
+              );
+            })}
+            {showRevisionRequestBox ? (
+              <RevisionRequestBox
+                key={`${task.id}-${revisionRequests.length}`}
+                disabled={false}
+                onChange={setRevisionInput}
+                onSubmit={handleSubmitRevisionRequest}
+                value={revisionInput}
+              />
+            ) : null}
+          </div>
+        </section>
+
+        <section className="h-[calc(100vh-152px)] overflow-hidden rounded-[8px] bg-white shadow-[0_2px_10px_rgba(31,45,61,0.04)]">
+          <PreviewPanel
+            artifact={selectedArtifact}
+            onOpenKnowledgeItem={handleOpenKnowledgeItem}
+            onOpenSourcePreview={handleOpenSourcePreview}
+          />
+        </section>
+
+        {referenceOpen ? (
+          <ReferenceDrawer
+            activeTab={referenceTab}
+            articleGenerated={articleGenerated}
+            citationUsages={demoData.citationUsages}
+            onClose={() => setReferenceOpen(false)}
+            onOpenKnowledgeItem={handleOpenKnowledgeItem}
+            onOpenSourcePreview={handleOpenSourcePreview}
+            onTabChange={setReferenceTab}
+            references={demoData.referenceBlocks}
+          />
+        ) : null}
+      </main>
+
+      <footer className="fixed bottom-0 left-0 right-0 z-40 h-[60px] border-t border-[#EBEEF5] bg-white/95 backdrop-blur">
+        <div className="mx-auto flex h-full max-w-[1600px] items-center justify-between px-6">
+          <button
+            type="button"
+            className="inline-flex h-8 items-center justify-center rounded-[6px] border border-[#365EFF] px-4 text-[14px] font-semibold text-[#365EFF] transition hover:bg-[#EEF3FF]"
+            onClick={onBack}
+          >
+            上一步
+          </button>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              className="inline-flex h-8 items-center justify-center rounded-[6px] border border-[#365EFF] px-4 text-[14px] font-semibold text-[#365EFF] transition hover:bg-[#EEF3FF] disabled:cursor-not-allowed disabled:border-[#DCDFE6] disabled:text-[#A8ABB2] disabled:hover:bg-white"
+              disabled={isComplete || isStopped}
+              onClick={handleStopTask}
+            >
+              中止任务
+            </button>
+            <button
+              type="button"
+              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-[6px] bg-[#365EFF] px-5 text-[14px] font-semibold text-white transition hover:bg-[#2547D0] disabled:cursor-not-allowed disabled:bg-[#A8B9FF]"
+              disabled={!isComplete || isStopped}
+              onClick={handleSaveAndEdit}
+            >
+              <Save className="h-4 w-4" />
+              保存并编辑
+            </button>
+          </div>
+        </div>
+      </footer>
+
+      {toast ? (
+        <Toast
+          actionLabel={toast.actionLabel}
+          message={toast.message}
+          onAction={toast.actionLabel ? handleRegenerate : undefined}
+          onClose={toast.actionLabel ? () => setToast(null) : undefined}
+          type={toast.type}
+        />
+      ) : null}
+    </div>
+  );
+}

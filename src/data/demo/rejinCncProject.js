@@ -1,3 +1,6 @@
+import { rejinCncAssetLibrary } from './rejinCncAssetLibrary.js';
+import { rejinCncFileLibrary } from './rejinCncFileLibrary.js';
+
 export const rejinCncProject = {
   id: 'rejin-cnc',
   name: 'Rejin CNC Technology Co.,Ltd',
@@ -5,7 +8,7 @@ export const rejinCncProject = {
   industry: 'Precision CNC machining and custom metal parts manufacturing',
   description: 'Demo project for an export-oriented precision CNC machining supplier.',
   defaultContentLanguage: 'en-US',
-  demoDataVersion: 3,
+  demoDataVersion: 4,
   contact: {
     email: 'info@rejincnc.com',
     phone: '+86 135 9033 6784',
@@ -38,6 +41,8 @@ export const rejinCncProject = {
       ],
     },
   },
+  mediaAssets: rejinCncAssetLibrary,
+  fileAssets: rejinCncFileLibrary,
   brandFacts: [
     {
       title: 'Export-oriented CNC manufacturing supplier',

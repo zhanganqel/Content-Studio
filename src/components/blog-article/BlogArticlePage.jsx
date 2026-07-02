@@ -195,7 +195,7 @@ function ArticleCard({
   );
 }
 
-export default function BlogArticlePage({ onOpenEditor, project, t }) {
+export default function BlogArticlePage({ creationNotice, onOpenAiCreation, onOpenEditor, project, t }) {
   const copy = t.blogArticle;
   const [articles, setArticles] = useState(() => getBlogArticleDrafts(project));
   const [searchQuery, setSearchQuery] = useState('');
@@ -216,6 +216,19 @@ export default function BlogArticlePage({ onOpenEditor, project, t }) {
     setFilterOpen(false);
     setDeleteTarget(null);
   }, [project]);
+
+  useEffect(() => {
+    if (!creationNotice) {
+      return;
+    }
+
+    setArticles(getBlogArticleDrafts(project));
+    setToast({
+      id: creationNotice.id,
+      message: creationNotice.message,
+      type: creationNotice.type ?? 'success',
+    });
+  }, [creationNotice, project]);
 
   useEffect(() => {
     if (!toast) {
@@ -388,6 +401,11 @@ export default function BlogArticlePage({ onOpenEditor, project, t }) {
   }
 
   function openAiCreation() {
+    if (onOpenAiCreation) {
+      onOpenAiCreation();
+      return;
+    }
+
     setToast({ id: Date.now(), message: copy.toast.aiComingSoon, type: 'info' });
   }
 

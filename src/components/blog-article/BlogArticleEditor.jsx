@@ -1,5 +1,5 @@
 import { ArrowLeft, CalendarClock, FileText, Save, UserRound } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Button from '../ui/Button.jsx';
 import Toast from '../ui/Toast.jsx';
 import { getTodayString, upsertBlogArticle } from '../../services/blogArticleStore.js';
@@ -56,6 +56,15 @@ export default function BlogArticleEditor({ article, onClose, project, t }) {
   const [showDiscardDialog, setShowDiscardDialog] = useState(false);
   const [toast, setToast] = useState(null);
   const hasChanges = useMemo(() => !valuesEqual(draft, savedDraft), [draft, savedDraft]);
+
+  useEffect(() => {
+    if (!toast) {
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => setToast(null), 2200);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
 
   function updateField(field, value) {
     setDraft((current) => ({

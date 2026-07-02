@@ -1,13 +1,22 @@
 import BrandProfilePage from './brand-profile/BrandProfilePage.jsx';
 import AudiencePersonaPage from './audience-persona/AudiencePersonaPage.jsx';
 import BlogArticlePage from './blog-article/BlogArticlePage.jsx';
+import KnowledgeAssetsPage from './knowledge-assets/KnowledgeAssetsPage.jsx';
 import KnowledgeItemsPage from './knowledge-items/KnowledgeItemsPage.jsx';
 
-export default function MainContent({ activeItem, activeProject, onOpenBlogArticleEditor, t }) {
+export default function MainContent({
+  activeItem,
+  activeProject,
+  blogArticleNotice,
+  knowledgeItemFocusId,
+  onOpenBlogAiCreate,
+  onOpenBlogArticleEditor,
+  t,
+}) {
   if (activeItem?.id === 'brand-profile') {
     return (
-      <main className="ml-[300px] h-screen overflow-y-auto bg-white pt-[72px]">
-        <div className="min-h-[calc(100vh-72px)] p-8">
+      <main className="ml-[300px] h-screen overflow-hidden bg-white pt-[72px]">
+        <div className="h-[calc(100vh-72px)] min-h-0 p-8">
           <BrandProfilePage project={activeProject} t={t} />
         </div>
       </main>
@@ -28,7 +37,17 @@ export default function MainContent({ activeItem, activeProject, onOpenBlogArtic
     return (
       <main className="ml-[300px] h-screen overflow-y-auto bg-white pt-[72px]">
         <div className="min-h-[calc(100vh-72px)] p-8">
-          <KnowledgeItemsPage project={activeProject} t={t} />
+          <KnowledgeItemsPage focusItemId={knowledgeItemFocusId} project={activeProject} t={t} />
+        </div>
+      </main>
+    );
+  }
+
+  if (activeItem?.id === 'knowledge-assets') {
+    return (
+      <main className="ml-[300px] h-screen overflow-hidden bg-white pt-[72px]">
+        <div className="h-[calc(100vh-72px)] min-h-0 p-8">
+          <KnowledgeAssetsPage project={activeProject} t={t} />
         </div>
       </main>
     );
@@ -39,6 +58,8 @@ export default function MainContent({ activeItem, activeProject, onOpenBlogArtic
       <main className="ml-[300px] h-screen overflow-y-auto bg-white pt-[72px]">
         <div className="min-h-[calc(100vh-72px)] p-8">
           <BlogArticlePage
+            creationNotice={blogArticleNotice}
+            onOpenAiCreation={onOpenBlogAiCreate}
             onOpenEditor={onOpenBlogArticleEditor}
             project={activeProject}
             t={t}

@@ -15,7 +15,10 @@ export default function AppShell({
   searchScopes,
   t,
   userMenuItems,
+  blogArticleNotice,
+  knowledgeItemFocusId,
   onLocaleChange,
+  onOpenBlogAiCreate,
   onOpenBlogArticleEditor,
   onProjectChange,
   onSearchQueryChange,
@@ -50,6 +53,9 @@ export default function AppShell({
       <MainContent
         activeItem={activeItem}
         activeProject={activeProject}
+        blogArticleNotice={blogArticleNotice}
+        knowledgeItemFocusId={knowledgeItemFocusId}
+        onOpenBlogAiCreate={onOpenBlogAiCreate}
         onOpenBlogArticleEditor={onOpenBlogArticleEditor}
         t={t}
       />

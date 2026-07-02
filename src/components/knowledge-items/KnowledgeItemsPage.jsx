@@ -32,6 +32,13 @@ import {
 } from '../../services/knowledgeItemStore.js';
 
 const blankRowCount = 8;
+const demoTypeToKnowledgeTypeId = {
+  case: 'cases',
+  faq: 'faqs',
+  product: 'products',
+  service: 'services',
+  solution: 'solutions',
+};
 
 const typeIcons = {
   product: Box,
@@ -409,6 +416,7 @@ function KnowledgeTable({
   copy,
   editing,
   errors,
+  focusRowId,
   onCellChange,
   onDeleteField,
   rows,
@@ -441,6 +449,12 @@ function KnowledgeTable({
       setSelectedCell({ fieldKey: visibleFields[0].key, rowId: visibleRows[0].id });
     }
   }, [selectedCell, type.id, visibleFields, visibleRows]);
+
+  useEffect(() => {
+    if (focusRowId && visibleFields[0] && visibleRows.some((row) => row.id === focusRowId)) {
+      setSelectedCell({ fieldKey: visibleFields[0].key, rowId: focusRowId });
+    }
+  }, [focusRowId, visibleFields, visibleRows]);
 
   function updateSelectedValue(value) {
     if (!selectedCanEdit || !selectedRow || !selectedField) return;
@@ -507,14 +521,17 @@ function KnowledgeTable({
             })}
           </div>
 
-          {visibleRows.map((row) => (
-            <div key={row.id} className="group flex border-b border-slate-200">
-              {visibleFields.map((field) => {
+          {visibleRows.map((row) => {
+            const isFocusedRow = row.id === focusRowId;
+
+            return (
+              <div key={row.id} className="group flex border-b border-slate-200">
+                {visibleFields.map((field) => {
                 const isSystemField = field.key === 'knowledgeId';
                 const error = errors[`${row.id}:${field.key}`];
                 const value = getDisplayCellValue(row, field, type, copy);
                 const isSelected = selectedCell?.rowId === row.id && selectedCell?.fieldKey === field.key;
-                const backgroundClass = error ? 'bg-red-50' : getBodyCellBackground(field);
+                const backgroundClass = error ? 'bg-red-50' : isFocusedRow ? 'bg-blue-50' : getBodyCellBackground(field);
 
                 return (
                   <div
@@ -548,9 +565,10 @@ function KnowledgeTable({
                     <span className="absolute bottom-0 left-0 h-1 w-8 cursor-row-resize bg-transparent group-hover:bg-blue-100" />
                   </div>
                 );
-              })}
-            </div>
-          ))}
+                })}
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>
@@ -883,7 +901,7 @@ function validateFieldList(fields, copy) {
   return errors;
 }
 
-export default function KnowledgeItemsPage({ project, t }) {
+export default function KnowledgeItemsPage({ focusItemId = '', project, t }) {
   const [draft, setDraft] = useState(() => getKnowledgeItemDraft(project));
   const [activeTypeId, setActiveTypeId] = useState(() => getKnowledgeItemDraft(project).types[0]?.id);
   const [editing, setEditing] = useState(false);
@@ -917,6 +935,20 @@ export default function KnowledgeItemsPage({ project, t }) {
   }, [project]);
 
   useEffect(() => {
+    if (!focusItemId) return;
+
+    const focusedItem = project?.demoProject?.knowledgeItems?.find((item) => item.id === focusItemId);
+    const nextTypeId = focusedItem ? demoTypeToKnowledgeTypeId[focusedItem.type] : '';
+    if (!nextTypeId || !draft.types.some((type) => type.id === nextTypeId)) return;
+
+    setActiveTypeId(nextTypeId);
+    setEditing(false);
+    setEditRows([]);
+    setCellErrors({});
+    setValidationMessage('');
+  }, [draft.types, focusItemId, project]);
+
+  useEffect(() => {
     if (!toast) return undefined;
     const timer = window.setTimeout(() => setToast(null), 2200);
     return () => window.clearTimeout(timer);
@@ -927,6 +959,15 @@ export default function KnowledgeItemsPage({ project, t }) {
     [activeTypeId, draft.types],
   );
   const activeRows = draft.rows[activeType?.id] ?? [];
+  const focusedDemoItem = useMemo(
+    () => project?.demoProject?.knowledgeItems?.find((item) => item.id === focusItemId) ?? null,
+    [focusItemId, project],
+  );
+  const focusRowId = useMemo(() => {
+    if (!focusedDemoItem || !activeType) return '';
+    const nameFieldKey = activeType.nameFieldKey;
+    return activeRows.find((row) => row.cells?.[nameFieldKey] === focusedDemoItem.title)?.id ?? '';
+  }, [activeRows, activeType, focusedDemoItem]);
   const rowsForComparison = editing ? getComparisonRows(editRows, activeType) : [];
   const hasUnsavedTableChanges = editing && !valuesEqual(rowsForComparison, activeRows);
 
@@ -1296,6 +1337,7 @@ export default function KnowledgeItemsPage({ project, t }) {
             copy={copy}
             editing={editing}
             errors={cellErrors}
+            focusRowId={focusRowId}
             onCellChange={updateCell}
             onDeleteField={setDeleteFieldTarget}
             rows={editing ? editRows : activeRows}
