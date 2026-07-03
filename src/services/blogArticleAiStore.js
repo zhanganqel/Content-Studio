@@ -3,7 +3,7 @@ import { listChunks } from './fileLibraryApi.js';
 const storageKeyPrefix = 'content-studio-blog-article-ai-tasks:';
 const storageSchemaVersion = 1;
 
-export const aiArticleLanguageOptions = ['EN（英文）', 'CN（中文）'];
+export const aiArticleLanguageOptions = ['EN', 'CN'];
 
 export const aiArticleTypeOptions = [
   'Product Reviews（产品介绍）',
@@ -47,6 +47,17 @@ export const aiPersonOptions = ['第一人称', '第二人称', '第三人称'];
 export const aiModelOptions = ['GPT-5.5', 'GPT-5', 'GPT-4.1'];
 
 export const aiEvaluationVersion = 'ragseo-ai-writing-evaluation-v1';
+
+export function splitAiKeywordText(value) {
+  if (Array.isArray(value)) {
+    return value.filter(Boolean);
+  }
+
+  return String(value ?? '')
+    .split(/[,，]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
 
 export const aiReferenceSearchAnalyses = [
   {
@@ -350,7 +361,7 @@ function createStrategyContent(task, project) {
     input.targetAudience?.summary ||
     'Needs reliable supplier evaluation, stable quality, clear RFQ communication, and practical process-selection guidance.';
   const targetRegion = input.targetRegion || 'Global';
-  const articleLanguage = input.articleLanguage || 'EN（英文）';
+  const articleLanguage = input.articleLanguage || 'EN';
   const businessGoal =
     input.businessGoal ||
     '帮助海外采购用户理解工艺选择和供应商评估要点，并引导提交图纸咨询或继续阅读相关服务页面。';
@@ -568,7 +579,7 @@ function createProjectAnalysisReport(task, project) {
   const companyOfficialSite = demoProject.website ?? officialSite;
   const industry = demoProject.industry ?? 'Precision CNC machining and custom metal parts manufacturing';
   const targetRegion = input.targetRegion || 'Global';
-  const articleLanguage = input.articleLanguage || 'EN（英文）';
+  const articleLanguage = input.articleLanguage || 'EN';
   const capabilities = brandProfile.capabilities ?? [];
   const certifications = brandProfile.certifications ?? [];
   const serviceItems = demoProject.knowledgeItems?.filter((item) => item.type === 'service') ?? [];
@@ -1511,6 +1522,7 @@ export function createContentDemoData(task, project, options = {}) {
     input.articleTopic ||
     'CNC Turning vs. Milling: How to Choose for Your Next Project';
   const primaryKeyword = input.primaryKeyword || 'CNC machining supplier';
+  const primaryKeywords = splitAiKeywordText(primaryKeyword);
   const secondaryKeywords = input.secondaryKeywords?.length
     ? input.secondaryKeywords
     : ['custom metal parts', 'DFM support', 'CNC turning vs milling'];
@@ -1534,7 +1546,7 @@ export function createContentDemoData(task, project, options = {}) {
   const selectedKnowledgeAssets = normalizeSourceListItems(selectedKnowledgeAssetFiles, fallbackKnowledgeAssets);
   const references = getReferenceArticles(task).slice(0, 3);
   const outlineHeadings = flattenOutlineHeadings(task?.outline?.outlineTree?.length ? task.outline.outlineTree : createOutlineTree());
-  const queryTerms = [title, primaryKeyword, ...secondaryKeywords, ...outlineHeadings].filter(Boolean);
+  const queryTerms = [title, ...primaryKeywords, ...secondaryKeywords, ...outlineHeadings].filter(Boolean);
   const fallbackKnowledgeAssetReferenceBlocks = [
     {
       id: 'asset-main-products',
@@ -1723,7 +1735,7 @@ export function createContentDemoData(task, project, options = {}) {
       title: '文章初稿（第 1 版）',
       version: 1,
       headline: title,
-      keywords: [primaryKeyword, ...secondaryKeywords],
+      keywords: [...primaryKeywords, ...secondaryKeywords],
       content: createArticleContent({ companyName, primaryKeyword, title, version: 1 }),
     },
     {
@@ -1731,7 +1743,7 @@ export function createContentDemoData(task, project, options = {}) {
       title: '文章初稿（第 2 版）',
       version: 2,
       headline: title,
-      keywords: [primaryKeyword, ...secondaryKeywords, 'supplier risk', 'RFQ checklist'],
+      keywords: [...primaryKeywords, ...secondaryKeywords, 'supplier risk', 'RFQ checklist'],
       content: createArticleContent({ companyName, primaryKeyword, title, version: 2 }),
     },
   ];
@@ -1792,7 +1804,7 @@ export function createContentDemoData(task, project, options = {}) {
   ];
   const tdk = {
     title,
-    keywords: [primaryKeyword, ...secondaryKeywords, 'supplier risk', 'RFQ checklist'],
+    keywords: [...primaryKeywords, ...secondaryKeywords, 'supplier risk', 'RFQ checklist'],
     description:
       'Compare CNC turning and milling by geometry, tolerance, cost, lead time, and supplier capability. Learn what overseas buyers should prepare before sending an RFQ.',
   };

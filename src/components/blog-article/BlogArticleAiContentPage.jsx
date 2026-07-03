@@ -14,21 +14,25 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Toast from '../ui/Toast.jsx';
+import AiCreationStepLabel from './AiCreationStepLabel.jsx';
 import { getAgentDisplay } from './agentDisplay.js';
 import {
   createContentDemoData,
   resetAiContentTask,
+  splitAiKeywordText,
   updateAiCreationTask,
 } from '../../services/blogArticleAiStore.js';
 import { createBlogArticleId, getTodayString, upsertBlogArticle } from '../../services/blogArticleStore.js';
-
-const stepItems = ['创建任务', '文章策划', '标题大纲', '内容生成'];
 
 function getArtifactIcon(type) {
   if (type === 'evaluation') return ClipboardList;
   if (type === 'tdk') return Sparkles;
   if (type === 'references') return BookOpen;
   return FileText;
+}
+
+function formatTaskState(taskName, stateText, locale) {
+  return locale === 'en-US' ? `${stateText}: ${taskName}` : `${taskName}${stateText}`;
 }
 
 function openAppViewInNewTab(params) {
@@ -169,10 +173,10 @@ function getInitialPlaybackState(workflow, task) {
   };
 }
 
-function Stepper() {
+function Stepper({ copy }) {
   return (
     <div className="flex flex-1 items-center justify-center gap-5">
-      {stepItems.map((step, index) => (
+      {copy.steps.map((step, index) => (
         <div key={step} className="flex items-center gap-3">
           <span
             className={`inline-flex h-7 w-7 items-center justify-center rounded-full text-[14px] font-semibold ${
@@ -181,10 +185,8 @@ function Stepper() {
           >
             {index + 1}
           </span>
-          <span className={`text-[14px] font-semibold ${index === 3 ? 'text-[#303133]' : 'text-[#A8ABB2]'}`}>
-            {step}
-          </span>
-          {index < stepItems.length - 1 ? <span className="h-px w-16 bg-[#E4E7ED]" /> : null}
+          <AiCreationStepLabel active={index === 3} step={step} />
+          {index < copy.steps.length - 1 ? <span className="h-px w-16 bg-[#E4E7ED]" /> : null}
         </div>
       ))}
     </div>
@@ -309,7 +311,7 @@ function StepSourceList({ sourceList }) {
   );
 }
 
-function RevisionRequestBox({ disabled, onChange, onSubmit, value }) {
+function RevisionRequestBox({ copy, disabled, locale, onChange, onSubmit, value }) {
   return (
     <form
       className={`ml-14 mb-8 w-[560px] max-w-[calc(100%-56px)] rounded-[8px] border p-4 ${
@@ -322,14 +324,22 @@ function RevisionRequestBox({ disabled, onChange, onSubmit, value }) {
     >
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h3 className="text-[14px] font-semibold leading-[22px] text-[#303133]">修改要求</h3>
+          <h3 className="text-[14px] font-semibold leading-[22px] text-[#303133]">
+            {locale === 'en-US' ? 'Revision Request' : '修改要求'}
+          </h3>
           <p className="mt-0.5 text-[12px] leading-[18px] text-[#909399]">
-            {disabled ? '已提交，正在按要求修改' : '内容评估完成后，可继续让 AI 按要求修改并复评。'}
+            {disabled
+              ? locale === 'en-US'
+                ? 'Submitted. Revising now.'
+                : '已提交，正在按要求修改'
+              : locale === 'en-US'
+                ? 'After review, ask AI to revise and recheck.'
+                : '内容评估完成后，可继续让 AI 按要求修改并复评。'}
           </p>
         </div>
         {disabled ? (
           <span className="rounded-full bg-[#EEF3FF] px-2.5 py-1 text-[12px] font-semibold text-[#365EFF]">
-            处理中
+            {locale === 'en-US' ? 'Working' : '处理中'}
           </span>
         ) : null}
       </div>
@@ -338,19 +348,25 @@ function RevisionRequestBox({ disabled, onChange, onSubmit, value }) {
         className="mt-3 h-[88px] w-full resize-none rounded-[6px] border border-[#DCDFE6] bg-white px-3 py-2 text-[14px] leading-[22px] text-[#303133] outline-none transition placeholder:text-[#B4B8C2] focus:border-[#365EFF] focus:ring-2 focus:ring-[#E8EEFF] disabled:cursor-not-allowed disabled:bg-[#F5F7FA] disabled:text-[#606266]"
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
-        placeholder="请输入希望 AI 继续修改的要求，如加强采购转化、压缩篇幅、补充某类案例等"
+        placeholder={
+          locale === 'en-US'
+            ? 'Enter revision notes, such as stronger CTA, shorter copy, or more case details'
+            : '请输入希望 AI 继续修改的要求，如加强采购转化、压缩篇幅、补充某类案例等'
+        }
         value={value}
       />
       <div className="mt-3 flex items-center justify-between gap-3">
         <p className="text-[12px] leading-[18px] text-[#909399]">
-          提交后会生成修改记录、文章终稿新版，并重新评估文章与 TDK。
+          {locale === 'en-US'
+            ? 'Submitting creates a revision record, a new final draft, and a new TDK review.'
+            : '提交后会生成修改记录、文章终稿新版，并重新评估文章与 TDK。'}
         </p>
         <button
           type="submit"
           className="inline-flex h-8 flex-none items-center justify-center rounded-[6px] bg-[#365EFF] px-4 text-[13px] font-semibold text-white transition hover:bg-[#2547D0] disabled:cursor-not-allowed disabled:bg-[#A8B9FF]"
           disabled={disabled || !value.trim()}
         >
-          提交修改要求
+          {locale === 'en-US' ? 'Submit' : '提交修改要求'}
         </button>
       </div>
     </form>
@@ -368,6 +384,7 @@ function WorkflowTask({
   task,
   visibleThinkingCounts,
   locale,
+  copy,
 }) {
   const steps = getTaskSteps(task);
 
@@ -422,9 +439,9 @@ function WorkflowTask({
                 <div className="min-w-0 flex-1">
                   <div className="text-[14px] font-semibold leading-[20px] text-[#303133]">
                     {stepCompleted
-                      ? step.completedText ?? `${step.taskName}完成`
+                      ? step.completedText ?? formatTaskState(step.taskName, copy.status.done, locale)
                       : isStopped && stepActive
-                        ? `${step.taskName}已中止`
+                        ? formatTaskState(step.taskName, copy.status.stopped, locale)
                         : step.runningText}
                   </div>
                   <div className="mt-3 space-y-4">
@@ -459,16 +476,18 @@ function WorkflowTask({
   );
 }
 
-function EmptyPreview() {
+function EmptyPreview({ copy }) {
   return (
     <div className="flex h-full items-center justify-center px-8 text-center">
       <div>
         <span className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-full bg-[#EEF3FF] text-[#365EFF]">
           <FileText className="h-6 w-6" />
         </span>
-        <h2 className="mt-4 text-[18px] font-semibold leading-[28px] text-[#303133]">选择左侧产物查看预览</h2>
+        <h2 className="mt-4 text-[18px] font-semibold leading-[28px] text-[#303133]">
+          {copy.empty.contentPreviewTitle}
+        </h2>
         <p className="mt-2 text-[14px] leading-[22px] text-[#909399]">
-          文章、评估报告、修改建议和 TDK 生成后不会自动切换，需要手动点击卡片查看。
+          {copy.empty.contentPreviewBody}
         </p>
       </div>
     </div>
@@ -876,8 +895,8 @@ function ReferencesPreview({ artifact, onOpenKnowledgeItem, onOpenSourcePreview 
   );
 }
 
-function PreviewPanel({ artifact, onOpenKnowledgeItem, onOpenSourcePreview }) {
-  if (!artifact) return <EmptyPreview />;
+function PreviewPanel({ artifact, copy, onOpenKnowledgeItem, onOpenSourcePreview }) {
+  if (!artifact) return <EmptyPreview copy={copy} />;
   if (artifact.type === 'references') {
     return (
       <ReferencesPreview
@@ -898,6 +917,7 @@ function ReferenceDrawer({
   activeTab,
   articleGenerated,
   citationUsages,
+  locale,
   onClose,
   onOpenKnowledgeItem,
   onOpenSourcePreview,
@@ -943,7 +963,7 @@ function ReferenceDrawer({
             }`}
             onClick={() => onTabChange('knowledge')}
           >
-            知识资料
+            {locale === 'en-US' ? 'Knowledge' : '知识资料'}
           </button>
           <button
             type="button"
@@ -952,14 +972,14 @@ function ReferenceDrawer({
             }`}
             onClick={() => onTabChange('reference')}
           >
-            参考网页
+            {locale === 'en-US' ? 'Web' : '参考网页'}
           </button>
         </div>
         <button
           type="button"
           className="inline-flex h-8 w-8 items-center justify-center rounded-[6px] text-[#606266] hover:bg-[#F5F7FA]"
           onClick={onClose}
-          aria-label="关闭引用内容"
+          aria-label={locale === 'en-US' ? 'Close references' : '关闭引用内容'}
         >
           <X className="h-4 w-4" />
         </button>
@@ -967,12 +987,18 @@ function ReferenceDrawer({
       <div className="min-h-0 h-[calc(100%-58px)] overflow-y-auto p-4">
         {!articleGenerated ? (
           <div className="flex h-full items-center justify-center px-6 text-center">
-            <p className="text-[14px] leading-[22px] text-[#909399]">文章生成后将展示引用标识与对应内容。</p>
+            <p className="text-[14px] leading-[22px] text-[#909399]">
+              {locale === 'en-US'
+                ? 'Citations and matched content appear after draft generation.'
+                : '文章生成后将展示引用标识与对应内容。'}
+            </p>
           </div>
         ) : (
           <>
             <div className="mb-4 text-[14px] leading-[22px] text-[#606266]">
-              总计 {filtered.length} 条实际引用，按文章生成内容对应展示。
+              {locale === 'en-US'
+                ? `${filtered.length} citations matched to generated content.`
+                : `总计 ${filtered.length} 条实际引用，按文章生成内容对应展示。`}
             </div>
             <div className="space-y-3">
               {filtered.map((item) => (
@@ -990,11 +1016,15 @@ function ReferenceDrawer({
                     </button>
                   </div>
                   <div className="mt-3 rounded-[8px] bg-white px-3 py-2">
-                    <div className="text-[12px] font-semibold text-[#A8ABB2]">来源文本块</div>
+                    <div className="text-[12px] font-semibold text-[#A8ABB2]">
+                      {locale === 'en-US' ? 'Source' : '来源文本块'}
+                    </div>
                     <p className="mt-1 text-[13px] leading-[20px] text-[#606266]">{item.sourceSnippet}</p>
                   </div>
                   <div className="mt-3 rounded-[8px] border border-[#CDEFD8] bg-[#ECFDF5] px-3 py-2">
-                    <div className="text-[12px] font-semibold text-[#00A85F]">文章生成内容</div>
+                    <div className="text-[12px] font-semibold text-[#00A85F]">
+                      {locale === 'en-US' ? 'Generated' : '文章生成内容'}
+                    </div>
                     <p className="mt-1 text-[13px] leading-[20px] text-[#26734D]">{item.generatedContent}</p>
                   </div>
                 </article>
@@ -1007,7 +1037,8 @@ function ReferenceDrawer({
   );
 }
 
-export default function BlogArticleAiContentPage({ article, locale, onBack, onSaveAndEdit, project, task }) {
+export default function BlogArticleAiContentPage({ article, locale, onBack, onSaveAndEdit, project, t, task }) {
+  const copy = t.blogArticle.aiCreation;
   const [revisionRequests, setRevisionRequests] = useState(() => task?.content?.revisionRequests ?? []);
   const [revisionInput, setRevisionInput] = useState('');
   const demoData = useMemo(
@@ -1177,8 +1208,11 @@ export default function BlogArticleAiContentPage({ article, locale, onBack, onSa
       }),
     });
     setToast({
-      actionLabel: '重新生成',
-      message: '任务已中止，可返回上一步修改或重新生成',
+      actionLabel: copy.actions.regenerate,
+      message:
+        locale === 'en-US'
+          ? 'Task stopped. Go back or regenerate.'
+          : '任务已中止，可返回上一步修改或重新生成',
       type: 'warning',
     });
   }
@@ -1241,7 +1275,13 @@ export default function BlogArticleAiContentPage({ article, locale, onBack, onSa
       embeddedMediaAssets: finalArticle.images ?? [],
       evaluationReport: demoData.latestEvaluationReport,
       id: article?.id || createBlogArticleId(),
-      keywords: [...new Set([...(tdk.keywords ?? []), taskInput.primaryKeyword, ...(taskInput.secondaryKeywords ?? [])].filter(Boolean))],
+      keywords: [
+        ...new Set([
+          ...(tdk.keywords ?? []),
+          ...splitAiKeywordText(taskInput.primaryKeyword),
+          ...(taskInput.secondaryKeywords ?? []),
+        ].filter(Boolean)),
+      ],
       status: 'draft',
       targetAudienceName: taskInput.targetAudience?.name || taskInput.targetAudienceName || article?.targetAudienceName || '',
       tdk,
@@ -1310,16 +1350,18 @@ export default function BlogArticleAiContentPage({ article, locale, onBack, onSa
           >
             <ArrowLeft className="h-5 w-5" />
           </button>
-          <h1 className="w-[360px] text-[18px] font-bold leading-[28px] text-[#232E45]">AI 创作-内容生成</h1>
-          <Stepper />
+          <h1 className="w-[360px] text-[18px] font-bold leading-[28px] text-[#232E45]">
+            {copy.titles.content}
+          </h1>
+          <Stepper copy={copy} />
           <div className="flex w-[360px] justify-end">
             <button
               type="button"
-              className="inline-flex h-8 items-center justify-center gap-2 rounded-[6px] bg-white px-3 text-[14px] font-semibold text-[#365EFF] shadow-[0_2px_8px_rgba(31,45,61,0.12)] transition hover:bg-[#F5F7FF]"
+              className="inline-flex h-8 items-center justify-center gap-2 whitespace-nowrap rounded-[6px] bg-white px-3 text-[14px] font-semibold text-[#365EFF] shadow-[0_2px_8px_rgba(31,45,61,0.12)] transition hover:bg-[#F5F7FF]"
               onClick={() => setReferenceOpen((current) => !current)}
             >
               <BookOpen className="h-4 w-4" />
-              引用内容
+              {copy.actions.references}
             </button>
           </div>
         </div>
@@ -1345,6 +1387,7 @@ export default function BlogArticleAiContentPage({ article, locale, onBack, onSa
                   key={workflowTask.id}
                   artifacts={demoData.artifacts}
                   completed={completed}
+                  copy={copy}
                   isCurrent={isCurrent}
                   isStopped={isStopped}
                   locale={locale}
@@ -1359,7 +1402,9 @@ export default function BlogArticleAiContentPage({ article, locale, onBack, onSa
             {showRevisionRequestBox ? (
               <RevisionRequestBox
                 key={`${task.id}-${revisionRequests.length}`}
+                copy={copy}
                 disabled={false}
+                locale={locale}
                 onChange={setRevisionInput}
                 onSubmit={handleSubmitRevisionRequest}
                 value={revisionInput}
@@ -1371,6 +1416,7 @@ export default function BlogArticleAiContentPage({ article, locale, onBack, onSa
         <section className="h-[calc(100vh-152px)] overflow-hidden rounded-[8px] bg-white shadow-[0_2px_10px_rgba(31,45,61,0.04)]">
           <PreviewPanel
             artifact={selectedArtifact}
+            copy={copy}
             onOpenKnowledgeItem={handleOpenKnowledgeItem}
             onOpenSourcePreview={handleOpenSourcePreview}
           />
@@ -1381,6 +1427,7 @@ export default function BlogArticleAiContentPage({ article, locale, onBack, onSa
             activeTab={referenceTab}
             articleGenerated={articleGenerated}
             citationUsages={demoData.citationUsages}
+            locale={locale}
             onClose={() => setReferenceOpen(false)}
             onOpenKnowledgeItem={handleOpenKnowledgeItem}
             onOpenSourcePreview={handleOpenSourcePreview}
@@ -1394,28 +1441,28 @@ export default function BlogArticleAiContentPage({ article, locale, onBack, onSa
         <div className="mx-auto flex h-full max-w-[1600px] items-center justify-between px-6">
           <button
             type="button"
-            className="inline-flex h-8 items-center justify-center rounded-[6px] border border-[#365EFF] px-4 text-[14px] font-semibold text-[#365EFF] transition hover:bg-[#EEF3FF]"
+            className="inline-flex h-8 items-center justify-center whitespace-nowrap rounded-[6px] border border-[#365EFF] px-4 text-[14px] font-semibold text-[#365EFF] transition hover:bg-[#EEF3FF]"
             onClick={onBack}
           >
-            上一步
+            {copy.actions.previous}
           </button>
           <div className="flex items-center gap-3">
             <button
               type="button"
-              className="inline-flex h-8 items-center justify-center rounded-[6px] border border-[#365EFF] px-4 text-[14px] font-semibold text-[#365EFF] transition hover:bg-[#EEF3FF] disabled:cursor-not-allowed disabled:border-[#DCDFE6] disabled:text-[#A8ABB2] disabled:hover:bg-white"
+              className="inline-flex h-8 items-center justify-center whitespace-nowrap rounded-[6px] border border-[#365EFF] px-4 text-[14px] font-semibold text-[#365EFF] transition hover:bg-[#EEF3FF] disabled:cursor-not-allowed disabled:border-[#DCDFE6] disabled:text-[#A8ABB2] disabled:hover:bg-white"
               disabled={isComplete || isStopped}
               onClick={handleStopTask}
             >
-              中止任务
+              {copy.actions.stop}
             </button>
             <button
               type="button"
-              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-[6px] bg-[#365EFF] px-5 text-[14px] font-semibold text-white transition hover:bg-[#2547D0] disabled:cursor-not-allowed disabled:bg-[#A8B9FF]"
+              className="inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-[6px] bg-[#365EFF] px-5 text-[14px] font-semibold text-white transition hover:bg-[#2547D0] disabled:cursor-not-allowed disabled:bg-[#A8B9FF]"
               disabled={!isComplete || isStopped}
               onClick={handleSaveAndEdit}
             >
               <Save className="h-4 w-4" />
-              保存并编辑
+              {copy.actions.saveAndEdit}
             </button>
           </div>
         </div>

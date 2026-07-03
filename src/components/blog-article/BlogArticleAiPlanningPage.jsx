@@ -13,14 +13,13 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Toast from '../ui/Toast.jsx';
+import AiCreationStepLabel from './AiCreationStepLabel.jsx';
 import { getAgentDisplay } from './agentDisplay.js';
 import {
   createPlanningDemoData,
   resetAiPlanningTask,
   updateAiCreationTask,
 } from '../../services/blogArticleAiStore.js';
-
-const stepItems = ['创建任务', '文章策划', '标题大纲', '内容生成'];
 
 function getTodayString() {
   return new Date().toISOString().slice(0, 10);
@@ -30,6 +29,10 @@ function getArtifactIcon(type) {
   if (type === 'references') return BookOpen;
   if (type === 'strategy') return ClipboardList;
   return FileText;
+}
+
+function formatTaskState(taskName, stateText, locale) {
+  return locale === 'en-US' ? `${stateText}: ${taskName}` : `${taskName}${stateText}`;
 }
 
 function getInitialPlaybackState(workflow, task) {
@@ -54,10 +57,10 @@ function getInitialPlaybackState(workflow, task) {
   };
 }
 
-function Stepper() {
+function Stepper({ copy }) {
   return (
     <div className="flex flex-1 items-center justify-center gap-5">
-      {stepItems.map((step, index) => (
+      {copy.steps.map((step, index) => (
         <div key={step} className="flex items-center gap-3">
           <span
             className={`inline-flex h-7 w-7 items-center justify-center rounded-full text-[14px] font-semibold ${
@@ -66,10 +69,8 @@ function Stepper() {
           >
             {index + 1}
           </span>
-          <span className={`text-[14px] font-semibold ${index === 1 ? 'text-[#303133]' : 'text-[#A8ABB2]'}`}>
-            {step}
-          </span>
-          {index < stepItems.length - 1 ? <span className="h-px w-16 bg-[#E4E7ED]" /> : null}
+          <AiCreationStepLabel active={index === 1} step={step} />
+          {index < copy.steps.length - 1 ? <span className="h-px w-16 bg-[#E4E7ED]" /> : null}
         </div>
       ))}
     </div>
@@ -157,6 +158,7 @@ function WorkflowTask({
   task,
   thinkingCount,
   locale,
+  copy,
 }) {
   const agentDisplay = getAgentDisplay(task.agentTitle, locale);
 
@@ -170,9 +172,9 @@ function WorkflowTask({
           <div className="min-w-0 flex-1">
             <div className="text-[14px] font-semibold leading-[20px] text-[#303133]">
               {completed
-                ? `${task.taskName}完成`
+                ? formatTaskState(task.taskName, copy.status.done, locale)
                 : isStopped && isCurrent
-                  ? `${task.taskName}已中止`
+                  ? formatTaskState(task.taskName, copy.status.stopped, locale)
                   : task.runningText}
             </div>
             <div className="mt-3 space-y-4">
@@ -194,16 +196,20 @@ function WorkflowTask({
   );
 }
 
-function EmptyPreview() {
+function EmptyPreview({ locale }) {
   return (
     <div className="flex h-full items-center justify-center px-8 text-center">
       <div>
         <span className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-full bg-[#EEF3FF] text-[#365EFF]">
           <FileText className="h-6 w-6" />
         </span>
-        <h2 className="mt-4 text-[18px] font-semibold leading-[28px] text-[#303133]">选择左侧产物查看预览</h2>
+        <h2 className="mt-4 text-[18px] font-semibold leading-[28px] text-[#303133]">
+          {locale === 'en-US' ? 'Select an Output' : '选择左侧产物查看预览'}
+        </h2>
         <p className="mt-2 text-[14px] leading-[22px] text-[#909399]">
-          产物生成后不会自动切换，需要手动点击左侧卡片查看。
+          {locale === 'en-US'
+            ? 'Generated outputs will not open automatically. Select a card to preview.'
+            : '产物生成后不会自动切换，需要手动点击左侧卡片查看。'}
         </p>
       </div>
     </div>
@@ -469,8 +475,10 @@ function StrategyRenderer({ content }) {
 
 function StrategyPreview({
   content,
+  copy,
   draft,
   editing,
+  locale,
   onCancel,
   onDraftChange,
   onEdit,
@@ -479,7 +487,9 @@ function StrategyPreview({
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-[64px] flex-none items-center justify-between border-b border-[#EBEEF5] px-6">
-        <h2 className="text-[16px] font-bold leading-[24px] text-[#303133]">文章策划方案</h2>
+        <h2 className="text-[16px] font-bold leading-[24px] text-[#303133]">
+          {locale === 'en-US' ? 'Plan' : '文章策划方案'}
+        </h2>
         {editing ? (
           <div className="flex items-center gap-2">
             <button
@@ -487,7 +497,7 @@ function StrategyPreview({
               className="inline-flex h-8 items-center justify-center rounded-[6px] border border-[#C8D2FF] px-4 text-[14px] font-semibold text-[#365EFF] transition hover:bg-[#EEF3FF]"
               onClick={onCancel}
             >
-              取消
+              {copy.actions.cancel}
             </button>
             <button
               type="button"
@@ -495,7 +505,7 @@ function StrategyPreview({
               onClick={onSave}
             >
               <Save className="h-4 w-4" />
-              保存
+              {locale === 'en-US' ? 'Save' : '保存'}
             </button>
           </div>
         ) : (
@@ -505,7 +515,7 @@ function StrategyPreview({
             onClick={onEdit}
           >
             <Edit3 className="h-4 w-4" />
-            编辑
+            {locale === 'en-US' ? 'Edit' : '编辑'}
           </button>
         )}
       </div>
@@ -535,7 +545,9 @@ function StrategyPreview({
 
 function PreviewPanel({
   artifact,
+  copy,
   isEditingStrategy,
+  locale,
   onCancelStrategy,
   onDraftChange,
   onEditStrategy,
@@ -544,7 +556,7 @@ function PreviewPanel({
   strategyDraft,
 }) {
   if (!artifact) {
-    return <EmptyPreview />;
+    return <EmptyPreview copy={copy} locale={locale} />;
   }
 
   if (artifact.type === 'project-report') {
@@ -558,8 +570,10 @@ function PreviewPanel({
   return (
     <StrategyPreview
       content={strategyContent}
+      copy={copy}
       draft={strategyDraft}
       editing={isEditingStrategy}
+      locale={locale}
       onCancel={onCancelStrategy}
       onDraftChange={onDraftChange}
       onEdit={onEditStrategy}
@@ -568,12 +582,12 @@ function PreviewPanel({
   );
 }
 
-function UnsavedDialog({ onClose, onDiscard }) {
+function UnsavedDialog({ copy, onClose, onDiscard }) {
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 px-4">
       <div className="w-[420px] max-w-full rounded-[12px] border border-[#EBEEF5] bg-white p-6 shadow-[0_18px_48px_rgba(15,23,42,0.18)]">
         <div className="flex items-center justify-between">
-          <h2 className="text-[18px] font-bold leading-[28px] text-[#303133]">内容未保存</h2>
+          <h2 className="text-[18px] font-bold leading-[28px] text-[#303133]">{copy.dialog.unsavedTitle}</h2>
           <button
             type="button"
             className="inline-flex h-8 w-8 items-center justify-center rounded-[6px] text-[#606266] hover:bg-[#F5F7FA]"
@@ -583,23 +597,21 @@ function UnsavedDialog({ onClose, onDiscard }) {
             <X className="h-5 w-5" />
           </button>
         </div>
-        <p className="mt-5 text-[14px] leading-[22px] text-[#606266]">
-          当前文章策划方案尚未保存，是否放弃本次修改？
-        </p>
+        <p className="mt-5 text-[14px] leading-[22px] text-[#606266]">{copy.dialog.unsavedBody}</p>
         <div className="mt-8 flex justify-end gap-3">
           <button
             type="button"
-            className="inline-flex h-8 items-center justify-center rounded-[6px] border border-[#C8D2FF] px-4 text-[14px] font-semibold text-[#365EFF] transition hover:bg-[#EEF3FF]"
+            className="inline-flex h-8 items-center justify-center whitespace-nowrap rounded-[6px] border border-[#C8D2FF] px-4 text-[14px] font-semibold text-[#365EFF] transition hover:bg-[#EEF3FF]"
             onClick={onClose}
           >
-            继续编辑
+            {copy.dialog.keepEditing}
           </button>
           <button
             type="button"
-            className="inline-flex h-8 items-center justify-center rounded-[6px] bg-[#365EFF] px-4 text-[14px] font-semibold text-white transition hover:bg-[#2547D0]"
+            className="inline-flex h-8 items-center justify-center whitespace-nowrap rounded-[6px] bg-[#365EFF] px-4 text-[14px] font-semibold text-white transition hover:bg-[#2547D0]"
             onClick={onDiscard}
           >
-            放弃修改
+            {copy.dialog.discard}
           </button>
         </div>
       </div>
@@ -607,7 +619,8 @@ function UnsavedDialog({ onClose, onDiscard }) {
   );
 }
 
-export default function BlogArticleAiPlanningPage({ article, locale, onBack, onClose, onGenerateOutline, project, task }) {
+export default function BlogArticleAiPlanningPage({ article, locale, onBack, onClose, onGenerateOutline, project, t, task }) {
+  const copy = t.blogArticle.aiCreation;
   const demoData = useMemo(() => createPlanningDemoData(task, project), [project, task]);
   const workflow = demoData.workflow;
   const initialPlaybackState = useMemo(() => getInitialPlaybackState(workflow, task), [workflow, task]);
@@ -789,8 +802,11 @@ export default function BlogArticleAiPlanningPage({ article, locale, onBack, onC
       },
     });
     setToast({
-      actionLabel: '重新生成',
-      message: '任务已中止，可返回上一步修改或重新生成',
+      actionLabel: copy.actions.regenerate,
+      message:
+        locale === 'en-US'
+          ? 'Task stopped. Go back or regenerate.'
+          : '任务已中止，可返回上一步修改或重新生成',
       type: 'warning',
     });
   }
@@ -803,7 +819,10 @@ export default function BlogArticleAiPlanningPage({ article, locale, onBack, onC
   function handleSaveStrategy() {
     const nextContent = strategyDraft.trim();
     if (!nextContent) {
-      setToast({ message: '文章策划方案不能为空，无法保存', type: 'error' });
+      setToast({
+        message: locale === 'en-US' ? 'Plan cannot be empty.' : '文章策划方案不能为空，无法保存',
+        type: 'error',
+      });
       return;
     }
 
@@ -817,7 +836,7 @@ export default function BlogArticleAiPlanningPage({ article, locale, onBack, onC
         updatedAt: getTodayString(),
       },
     });
-    setToast({ message: '保存成功', type: 'success' });
+    setToast({ message: locale === 'en-US' ? 'Saved' : '保存成功', type: 'success' });
   }
 
   function handleCancelStrategy() {
@@ -882,11 +901,11 @@ export default function BlogArticleAiPlanningPage({ article, locale, onBack, onC
           >
             <ArrowLeft className="h-5 w-5" />
           </button>
-          <h1 className="w-[360px] text-[18px] font-bold leading-[28px] text-[#232E45]">AI 创作-文章策划</h1>
-          <Stepper />
-          <div className="w-[360px] text-right text-[13px] text-[#909399]">
-            {article?.title ? `草稿：${article.title}` : ''}
-          </div>
+          <h1 className="w-[360px] text-[18px] font-bold leading-[28px] text-[#232E45]">
+            {copy.titles.planning}
+          </h1>
+          <Stepper copy={copy} />
+          <div className="w-[360px]" />
         </div>
       </header>
 
@@ -907,6 +926,7 @@ export default function BlogArticleAiPlanningPage({ article, locale, onBack, onC
                   key={workflowTask.id}
                   artifact={artifact}
                   completed={completed}
+                  copy={copy}
                   isCurrent={isCurrent}
                   isStopped={isStopped}
                   locale={locale}
@@ -924,7 +944,9 @@ export default function BlogArticleAiPlanningPage({ article, locale, onBack, onC
         <section className="h-[calc(100vh-152px)] overflow-hidden rounded-[8px] bg-white shadow-[0_2px_10px_rgba(31,45,61,0.04)]">
           <PreviewPanel
             artifact={selectedArtifact}
+            copy={copy}
             isEditingStrategy={isEditingStrategy}
+            locale={locale}
             onCancelStrategy={handleCancelStrategy}
             onDraftChange={setStrategyDraft}
             onEditStrategy={() => {
@@ -942,27 +964,27 @@ export default function BlogArticleAiPlanningPage({ article, locale, onBack, onC
         <div className="mx-auto flex h-full max-w-[1600px] items-center justify-between px-6">
           <button
             type="button"
-            className="inline-flex h-8 items-center justify-center rounded-[6px] border border-[#365EFF] px-4 text-[14px] font-semibold text-[#365EFF] transition hover:bg-[#EEF3FF]"
+            className="inline-flex h-8 items-center justify-center whitespace-nowrap rounded-[6px] border border-[#365EFF] px-4 text-[14px] font-semibold text-[#365EFF] transition hover:bg-[#EEF3FF]"
             onClick={() => requestAction({ type: 'back' })}
           >
-            上一步
+            {copy.actions.previous}
           </button>
           <div className="flex items-center gap-3">
             <button
               type="button"
-              className="inline-flex h-8 items-center justify-center rounded-[6px] border border-[#365EFF] px-4 text-[14px] font-semibold text-[#365EFF] transition hover:bg-[#EEF3FF] disabled:cursor-not-allowed disabled:border-[#DCDFE6] disabled:text-[#A8ABB2] disabled:hover:bg-white"
+              className="inline-flex h-8 items-center justify-center whitespace-nowrap rounded-[6px] border border-[#365EFF] px-4 text-[14px] font-semibold text-[#365EFF] transition hover:bg-[#EEF3FF] disabled:cursor-not-allowed disabled:border-[#DCDFE6] disabled:text-[#A8ABB2] disabled:hover:bg-white"
               disabled={isComplete || isStopped}
               onClick={handleStopTask}
             >
-              中止任务
+              {copy.actions.stop}
             </button>
             <button
               type="button"
-              className="inline-flex h-8 items-center justify-center rounded-[6px] bg-[#365EFF] px-5 text-[14px] font-semibold text-white transition hover:bg-[#2547D0] disabled:cursor-not-allowed disabled:bg-[#A8B9FF]"
+              className="inline-flex h-8 items-center justify-center whitespace-nowrap rounded-[6px] bg-[#365EFF] px-5 text-[14px] font-semibold text-white transition hover:bg-[#2547D0] disabled:cursor-not-allowed disabled:bg-[#A8B9FF]"
               disabled={!isComplete || isStopped}
               onClick={handleGenerateOutline}
             >
-              生成大纲
+              {copy.actions.generateOutline}
             </button>
           </div>
         </div>
@@ -979,7 +1001,7 @@ export default function BlogArticleAiPlanningPage({ article, locale, onBack, onC
       ) : null}
 
       {pendingAction ? (
-        <UnsavedDialog onClose={() => setPendingAction(null)} onDiscard={handleDiscardUnsaved} />
+        <UnsavedDialog copy={copy} onClose={() => setPendingAction(null)} onDiscard={handleDiscardUnsaved} />
       ) : null}
     </div>
   );

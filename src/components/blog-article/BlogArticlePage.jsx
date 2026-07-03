@@ -8,7 +8,6 @@ import {
   Search,
   Settings2,
   SlidersHorizontal,
-  Target,
   Trash2,
   UserRound,
   X,
@@ -145,14 +144,6 @@ function ArticleCard({
           </div>
 
           <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-base font-medium text-slate-500">
-            <span className="inline-flex items-center gap-2">
-              <Target className="h-4 w-4" />
-              {copy.fields.targetAudience}: {article.targetAudienceName || '-'}
-            </span>
-            <span className="inline-flex items-center gap-2">
-              <FileText className="h-4 w-4" />
-              {copy.fields.articleType}: {article.articleType || '-'}
-            </span>
             <span className="inline-flex items-center gap-2">
               <CalendarClock className="h-4 w-4" />
               {copy.fields.updatedAt}: {article.updatedAt}

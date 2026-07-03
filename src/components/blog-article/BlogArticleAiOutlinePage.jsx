@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Toast from '../ui/Toast.jsx';
+import AiCreationStepLabel from './AiCreationStepLabel.jsx';
 import { getAgentDisplay } from './agentDisplay.js';
 import {
   createOutlineDemoData,
@@ -18,12 +19,15 @@ import {
   updateAiCreationTask,
 } from '../../services/blogArticleAiStore.js';
 
-const stepItems = ['创建任务', '文章策划', '标题大纲', '内容生成'];
 const outlineLevels = ['H2', 'H3', 'H4'];
 const postOutlineStages = new Set(['content', 'content-completed', 'content-stopped']);
 
 function getTodayString() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function formatTaskState(taskName, stateText, locale) {
+  return locale === 'en-US' ? `${stateText}: ${taskName}` : `${taskName}${stateText}`;
 }
 
 function cloneTree(tree) {
@@ -238,10 +242,10 @@ function getInitialPlaybackState(workflow, task) {
   };
 }
 
-function Stepper() {
+function Stepper({ copy }) {
   return (
     <div className="flex flex-1 items-center justify-center gap-5">
-      {stepItems.map((step, index) => (
+      {copy.steps.map((step, index) => (
         <div key={step} className="flex items-center gap-3">
           <span
             className={`inline-flex h-7 w-7 items-center justify-center rounded-full text-[14px] font-semibold ${
@@ -250,10 +254,8 @@ function Stepper() {
           >
             {index + 1}
           </span>
-          <span className={`text-[14px] font-semibold ${index === 2 ? 'text-[#303133]' : 'text-[#A8ABB2]'}`}>
-            {step}
-          </span>
-          {index < stepItems.length - 1 ? <span className="h-px w-16 bg-[#E4E7ED]" /> : null}
+          <AiCreationStepLabel active={index === 2} step={step} />
+          {index < copy.steps.length - 1 ? <span className="h-px w-16 bg-[#E4E7ED]" /> : null}
         </div>
       ))}
     </div>
@@ -335,10 +337,14 @@ function TitleSelection({
   selectedTitleId,
   titleConfirmed,
   titleOptions,
+  copy,
+  locale,
 }) {
   return (
     <div className="ml-2 space-y-3 border-l-2 border-[#E4E7ED] pl-5">
-      <div className="text-[14px] font-semibold leading-[22px] text-[#303133]">请在以下标题中进行选择：</div>
+      <div className="text-[14px] font-semibold leading-[22px] text-[#303133]">
+        {locale === 'en-US' ? 'Choose a title:' : '请在以下标题中进行选择：'}
+      </div>
       <div className="space-y-2">
         {titleOptions.map((option) => {
           const selected = selectedTitleId === option.id;
@@ -383,7 +389,7 @@ function TitleSelection({
       <div className="flex justify-end">
         {titleConfirmed ? (
           <span className="inline-flex h-8 items-center justify-center rounded-[6px] bg-[#ECFDF5] px-3 text-[13px] font-semibold text-[#00A85F]">
-            标题已确认
+            {locale === 'en-US' ? 'Title confirmed' : '标题已确认'}
           </span>
         ) : (
           <button
@@ -392,7 +398,7 @@ function TitleSelection({
             disabled={!selectedTitleId}
             onClick={onConfirmTitle}
           >
-            确认标题
+            {copy.actions.confirmTitle}
           </button>
         )}
       </div>
@@ -418,6 +424,7 @@ function WorkflowTask({
   titleConfirmed,
   titleOptions,
   locale,
+  copy,
 }) {
   const agentDisplay = getAgentDisplay(task.agentTitle, locale);
 
@@ -431,9 +438,9 @@ function WorkflowTask({
           <div className="min-w-0 flex-1">
             <div className="text-[14px] font-semibold leading-[20px] text-[#303133]">
               {completed
-                ? `${task.taskName}完成`
+                ? formatTaskState(task.taskName, copy.status.done, locale)
                 : isStopped && isCurrent
-                  ? `${task.taskName}已中止`
+                  ? formatTaskState(task.taskName, copy.status.stopped, locale)
                   : task.runningText}
             </div>
             <div className="mt-3 space-y-4">
@@ -443,6 +450,8 @@ function WorkflowTask({
               {showTitleSelection ? (
                 <TitleSelection
                   onConfirmTitle={onConfirmTitle}
+                  copy={copy}
+                  locale={locale}
                   onRegenerateTitle={onRegenerateTitle}
                   onSelectTitle={onSelectTitle}
                   selectedTitleId={selectedTitleId}
@@ -465,16 +474,18 @@ function WorkflowTask({
   );
 }
 
-function EmptyEditor() {
+function EmptyEditor({ copy }) {
   return (
     <div className="flex h-full items-center justify-center px-8 text-center">
       <div>
         <span className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-full bg-[#EEF3FF] text-[#365EFF]">
           <FileText className="h-6 w-6" />
         </span>
-        <h2 className="mt-4 text-[18px] font-semibold leading-[28px] text-[#303133]">等待标题与大纲生成</h2>
+        <h2 className="mt-4 text-[18px] font-semibold leading-[28px] text-[#303133]">
+          {copy.empty.outlinePreviewTitle}
+        </h2>
         <p className="mt-2 text-[14px] leading-[22px] text-[#909399]">
-          标题选择后会自动填写到右侧，文章大纲生成后可拖拽编辑。
+          {copy.empty.outlinePreviewBody}
         </p>
       </div>
     </div>
@@ -583,9 +594,11 @@ function OutlineNode({
 }
 
 function OutlineEditor({
+  copy,
   dragError,
   dragState,
   dropIndicator,
+  locale,
   onDelete,
   onDragEnd,
   onDragOver,
@@ -601,14 +614,16 @@ function OutlineEditor({
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-[58px] flex-none items-center border-b border-[#EBEEF5] px-6">
-        <h2 className="text-[16px] font-bold leading-[24px] text-[#303133]">文章大纲</h2>
+        <h2 className="text-[16px] font-bold leading-[24px] text-[#303133]">
+          {copy.titles.outline}
+        </h2>
       </div>
       <div className="flex h-[60px] flex-none items-center border-b border-[#EBEEF5] px-6">
         <input
           className="h-10 min-w-0 flex-1 border-none bg-transparent text-[20px] font-semibold leading-[30px] text-[#303133] outline-none placeholder:text-[#A8ABB2] focus:ring-0"
           value={titleDraft}
           onChange={(event) => onTitleChange(event.target.value)}
-          placeholder="请输入文章标题"
+          placeholder={locale === 'en-US' ? 'Enter article title' : '请输入文章标题'}
         />
       </div>
       <div className="flex h-[46px] flex-none items-center gap-5 border-b border-[#EBEEF5] px-7 text-[#606266]">
@@ -644,7 +659,9 @@ function OutlineEditor({
           </div>
         ) : (
           <div className="rounded-[8px] border border-dashed border-[#DCDFE6] bg-[#FAFBFD] px-4 py-8 text-center text-[14px] leading-[22px] text-[#909399]">
-            正在等待大纲生成，完成后将在这里展示 H2/H3/H4 树形结构。
+            {locale === 'en-US'
+              ? 'Waiting for the outline. H2/H3/H4 sections will appear here.'
+              : '正在等待大纲生成，完成后将在这里展示 H2/H3/H4 树形结构。'}
           </div>
         )}
       </div>
@@ -652,12 +669,12 @@ function OutlineEditor({
   );
 }
 
-function UnsavedDialog({ onClose, onDiscard }) {
+function UnsavedDialog({ copy, onClose, onDiscard }) {
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 px-4">
       <div className="w-[420px] max-w-full rounded-[12px] border border-[#EBEEF5] bg-white p-6 shadow-[0_18px_48px_rgba(15,23,42,0.18)]">
         <div className="flex items-center justify-between">
-          <h2 className="text-[18px] font-bold leading-[28px] text-[#303133]">内容未保存</h2>
+          <h2 className="text-[18px] font-bold leading-[28px] text-[#303133]">{copy.dialog.unsavedTitle}</h2>
           <button
             type="button"
             className="inline-flex h-8 w-8 items-center justify-center rounded-[6px] text-[#606266] hover:bg-[#F5F7FA]"
@@ -668,22 +685,22 @@ function UnsavedDialog({ onClose, onDiscard }) {
           </button>
         </div>
         <p className="mt-5 text-[14px] leading-[22px] text-[#606266]">
-          当前标题或大纲尚未保存，是否放弃本次修改？
+          {copy.dialog.unsavedBody}
         </p>
         <div className="mt-8 flex justify-end gap-3">
           <button
             type="button"
-            className="inline-flex h-8 items-center justify-center rounded-[6px] border border-[#C8D2FF] px-4 text-[14px] font-semibold text-[#365EFF] transition hover:bg-[#EEF3FF]"
+            className="inline-flex h-8 items-center justify-center whitespace-nowrap rounded-[6px] border border-[#C8D2FF] px-4 text-[14px] font-semibold text-[#365EFF] transition hover:bg-[#EEF3FF]"
             onClick={onClose}
           >
-            继续编辑
+            {copy.dialog.keepEditing}
           </button>
           <button
             type="button"
-            className="inline-flex h-8 items-center justify-center rounded-[6px] bg-[#365EFF] px-4 text-[14px] font-semibold text-white transition hover:bg-[#2547D0]"
+            className="inline-flex h-8 items-center justify-center whitespace-nowrap rounded-[6px] bg-[#365EFF] px-4 text-[14px] font-semibold text-white transition hover:bg-[#2547D0]"
             onClick={onDiscard}
           >
-            放弃修改
+            {copy.dialog.discard}
           </button>
         </div>
       </div>
@@ -691,7 +708,8 @@ function UnsavedDialog({ onClose, onDiscard }) {
   );
 }
 
-export default function BlogArticleAiOutlinePage({ article, locale, onBack, onClose, onGenerateContent, project, task }) {
+export default function BlogArticleAiOutlinePage({ article, locale, onBack, onClose, onGenerateContent, project, t, task }) {
+  const copy = t.blogArticle.aiCreation;
   const demoData = useMemo(() => createOutlineDemoData(task, project), [project, task]);
   const workflow = demoData.workflow;
   const initialPlaybackState = useMemo(() => getInitialPlaybackState(workflow, task), [workflow, task]);
@@ -1033,8 +1051,11 @@ export default function BlogArticleAiOutlinePage({ article, locale, onBack, onCl
       },
     });
     setToast({
-      actionLabel: '重新生成',
-      message: '任务已中止，可返回上一步修改或重新生成',
+      actionLabel: copy.actions.regenerate,
+      message:
+        locale === 'en-US'
+          ? 'Task stopped. Go back or regenerate.'
+          : '任务已中止，可返回上一步修改或重新生成',
       type: 'warning',
     });
   }
@@ -1130,12 +1151,18 @@ export default function BlogArticleAiOutlinePage({ article, locale, onBack, onCl
   function saveAndEnterContent() {
     const nextTitle = titleDraft.trim();
     if (!nextTitle) {
-      setToast({ message: '文章标题不能为空，无法生成内容', type: 'error' });
+      setToast({
+        message: locale === 'en-US' ? 'Title cannot be empty.' : '文章标题不能为空，无法生成内容',
+        type: 'error',
+      });
       return;
     }
 
     if (!outlineTree.length) {
-      setToast({ message: '文章大纲不能为空，无法生成内容', type: 'error' });
+      setToast({
+        message: locale === 'en-US' ? 'Outline cannot be empty.' : '文章大纲不能为空，无法生成内容',
+        type: 'error',
+      });
       return;
     }
 
@@ -1197,11 +1224,11 @@ export default function BlogArticleAiOutlinePage({ article, locale, onBack, onCl
           >
             <ArrowLeft className="h-5 w-5" />
           </button>
-          <h1 className="w-[360px] text-[18px] font-bold leading-[28px] text-[#232E45]">AI 创作-标题大纲</h1>
-          <Stepper />
-          <div className="w-[360px] text-right text-[13px] text-[#909399]">
-            {article?.title ? `草稿：${article.title}` : ''}
-          </div>
+          <h1 className="w-[360px] text-[18px] font-bold leading-[28px] text-[#232E45]">
+            {copy.titles.outline}
+          </h1>
+          <Stepper copy={copy} />
+          <div className="w-[360px]" />
         </div>
       </header>
 
@@ -1222,6 +1249,7 @@ export default function BlogArticleAiOutlinePage({ article, locale, onBack, onCl
                   key={workflowTask.id}
                   artifact={artifact}
                   completed={completed}
+                  copy={copy}
                   isCurrent={isCurrent}
                   isStopped={isStopped}
                   locale={locale}
@@ -1246,9 +1274,11 @@ export default function BlogArticleAiOutlinePage({ article, locale, onBack, onCl
         <section className="h-[calc(100vh-152px)] overflow-hidden rounded-[8px] bg-white shadow-[0_2px_10px_rgba(31,45,61,0.04)]">
           {editorReady ? (
             <OutlineEditor
+              copy={copy}
               dragError={dragError}
               dragState={dragState}
               dropIndicator={dropIndicator}
+              locale={locale}
               onDelete={handleDeleteNode}
               onDragEnd={handleDragEnd}
               onDragOver={handleDragOver}
@@ -1262,7 +1292,7 @@ export default function BlogArticleAiOutlinePage({ article, locale, onBack, onCl
               titleDraft={titleDraft}
             />
           ) : (
-            <EmptyEditor />
+            <EmptyEditor copy={copy} />
           )}
         </section>
       </main>
@@ -1271,27 +1301,27 @@ export default function BlogArticleAiOutlinePage({ article, locale, onBack, onCl
         <div className="mx-auto flex h-full max-w-[1600px] items-center justify-between px-6">
           <button
             type="button"
-            className="inline-flex h-8 items-center justify-center rounded-[6px] border border-[#365EFF] px-4 text-[14px] font-semibold text-[#365EFF] transition hover:bg-[#EEF3FF]"
+            className="inline-flex h-8 items-center justify-center whitespace-nowrap rounded-[6px] border border-[#365EFF] px-4 text-[14px] font-semibold text-[#365EFF] transition hover:bg-[#EEF3FF]"
             onClick={() => requestAction({ type: 'back' })}
           >
-            上一步
+            {copy.actions.previous}
           </button>
           <div className="flex items-center gap-3">
             <button
               type="button"
-              className="inline-flex h-8 items-center justify-center rounded-[6px] border border-[#365EFF] px-4 text-[14px] font-semibold text-[#365EFF] transition hover:bg-[#EEF3FF] disabled:cursor-not-allowed disabled:border-[#DCDFE6] disabled:text-[#A8ABB2] disabled:hover:bg-white"
+              className="inline-flex h-8 items-center justify-center whitespace-nowrap rounded-[6px] border border-[#365EFF] px-4 text-[14px] font-semibold text-[#365EFF] transition hover:bg-[#EEF3FF] disabled:cursor-not-allowed disabled:border-[#DCDFE6] disabled:text-[#A8ABB2] disabled:hover:bg-white"
               disabled={isComplete || isStopped}
               onClick={handleStopTask}
             >
-              中止任务
+              {copy.actions.stop}
             </button>
             <button
               type="button"
-              className="inline-flex h-8 items-center justify-center rounded-[6px] bg-[#365EFF] px-5 text-[14px] font-semibold text-white transition hover:bg-[#2547D0] disabled:cursor-not-allowed disabled:bg-[#A8B9FF]"
+              className="inline-flex h-8 items-center justify-center whitespace-nowrap rounded-[6px] bg-[#365EFF] px-5 text-[14px] font-semibold text-white transition hover:bg-[#2547D0] disabled:cursor-not-allowed disabled:bg-[#A8B9FF]"
               disabled={!isComplete || isStopped}
               onClick={handleGenerateContent}
             >
-              生成内容
+              {copy.actions.generateContent}
             </button>
           </div>
         </div>
@@ -1308,7 +1338,7 @@ export default function BlogArticleAiOutlinePage({ article, locale, onBack, onCl
       ) : null}
 
       {pendingAction ? (
-        <UnsavedDialog onClose={() => setPendingAction(null)} onDiscard={handleDiscardUnsaved} />
+        <UnsavedDialog copy={copy} onClose={() => setPendingAction(null)} onDiscard={handleDiscardUnsaved} />
       ) : null}
     </div>
   );

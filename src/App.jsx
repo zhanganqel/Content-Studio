@@ -219,6 +219,7 @@ export default function App() {
   if (blogAiCreateOpen) {
     return (
       <BlogArticleAiCreateTaskPage
+        locale={locale}
         onClose={() => setBlogAiCreateOpen(false)}
         onCreated={({ article, task }) => {
           setBlogAiCreateOpen(false);
@@ -231,6 +232,7 @@ export default function App() {
           setBlogAiPlanningContext({ article, task });
         }}
         project={activeProject}
+        t={t}
       />
     );
   }
@@ -267,6 +269,7 @@ export default function App() {
           setBlogAiOutlineContext({ article, task });
         }}
         project={activeProject}
+        t={t}
         task={blogAiPlanningContext.task}
       />
     );
@@ -312,6 +315,7 @@ export default function App() {
           setBlogAiContentContext({ article, task });
         }}
         project={activeProject}
+        t={t}
         task={blogAiOutlineContext.task}
       />
     );
@@ -341,6 +345,7 @@ export default function App() {
           setBlogEditorArticle(savedArticle);
         }}
         project={activeProject}
+        t={t}
         task={blogAiContentContext.task}
       />
     );
