@@ -239,6 +239,7 @@ export default function App() {
     return (
       <BlogArticleAiPlanningPage
         article={blogAiPlanningContext.article}
+        locale={locale}
         onBack={() => {
           clearAiPlanningSession();
           setBlogAiPlanningContext(null);
@@ -275,6 +276,7 @@ export default function App() {
     return (
       <BlogArticleAiOutlinePage
         article={blogAiOutlineContext.article}
+        locale={locale}
         onBack={() => {
           const latestTask =
             getAiCreationTasks(activeProject.id).find((item) => item.id === blogAiOutlineContext.task.id) ??
@@ -319,6 +321,7 @@ export default function App() {
     return (
       <BlogArticleAiContentPage
         article={blogAiContentContext.article}
+        locale={locale}
         onBack={() => {
           const latestTask =
             getAiCreationTasks(activeProject.id).find((item) => item.id === blogAiContentContext.task.id) ??

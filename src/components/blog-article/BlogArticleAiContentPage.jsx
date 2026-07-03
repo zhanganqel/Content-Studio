@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Toast from '../ui/Toast.jsx';
+import { getAgentDisplay } from './agentDisplay.js';
 import {
   createContentDemoData,
   resetAiContentTask,
@@ -191,24 +192,13 @@ function Stepper() {
 }
 
 function AgentAvatar({ agentTitle }) {
-  if (agentTitle === '用户') {
-    return (
-      <div className="flex h-10 w-10 flex-none items-center justify-center rounded-full border border-[#DDE3F0] bg-[#F7F8FB] text-[15px] font-bold text-[#606266]">
-        用
-      </div>
-    );
-  }
+  const agentDisplay = getAgentDisplay(agentTitle);
 
-  const isEvaluator = agentTitle.includes('评估');
   return (
     <div
-      className={`flex h-10 w-10 flex-none items-center justify-center rounded-full border text-[15px] font-bold ${
-        isEvaluator
-          ? 'border-[#BEE3FF] bg-[#EFF8FF] text-[#0284C7]'
-          : 'border-[#C7D2FE] bg-[#EEF2FF] text-[#365EFF]'
-      }`}
+      className={`flex h-10 w-10 flex-none items-center justify-center rounded-full border text-[15px] font-bold ${agentDisplay.avatarClassName}`}
     >
-      {isEvaluator ? '评' : agentTitle.includes('研究') ? '研' : '写'}
+      {agentDisplay.initial}
     </div>
   );
 }
@@ -377,6 +367,7 @@ function WorkflowTask({
   showArtifactIds,
   task,
   visibleThinkingCounts,
+  locale,
 }) {
   const steps = getTaskSteps(task);
 
@@ -384,12 +375,13 @@ function WorkflowTask({
     const userStep = steps[0];
     const thinkingCount = visibleThinkingCounts[userStep.id] ?? 0;
     const visibleText = userStep.thinking.slice(0, thinkingCount).join('\n') || task.runningText;
+    const agentDisplay = getAgentDisplay(task.agentTitle, locale);
 
     return (
       <section className="flex justify-end pb-8">
         <div className="flex max-w-[74%] items-start justify-end gap-3">
           <div className="min-w-0 text-right">
-            <div className="text-[13px] font-semibold leading-[20px] text-[#606266]">{task.completedText ?? task.taskName}</div>
+            <div className="text-[13px] font-semibold leading-[20px] text-[#606266]">{agentDisplay.name}</div>
             <div
               className="mt-2 whitespace-pre-wrap rounded-[8px] bg-[#365EFF] px-4 py-3 text-left text-[14px] leading-[22px] text-white shadow-[0_4px_12px_rgba(54,94,255,0.16)]"
               style={{ animation: 'aiContentFadeInUp 180ms ease-out both' }}
@@ -403,11 +395,13 @@ function WorkflowTask({
     );
   }
 
+  const agentDisplay = getAgentDisplay(task.agentTitle, locale);
+
   return (
     <section className="flex gap-4">
       <AgentAvatar agentTitle={task.agentTitle} />
       <div className="min-w-0 flex-1 pb-8">
-        <div className="text-[15px] font-semibold leading-[24px] text-[#303133]">{task.agentTitle}</div>
+        <div className="text-[15px] font-semibold leading-[24px] text-[#303133]">{agentDisplay.name}</div>
         <div className="mt-3 space-y-5">
           {steps.map((step, stepIndex) => {
             const reachable = isStepReachable(steps, stepIndex, visibleThinkingCounts, showArtifactIds, completed);
@@ -1013,7 +1007,7 @@ function ReferenceDrawer({
   );
 }
 
-export default function BlogArticleAiContentPage({ article, onBack, onSaveAndEdit, project, task }) {
+export default function BlogArticleAiContentPage({ article, locale, onBack, onSaveAndEdit, project, task }) {
   const [revisionRequests, setRevisionRequests] = useState(() => task?.content?.revisionRequests ?? []);
   const [revisionInput, setRevisionInput] = useState('');
   const demoData = useMemo(
@@ -1353,6 +1347,7 @@ export default function BlogArticleAiContentPage({ article, onBack, onSaveAndEdi
                   completed={completed}
                   isCurrent={isCurrent}
                   isStopped={isStopped}
+                  locale={locale}
                   onArtifactClick={setSelectedArtifactId}
                   selectedArtifactId={selectedArtifactId}
                   showArtifactIds={visibleArtifactIds}

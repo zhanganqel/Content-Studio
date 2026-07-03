@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Toast from '../ui/Toast.jsx';
+import { getAgentDisplay } from './agentDisplay.js';
 import {
   createPlanningDemoData,
   resetAiPlanningTask,
@@ -76,17 +77,13 @@ function Stepper() {
 }
 
 function AgentAvatar({ agentTitle }) {
-  const isResearcher = agentTitle.includes('Researcher');
+  const agentDisplay = getAgentDisplay(agentTitle);
 
   return (
     <div
-      className={`flex h-10 w-10 flex-none items-center justify-center rounded-full border text-[15px] font-bold ${
-        isResearcher
-          ? 'border-[#FFD6E7] bg-[#FFF0F6] text-[#D9467A]'
-          : 'border-[#DBEAFE] bg-[#EFF6FF] text-[#2563EB]'
-      }`}
+      className={`flex h-10 w-10 flex-none items-center justify-center rounded-full border text-[15px] font-bold ${agentDisplay.avatarClassName}`}
     >
-      {isResearcher ? '研' : '策'}
+      {agentDisplay.initial}
     </div>
   );
 }
@@ -159,12 +156,15 @@ function WorkflowTask({
   showArtifact,
   task,
   thinkingCount,
+  locale,
 }) {
+  const agentDisplay = getAgentDisplay(task.agentTitle, locale);
+
   return (
     <section className="flex gap-4">
       <AgentAvatar agentTitle={task.agentTitle} />
       <div className="min-w-0 flex-1 pb-8">
-        <div className="text-[15px] font-semibold leading-[24px] text-[#303133]">{task.agentTitle}</div>
+        <div className="text-[15px] font-semibold leading-[24px] text-[#303133]">{agentDisplay.name}</div>
         <div className="mt-3 flex items-start gap-3">
           <StatusIcon completed={completed} stopped={isStopped && isCurrent && !completed} />
           <div className="min-w-0 flex-1">
@@ -607,7 +607,7 @@ function UnsavedDialog({ onClose, onDiscard }) {
   );
 }
 
-export default function BlogArticleAiPlanningPage({ article, onBack, onClose, onGenerateOutline, project, task }) {
+export default function BlogArticleAiPlanningPage({ article, locale, onBack, onClose, onGenerateOutline, project, task }) {
   const demoData = useMemo(() => createPlanningDemoData(task, project), [project, task]);
   const workflow = demoData.workflow;
   const initialPlaybackState = useMemo(() => getInitialPlaybackState(workflow, task), [workflow, task]);
@@ -909,6 +909,7 @@ export default function BlogArticleAiPlanningPage({ article, onBack, onClose, on
                   completed={completed}
                   isCurrent={isCurrent}
                   isStopped={isStopped}
+                  locale={locale}
                   onArtifactClick={handleArtifactClick}
                   selectedArtifactId={selectedArtifactId}
                   showArtifact={Boolean(workflowTask.artifactId && visibleArtifactIds.includes(workflowTask.artifactId))}

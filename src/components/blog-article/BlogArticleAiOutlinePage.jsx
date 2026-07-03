@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Toast from '../ui/Toast.jsx';
+import { getAgentDisplay } from './agentDisplay.js';
 import {
   createOutlineDemoData,
   resetAiOutlineTask,
@@ -259,10 +260,14 @@ function Stepper() {
   );
 }
 
-function AgentAvatar() {
+function AgentAvatar({ agentTitle }) {
+  const agentDisplay = getAgentDisplay(agentTitle);
+
   return (
-    <div className="flex h-10 w-10 flex-none items-center justify-center rounded-full border border-[#C7D2FE] bg-[#EEF2FF] text-[15px] font-bold text-[#365EFF]">
-      写
+    <div
+      className={`flex h-10 w-10 flex-none items-center justify-center rounded-full border text-[15px] font-bold ${agentDisplay.avatarClassName}`}
+    >
+      {agentDisplay.initial}
     </div>
   );
 }
@@ -412,12 +417,15 @@ function WorkflowTask({
   thinkingCount,
   titleConfirmed,
   titleOptions,
+  locale,
 }) {
+  const agentDisplay = getAgentDisplay(task.agentTitle, locale);
+
   return (
     <section className="flex gap-4">
-      <AgentAvatar />
+      <AgentAvatar agentTitle={task.agentTitle} />
       <div className="min-w-0 flex-1 pb-8">
-        <div className="text-[15px] font-semibold leading-[24px] text-[#303133]">{task.agentTitle}</div>
+        <div className="text-[15px] font-semibold leading-[24px] text-[#303133]">{agentDisplay.name}</div>
         <div className="mt-3 flex items-start gap-3">
           <StatusIcon completed={completed} stopped={isStopped && isCurrent && !completed} />
           <div className="min-w-0 flex-1">
@@ -683,7 +691,7 @@ function UnsavedDialog({ onClose, onDiscard }) {
   );
 }
 
-export default function BlogArticleAiOutlinePage({ article, onBack, onClose, onGenerateContent, project, task }) {
+export default function BlogArticleAiOutlinePage({ article, locale, onBack, onClose, onGenerateContent, project, task }) {
   const demoData = useMemo(() => createOutlineDemoData(task, project), [project, task]);
   const workflow = demoData.workflow;
   const initialPlaybackState = useMemo(() => getInitialPlaybackState(workflow, task), [workflow, task]);
@@ -1216,6 +1224,7 @@ export default function BlogArticleAiOutlinePage({ article, onBack, onClose, onG
                   completed={completed}
                   isCurrent={isCurrent}
                   isStopped={isStopped}
+                  locale={locale}
                   onArtifactClick={setSelectedArtifactId}
                   onConfirmTitle={handleConfirmTitle}
                   onRegenerateTitle={handleRegenerateTitle}
