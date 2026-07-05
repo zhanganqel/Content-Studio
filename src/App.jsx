@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import AppShell from './components/AppShell.jsx';
 import BlogArticleAiCreateTaskPage from './components/blog-article/BlogArticleAiCreateTaskPage.jsx';
 import BlogArticleAiContentPage from './components/blog-article/BlogArticleAiContentPage.jsx';
@@ -190,6 +190,10 @@ export default function App() {
     );
   }
 
+  const clearBlogArticleNotice = useCallback((noticeId) => {
+    setBlogArticleNotice((current) => (current?.id === noticeId ? null : current));
+  }, []);
+
   if (externalView?.view === 'knowledge-source-preview') {
     const task = getAiCreationTasks(activeProject.id).find((item) => item.id === externalView.taskId);
     const sourceBlock = task
@@ -367,6 +371,7 @@ export default function App() {
       userMenuItems={localizedUserMenuItems}
       blogArticleNotice={blogArticleNotice}
       knowledgeItemFocusId={externalView?.view === 'knowledge-items' ? externalView.knowledgeItemId : ''}
+      onBlogArticleNoticeConsumed={clearBlogArticleNotice}
       onLocaleChange={setLocale}
       onOpenBlogAiCreate={() => setBlogAiCreateOpen(true)}
       onOpenBlogArticleEditor={setBlogEditorArticle}

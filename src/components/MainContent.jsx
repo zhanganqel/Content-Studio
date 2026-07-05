@@ -9,6 +9,7 @@ export default function MainContent({
   activeProject,
   blogArticleNotice,
   knowledgeItemFocusId,
+  onBlogArticleNoticeConsumed,
   onOpenBlogAiCreate,
   onOpenBlogArticleEditor,
   t,
@@ -59,6 +60,7 @@ export default function MainContent({
         <div className="min-h-[calc(100vh-72px)] p-8">
           <BlogArticlePage
             creationNotice={blogArticleNotice}
+            onCreationNoticeConsumed={onBlogArticleNoticeConsumed}
             onOpenAiCreation={onOpenBlogAiCreate}
             onOpenEditor={onOpenBlogArticleEditor}
             project={activeProject}

@@ -186,7 +186,14 @@ function ArticleCard({
   );
 }
 
-export default function BlogArticlePage({ creationNotice, onOpenAiCreation, onOpenEditor, project, t }) {
+export default function BlogArticlePage({
+  creationNotice,
+  onCreationNoticeConsumed,
+  onOpenAiCreation,
+  onOpenEditor,
+  project,
+  t,
+}) {
   const copy = t.blogArticle;
   const [articles, setArticles] = useState(() => getBlogArticleDrafts(project));
   const [searchQuery, setSearchQuery] = useState('');
@@ -219,7 +226,8 @@ export default function BlogArticlePage({ creationNotice, onOpenAiCreation, onOp
       message: creationNotice.message,
       type: creationNotice.type ?? 'success',
     });
-  }, [creationNotice, project]);
+    onCreationNoticeConsumed?.(creationNotice.id);
+  }, [creationNotice, onCreationNoticeConsumed, project]);
 
   useEffect(() => {
     if (!toast) {

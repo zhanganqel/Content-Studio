@@ -14,6 +14,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Toast from '../ui/Toast.jsx';
 import AiCreationStepLabel from './AiCreationStepLabel.jsx';
+import { formatTaskState, getTaskCompletedText, getTaskName, getTaskRunningText } from './aiTaskText.js';
 import { getAgentDisplay } from './agentDisplay.js';
 import {
   createPlanningDemoData,
@@ -29,10 +30,6 @@ function getArtifactIcon(type) {
   if (type === 'references') return BookOpen;
   if (type === 'strategy') return ClipboardList;
   return FileText;
-}
-
-function formatTaskState(taskName, stateText, locale) {
-  return locale === 'en-US' ? `${stateText}: ${taskName}` : `${taskName}${stateText}`;
 }
 
 function getInitialPlaybackState(workflow, task) {
@@ -161,6 +158,7 @@ function WorkflowTask({
   copy,
 }) {
   const agentDisplay = getAgentDisplay(task.agentTitle, locale);
+  const taskName = getTaskName(task, locale);
 
   return (
     <section className="flex gap-4">
@@ -172,10 +170,10 @@ function WorkflowTask({
           <div className="min-w-0 flex-1">
             <div className="text-[14px] font-semibold leading-[20px] text-[#303133]">
               {completed
-                ? formatTaskState(task.taskName, copy.status.done, locale)
+                ? getTaskCompletedText(task, copy.status.done, locale)
                 : isStopped && isCurrent
-                  ? formatTaskState(task.taskName, copy.status.stopped, locale)
-                  : task.runningText}
+                  ? formatTaskState(taskName, copy.status.stopped, locale)
+                  : getTaskRunningText(task, locale)}
             </div>
             <div className="mt-3 space-y-4">
               {task.thinking.slice(0, thinkingCount).map((paragraph, index) => (

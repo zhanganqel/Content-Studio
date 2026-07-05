@@ -15,6 +15,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Toast from '../ui/Toast.jsx';
 import AiCreationStepLabel from './AiCreationStepLabel.jsx';
+import { formatTaskState, getTaskCompletedText, getTaskName, getTaskRunningText } from './aiTaskText.js';
 import { getAgentDisplay } from './agentDisplay.js';
 import {
   createContentDemoData,
@@ -31,8 +32,9 @@ function getArtifactIcon(type) {
   return FileText;
 }
 
-function formatTaskState(taskName, stateText, locale) {
-  return locale === 'en-US' ? `${stateText}: ${taskName}` : `${taskName}${stateText}`;
+function getLocalizedArtifactText(artifact, field, locale) {
+  const localizedField = `${field}En`;
+  return locale === 'en-US' && artifact?.[localizedField] ? artifact[localizedField] : artifact?.[field];
 }
 
 function openAppViewInNewTab(params) {
@@ -247,8 +249,10 @@ function ThinkingBlock({ children }) {
   );
 }
 
-function ArtifactCard({ artifact, onClick, selected }) {
+function ArtifactCard({ artifact, locale, onClick, selected }) {
   const Icon = getArtifactIcon(artifact.type);
+  const title = getLocalizedArtifactText(artifact, 'title', locale);
+  const subtitle = getLocalizedArtifactText(artifact, 'subtitle', locale);
 
   return (
     <button
@@ -262,16 +266,17 @@ function ArtifactCard({ artifact, onClick, selected }) {
         <Icon className="h-5 w-5" />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[14px] font-semibold leading-[22px] text-[#303133]">{artifact.title}</span>
-        <span className="mt-0.5 block truncate text-[13px] leading-[20px] text-[#606266]">{artifact.subtitle}</span>
+        <span className="block truncate text-[14px] font-semibold leading-[22px] text-[#303133]">{title}</span>
+        <span className="mt-0.5 block truncate text-[13px] leading-[20px] text-[#606266]">{subtitle}</span>
       </span>
       <ChevronRight className="h-5 w-5 flex-none text-[#A8ABB2]" />
     </button>
   );
 }
 
-function StepSourceList({ sourceList }) {
+function StepSourceList({ locale, sourceList }) {
   const items = sourceList?.items ?? [];
+  const isEnglish = locale === 'en-US';
 
   return (
     <div
@@ -290,6 +295,57 @@ function StepSourceList({ sourceList }) {
               </span>
             ))}
           </div>
+        ) : sourceList.variant === 'media' ? (
+          <div className="flex flex-wrap gap-3">
+            {items.map((item) => (
+              <figure key={item.id} className="w-[132px]">
+                <img
+                  alt={item.alt || item.label}
+                  className="h-[96px] w-[132px] rounded-[6px] border border-[#EBEEF5] object-cover"
+                  src={item.imageUrl}
+                />
+                <figcaption className="mt-1 truncate text-[12px] leading-[18px] text-[#606266]" title={item.label}>
+                  {item.label}
+                </figcaption>
+              </figure>
+            ))}
+          </div>
+        ) : sourceList.variant === 'links' ? (
+          <div className="space-y-3">
+            {['company', 'authority'].map((group) => {
+              const groupItems = items.filter((item) => item.group === group);
+              if (!groupItems.length) return null;
+
+              const groupLabel =
+                group === 'company'
+                  ? isEnglish
+                    ? 'Company Links'
+                    : '公司相关链接'
+                  : isEnglish
+                    ? 'Authority Links'
+                    : '权威参考链接';
+
+              return (
+                <div key={group}>
+                  <div className="mb-2 text-[12px] font-semibold leading-[18px] text-[#909399]">{groupLabel}</div>
+                  <div className="flex flex-wrap gap-2">
+                    {groupItems.map((item) => (
+                      <a
+                        key={item.id}
+                        className="inline-flex max-w-[320px] items-center gap-1.5 rounded-full border border-[#C7D2FE] bg-[#EEF3FF] px-3 py-1 text-[14px] font-semibold leading-[20px] text-[#365EFF] transition hover:border-[#365EFF] hover:bg-[#E5ECFF]"
+                        href={item.url}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5 flex-none" />
+                        <span className="truncate">{item.label}</span>
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         ) : (
           <div className="flex flex-wrap gap-2">
             {items.map((item) => (
@@ -304,7 +360,7 @@ function StepSourceList({ sourceList }) {
         )
       ) : (
         <div className="rounded-[6px] border border-dashed border-[#DCDFE6] bg-[#F7F8FB] px-3 py-2 text-[13px] leading-[20px] text-[#909399]">
-          {sourceList.emptyText}
+          {isEnglish && sourceList.emptyTextEn ? sourceList.emptyTextEn : sourceList.emptyText}
         </div>
       )}
     </div>
@@ -333,8 +389,8 @@ function RevisionRequestBox({ copy, disabled, locale, onChange, onSubmit, value 
                 ? 'Submitted. Revising now.'
                 : '已提交，正在按要求修改'
               : locale === 'en-US'
-                ? 'After review, ask AI to revise and recheck.'
-                : '内容评估完成后，可继续让 AI 按要求修改并复评。'}
+                ? 'After final review, ask AI to revise and recheck.'
+                : '文章终稿评估完成后，可继续让 AI 按要求修改并复评。'}
           </p>
         </div>
         {disabled ? (
@@ -358,8 +414,8 @@ function RevisionRequestBox({ copy, disabled, locale, onChange, onSubmit, value 
       <div className="mt-3 flex items-center justify-between gap-3">
         <p className="text-[12px] leading-[18px] text-[#909399]">
           {locale === 'en-US'
-            ? 'Submitting creates a revision record, a new final draft, and a new TDK review.'
-            : '提交后会生成修改记录、文章终稿新版，并重新评估文章与 TDK。'}
+            ? 'Submitting creates a revision record, a new final draft, and a new final review.'
+            : '提交后会生成修改记录、文章终稿新版，并重新评估文章终稿。'}
         </p>
         <button
           type="submit"
@@ -391,7 +447,7 @@ function WorkflowTask({
   if (task.kind === 'user-request') {
     const userStep = steps[0];
     const thinkingCount = visibleThinkingCounts[userStep.id] ?? 0;
-    const visibleText = userStep.thinking.slice(0, thinkingCount).join('\n') || task.runningText;
+    const visibleText = userStep.thinking.slice(0, thinkingCount).join('\n') || getTaskRunningText(task, locale);
     const agentDisplay = getAgentDisplay(task.agentTitle, locale);
 
     return (
@@ -432,6 +488,7 @@ function WorkflowTask({
               !stepCompleted &&
               steps.slice(0, stepIndex).every((candidate) => isStepDone(candidate, visibleThinkingCounts, showArtifactIds));
             const thinkingCount = visibleThinkingCounts[step.id] ?? 0;
+            const taskName = getTaskName(step, locale);
 
             return (
               <div key={step.id} className="flex items-start gap-3">
@@ -439,17 +496,17 @@ function WorkflowTask({
                 <div className="min-w-0 flex-1">
                   <div className="text-[14px] font-semibold leading-[20px] text-[#303133]">
                     {stepCompleted
-                      ? step.completedText ?? formatTaskState(step.taskName, copy.status.done, locale)
+                      ? getTaskCompletedText(step, copy.status.done, locale)
                       : isStopped && stepActive
-                        ? formatTaskState(step.taskName, copy.status.stopped, locale)
-                        : step.runningText}
+                        ? formatTaskState(taskName, copy.status.stopped, locale)
+                        : getTaskRunningText(step, locale)}
                   </div>
                   <div className="mt-3 space-y-4">
                     {step.thinking.slice(0, Math.min(thinkingCount, step.thinking.length)).map((paragraph, index) => (
                       <ThinkingBlock key={`${step.id}-thinking-${index}`}>{paragraph}</ThinkingBlock>
                     ))}
                     {step.sourceList && thinkingCount >= getStepRevealCount(step) ? (
-                      <StepSourceList sourceList={step.sourceList} />
+                      <StepSourceList locale={locale} sourceList={step.sourceList} />
                     ) : null}
                     {step.artifactIds
                       .filter((artifactId) => showArtifactIds.includes(artifactId))
@@ -460,6 +517,7 @@ function WorkflowTask({
                           <ArtifactCard
                             key={artifactId}
                             artifact={artifact}
+                            locale={locale}
                             onClick={() => onArtifactClick(artifactId)}
                             selected={selectedArtifactId === artifactId}
                           />
@@ -836,47 +894,58 @@ function ReferenceBlockCard({ block, expanded, onOpenKnowledgeItem, onOpenSource
   );
 }
 
-function ReferencesPreview({ artifact, onOpenKnowledgeItem, onOpenSourcePreview }) {
-  const [activeTab, setActiveTab] = useState('knowledge');
-  const filteredBlocks = artifact.referenceBlocks.filter((block) =>
-    activeTab === 'knowledge' ? block.type === 'knowledge' : block.type === 'reference',
-  );
-  const [expandedId, setExpandedId] = useState(filteredBlocks[0]?.id ?? '');
+function getReferenceTabs(locale) {
+  return [
+    { id: 'knowledge-items', label: locale === 'en-US' ? 'Knowledge Items' : '知识条目' },
+    { id: 'knowledge-files', label: locale === 'en-US' ? 'Knowledge Files' : '知识资料' },
+  ];
+}
+
+function isReferenceBlockInTab(block, tab) {
+  return tab === 'knowledge-items' ? block.blockKind === 'knowledge-item' : block.blockKind === 'knowledge-asset';
+}
+
+function ReferencesPreview({ artifact, locale, onOpenKnowledgeItem, onOpenSourcePreview }) {
+  const [activeTab, setActiveTab] = useState('knowledge-items');
+  const filteredBlocks = artifact.referenceBlocks.filter((block) => isReferenceBlockInTab(block, activeTab));
+  const firstBlockId = filteredBlocks[0]?.id ?? '';
+  const tabs = getReferenceTabs(locale);
+  const [expandedId, setExpandedId] = useState(firstBlockId);
 
   useEffect(() => {
-    setExpandedId(filteredBlocks[0]?.id ?? '');
-  }, [activeTab, artifact.id]);
+    setExpandedId(firstBlockId);
+  }, [activeTab, artifact.id, firstBlockId]);
 
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-[58px] flex-none items-center justify-between border-b border-[#EBEEF5] px-6">
-        <h2 className="text-[16px] font-bold leading-[24px] text-[#303133]">参考资料</h2>
+        <h2 className="text-[16px] font-bold leading-[24px] text-[#303133]">
+          {getLocalizedArtifactText(artifact, 'title', locale)}
+        </h2>
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            className={`rounded-[6px] px-3 py-1.5 text-[13px] font-semibold ${
-              activeTab === 'knowledge' ? 'bg-[#EEF3FF] text-[#365EFF]' : 'text-[#606266] hover:bg-[#F5F7FA]'
-            }`}
-            onClick={() => setActiveTab('knowledge')}
-          >
-            知识资料
-          </button>
-          <button
-            type="button"
-            className={`rounded-[6px] px-3 py-1.5 text-[13px] font-semibold ${
-              activeTab === 'reference' ? 'bg-[#EEF3FF] text-[#365EFF]' : 'text-[#606266] hover:bg-[#F5F7FA]'
-            }`}
-            onClick={() => setActiveTab('reference')}
-          >
-            参考网页
-          </button>
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              className={`rounded-[6px] px-3 py-1.5 text-[13px] font-semibold ${
+                activeTab === tab.id ? 'bg-[#EEF3FF] text-[#365EFF]' : 'text-[#606266] hover:bg-[#F5F7FA]'
+              }`}
+              onClick={() => setActiveTab(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
         <p className="mb-4 text-[13px] leading-[20px] text-[#909399]">
-          {activeTab === 'knowledge'
-            ? '展示引用知识条目与检索到的知识资料文本块。文章生成前不展示引用标识。'
-            : '展示参考网页摘要，点击标题或右侧按钮可查看爬取到的网页大纲。'}
+          {activeTab === 'knowledge-items'
+            ? locale === 'en-US'
+              ? 'Shows referenced knowledge items selected for article generation.'
+              : '展示文章生成引用的知识条目。'
+            : locale === 'en-US'
+              ? 'Shows matched text blocks from referenced knowledge files.'
+              : '展示检索到的知识资料文本块。'}
         </p>
         <div className="space-y-3">
           {filteredBlocks.map((block) => (
@@ -895,12 +964,13 @@ function ReferencesPreview({ artifact, onOpenKnowledgeItem, onOpenSourcePreview 
   );
 }
 
-function PreviewPanel({ artifact, copy, onOpenKnowledgeItem, onOpenSourcePreview }) {
+function PreviewPanel({ artifact, copy, locale, onOpenKnowledgeItem, onOpenSourcePreview }) {
   if (!artifact) return <EmptyPreview copy={copy} />;
   if (artifact.type === 'references') {
     return (
       <ReferencesPreview
         artifact={artifact}
+        locale={locale}
         onOpenKnowledgeItem={onOpenKnowledgeItem}
         onOpenSourcePreview={onOpenSourcePreview}
       />
@@ -924,13 +994,14 @@ function ReferenceDrawer({
   onTabChange,
   references,
 }) {
+  const tabs = getReferenceTabs(locale);
   const filtered = articleGenerated
     ? citationUsages
-        .filter((item) => (activeTab === 'knowledge' ? item.sourceType === 'knowledge' : item.sourceType === 'reference'))
         .map((usage) => ({
           ...usage,
           sourceBlock: references.find((block) => block.id === usage.sourceBlockId),
         }))
+        .filter((item) => item.sourceBlock && isReferenceBlockInTab(item.sourceBlock, activeTab))
     : [];
 
   function openCitationSource(usage) {
@@ -956,30 +1027,24 @@ function ReferenceDrawer({
     <aside className="h-[calc(100vh-152px)] overflow-hidden rounded-[8px] bg-white shadow-[0_2px_10px_rgba(31,45,61,0.04)]">
       <div className="flex h-[58px] items-center justify-between border-b border-[#EBEEF5] px-5">
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            className={`rounded-[6px] px-3 py-1.5 text-[14px] font-semibold ${
-              activeTab === 'knowledge' ? 'bg-[#EEF3FF] text-[#365EFF]' : 'text-[#606266]'
-            }`}
-            onClick={() => onTabChange('knowledge')}
-          >
-            {locale === 'en-US' ? 'Knowledge' : '知识资料'}
-          </button>
-          <button
-            type="button"
-            className={`rounded-[6px] px-3 py-1.5 text-[14px] font-semibold ${
-              activeTab === 'reference' ? 'bg-[#EEF3FF] text-[#365EFF]' : 'text-[#606266]'
-            }`}
-            onClick={() => onTabChange('reference')}
-          >
-            {locale === 'en-US' ? 'Web' : '参考网页'}
-          </button>
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              className={`rounded-[6px] px-3 py-1.5 text-[14px] font-semibold ${
+                activeTab === tab.id ? 'bg-[#EEF3FF] text-[#365EFF]' : 'text-[#606266]'
+              }`}
+              onClick={() => onTabChange(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
         <button
           type="button"
           className="inline-flex h-8 w-8 items-center justify-center rounded-[6px] text-[#606266] hover:bg-[#F5F7FA]"
           onClick={onClose}
-          aria-label={locale === 'en-US' ? 'Close references' : '关闭引用内容'}
+          aria-label={locale === 'en-US' ? 'Close referenced knowledge' : '关闭引用知识'}
         >
           <X className="h-4 w-4" />
         </button>
@@ -1056,7 +1121,7 @@ export default function BlogArticleAiContentPage({ article, locale, onBack, onSa
   const [selectedArtifactId, setSelectedArtifactId] = useState(initialPlaybackState.selectedArtifactId);
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
   const [referenceOpen, setReferenceOpen] = useState(false);
-  const [referenceTab, setReferenceTab] = useState('knowledge');
+  const [referenceTab, setReferenceTab] = useState('knowledge-items');
   const [toast, setToast] = useState(null);
   const workflowRef = useRef(null);
 
@@ -1417,6 +1482,7 @@ export default function BlogArticleAiContentPage({ article, locale, onBack, onSa
           <PreviewPanel
             artifact={selectedArtifact}
             copy={copy}
+            locale={locale}
             onOpenKnowledgeItem={handleOpenKnowledgeItem}
             onOpenSourcePreview={handleOpenSourcePreview}
           />

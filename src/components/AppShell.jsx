@@ -17,6 +17,7 @@ export default function AppShell({
   userMenuItems,
   blogArticleNotice,
   knowledgeItemFocusId,
+  onBlogArticleNoticeConsumed,
   onLocaleChange,
   onOpenBlogAiCreate,
   onOpenBlogArticleEditor,
@@ -55,6 +56,7 @@ export default function AppShell({
         activeProject={activeProject}
         blogArticleNotice={blogArticleNotice}
         knowledgeItemFocusId={knowledgeItemFocusId}
+        onBlogArticleNoticeConsumed={onBlogArticleNoticeConsumed}
         onOpenBlogAiCreate={onOpenBlogAiCreate}
         onOpenBlogArticleEditor={onOpenBlogArticleEditor}
         t={t}

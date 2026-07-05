@@ -1,4 +1,5 @@
 import { listChunks } from './fileLibraryApi.js';
+import { getBrandProfileDraft } from './brandProfileStore.js';
 
 const storageKeyPrefix = 'content-studio-blog-article-ai-tasks:';
 const storageSchemaVersion = 1;
@@ -57,6 +58,37 @@ export function splitAiKeywordText(value) {
     .split(/[,，]/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function formatUrlLabel(url) {
+  try {
+    const parsed = new URL(url);
+    const path = parsed.pathname.replace(/\/$/, '');
+    return path ? `${parsed.hostname}${path}` : parsed.hostname;
+  } catch {
+    return url;
+  }
+}
+
+function createSelectedBrandLinkItems(project) {
+  const brandProfile = getBrandProfileDraft(project);
+  const companyLinks = (brandProfile.companyLinks ?? []).filter(Boolean).slice(0, 2);
+  const authorityLinks = (brandProfile.authorityLinks ?? []).filter(Boolean).slice(0, 2);
+
+  return [
+    ...companyLinks.map((url, index) => ({
+      group: 'company',
+      id: `company-link-${index + 1}`,
+      label: formatUrlLabel(url),
+      url,
+    })),
+    ...authorityLinks.map((url, index) => ({
+      group: 'authority',
+      id: `authority-link-${index + 1}`,
+      label: formatUrlLabel(url),
+      url,
+    })),
+  ];
 }
 
 export const aiReferenceSearchAnalyses = [
@@ -790,8 +822,12 @@ export function createPlanningDemoData(task, project) {
         id: 'load-project',
         agent: '行业研究Agent',
         agentTitle: '项目研究专家 Researcher',
-        taskName: '加载项目知识',
-        runningText: '加载项目分析报告中...',
+        completedText: '加载品牌信息完成',
+        completedTextEn: 'Load Brand Information completed',
+        taskName: '加载品牌信息',
+        taskNameEn: 'Load Brand Information',
+        runningText: '正在加载品牌信息...',
+        runningTextEn: 'Loading brand information...',
         thinking: [
           `已读取 ${brandName} 的品牌档案、目标受众、知识条目和知识资料，优先关注品牌要求、业务目标和用户选择的引用资料。`,
           `当前主题是「${articleTopic}」，需要把项目能力与海外采购场景关联起来，而不是只输出通用 CNC 工艺科普。`,
@@ -803,8 +839,12 @@ export function createPlanningDemoData(task, project) {
         id: 'summarize-project',
         agent: 'SEO策略Agent',
         agentTitle: 'SEO策略专家 Strategist',
-        taskName: '整理项目分析报告',
-        runningText: '分析目标市场与受众中...',
+        completedText: '阅读项目分析报告完成',
+        completedTextEn: 'Review Project Analysis completed',
+        taskName: '阅读项目分析报告',
+        taskNameEn: 'Review Project Analysis',
+        runningText: '正在阅读项目分析报告...',
+        runningTextEn: 'Reviewing project analysis...',
         thinking: [
           '目标受众更关注供应商风险、质量稳定性、交期可控和沟通效率，因此文章需要把技术参数翻译成采购决策语言。',
           '搜索意图不是单纯学习概念，而是为了判断哪种工艺、哪类供应商更适合当前零件需求，内容应包含选择标准与询盘准备建议。',
@@ -815,8 +855,12 @@ export function createPlanningDemoData(task, project) {
         id: 'analyze-references',
         agent: 'SEO策略Agent',
         agentTitle: 'SEO策略专家 Strategist',
-        taskName: '参考文章分析',
-        runningText: '分析参考文章中...',
+        completedText: '分析参考文章完成',
+        completedTextEn: 'Analyze Reference Articles completed',
+        taskName: '分析参考文章',
+        taskNameEn: 'Analyze Reference Articles',
+        runningText: '正在分析参考文章...',
+        runningTextEn: 'Analyzing reference articles...',
         thinking: [
           `已整理 ${references.length} 篇参考文章，优先分析标题角度、H2/H3 结构、搜索意图覆盖和可借鉴的内容组织方式。`,
           '参考文章普遍覆盖工艺差异、供应商选择、质量认证和成本交期问题，但通常缺少与 Rejin CNC 知识库相关的具体场景连接。',
@@ -828,8 +872,12 @@ export function createPlanningDemoData(task, project) {
         id: 'create-strategy',
         agent: 'SEO策略Agent',
         agentTitle: 'SEO策略专家 Strategist',
+        completedText: '制定文章策略完成',
+        completedTextEn: 'Create Article Strategy completed',
         taskName: '制定文章策略',
-        runningText: '撰写文章策划方案中...',
+        taskNameEn: 'Create Article Strategy',
+        runningText: '正在制定文章策略...',
+        runningTextEn: 'Creating article strategy...',
         thinking: [
           '正在整合项目知识、目标受众、关键词与参考文章分析，先明确文章的搜索意图和商业目标。',
           '策划方案将采用“问题识别 - 工艺差异 - 选择标准 - 供应商能力 - 行动建议”的结构，确保内容既能被搜索用户理解，也能承接询盘转化。',
@@ -1063,8 +1111,12 @@ export function createOutlineDemoData(task, project) {
         id: 'read-strategy',
         agent: '内容生成Agent',
         agentTitle: '内容运营专员 Writer',
-        taskName: '阅读文章策划',
-        runningText: '阅读文章策划中...',
+        completedText: '阅读文章策划方案完成',
+        completedTextEn: 'Review Article Strategy completed',
+        taskName: '阅读文章策划方案',
+        taskNameEn: 'Review Article Strategy',
+        runningText: '正在阅读文章策划方案...',
+        runningTextEn: 'Reviewing article strategy...',
         thinking: [
           `已读取文章策划方案，主题聚焦「${articleTopic}」，核心关键词为 ${primaryKeyword}。`,
           '策划方案要求文章兼顾搜索意图与采购转化，因此标题和大纲需要同时覆盖工艺选择、供应商能力和 RFQ 准备。',
@@ -1075,8 +1127,12 @@ export function createOutlineDemoData(task, project) {
         id: 'write-titles',
         agent: '内容生成Agent',
         agentTitle: '内容运营专员 Writer',
+        completedText: '撰写文章标题完成',
+        completedTextEn: 'Write Article Titles completed',
         taskName: '撰写文章标题',
-        runningText: '撰写文章标题中...',
+        taskNameEn: 'Write Article Titles',
+        runningText: '正在撰写文章标题...',
+        runningTextEn: 'Writing article titles...',
         thinking: [
           '正在根据搜索意图生成多个标题方向，优先让核心关键词自然出现在标题前部或中部。',
           '标题会避免空泛表达，强调 CNC turning 与 CNC milling 的选择场景，方便采购经理快速判断文章价值。',
@@ -1088,8 +1144,12 @@ export function createOutlineDemoData(task, project) {
         id: 'write-outline',
         agent: '内容生成Agent',
         agentTitle: '内容运营专员 Writer',
+        completedText: '撰写文章大纲完成',
+        completedTextEn: 'Write Article Outline completed',
         taskName: '撰写文章大纲',
-        runningText: '撰写文章大纲中...',
+        taskNameEn: 'Write Article Outline',
+        runningText: '正在撰写文章大纲...',
+        runningTextEn: 'Writing article outline...',
         thinking: [
           '正在围绕选定标题生成 H2/H3/H4 层级，先解释 turning 与 milling 的工艺边界，再进入采购决策标准。',
           '大纲会把 Rejin CNC 的 DFM 支持、质量系统、出口沟通和多工艺能力放在供应商选择部分，而不是生硬插入。',
@@ -1214,7 +1274,7 @@ function createEvaluationReport({ final = false, version }) {
   };
 }
 
-function createFinalContentEvaluationReport({ finalArticle, primaryKeyword, tdk }) {
+function createFinalContentEvaluationReport({ finalArticle, primaryKeyword, selectedLinks = [], tdk }) {
   const makeItem = (name, rating, suggestion = '') => ({
     name,
     pass: rating !== 'Low',
@@ -1222,10 +1282,12 @@ function createFinalContentEvaluationReport({ finalArticle, primaryKeyword, tdk 
     suggestion,
   });
   const imageCount = finalArticle?.images?.length ?? 0;
+  const companyLinkCount = selectedLinks.filter((link) => link.group === 'company').length;
+  const authorityLinkCount = selectedLinks.filter((link) => link.group === 'authority').length;
 
   return {
     id: 'final-evaluation',
-    title: '内容评估报告',
+    title: '文章终稿评估报告',
     version: 'final',
     passed: true,
     summary:
@@ -1239,16 +1301,23 @@ function createFinalContentEvaluationReport({ finalArticle, primaryKeyword, tdk 
           makeItem('人称、语气与风格', 'High'),
           makeItem('介绍公司成功案例（经验）', 'Medium', '当前不虚构案例；若后续补充真实案例，可加入应用场景或项目结果。'),
           makeItem('内容深度价值（专业性）', 'High'),
-          makeItem('引用权威来源（权威性）', 'Medium', '已保留参考网页与知识资料引用；若有行业标准或第三方报告，可继续补充。'),
+          makeItem('引用权威来源（权威性）', 'Medium', '已保留引用知识与知识资料引用；若有行业标准或第三方报告，可继续补充。'),
           makeItem('知识库引用准确性（可信度）', 'High'),
           makeItem('YMYL内容检测（合规性）', 'High'),
           makeItem('内容可读性', 'High'),
           makeItem('CTA 有效性', 'High'),
           makeItem('关键词自然密度', 'High'),
-          makeItem('锚文本与内链相关性', 'High'),
+        ],
+      },
+      {
+        name: '图片与链接',
+        items: [
+          makeItem('素材插入相关性', imageCount >= 2 ? 'High' : 'Medium', imageCount >= 2 ? '' : '建议至少插入 2 张与工艺和质检段落相关的素材。'),
           makeItem('图片Alt文本', 'High'),
-          makeItem('素材库图片插入', imageCount >= 2 ? 'High' : 'Medium', imageCount >= 2 ? '' : '建议至少插入 2 张与工艺和质检段落相关的素材库图片。'),
           makeItem('图片与段落相关性', 'High'),
+          makeItem('公司相关链接', companyLinkCount >= 1 ? 'High' : 'Medium', companyLinkCount >= 1 ? '' : '建议至少插入 1 条公司相关链接。'),
+          makeItem('权威参考链接', authorityLinkCount >= 1 ? 'High' : 'Medium', authorityLinkCount >= 1 ? '' : '建议至少插入 1 条权威参考链接。'),
+          makeItem('链接与段落语义匹配', 'High'),
         ],
       },
       {
@@ -1354,16 +1423,14 @@ function createFinalRevisionRound({ baseArticle, baseEvaluationReport, baseTdk, 
   };
   const tdk = {
     ...baseTdk,
-    id: `tdk-v${version}`,
-    description: `${baseTdk.description} Updated for ${focus.descriptionNote}.`,
   };
   const evaluationReport = {
     ...baseEvaluationReport,
     id: `final-evaluation-v${version}`,
-    title: `内容评估报告（第 ${version} 版）`,
+    title: `文章终稿评估报告（第 ${version} 版）`,
     version,
     summary:
-      `已根据修改要求完成第 ${version} 版终稿与 TDK 复评。文章和 TDK 均无 Low 项，Medium 项保留为人工编辑建议。`,
+      `已根据修改要求完成第 ${version} 版文章终稿评估。文章终稿无 Low 项，Medium 项保留为人工编辑建议。`,
   };
   const revisionRecord = {
     id: `final-revision-record-v${version}`,
@@ -1382,7 +1449,7 @@ function createFinalRevisionRound({ baseArticle, baseEvaluationReport, baseTdk, 
       {
         type: 'add',
         after:
-          'Regenerated final article and refreshed TDK description, then sent the new version back to the evaluation specialist.',
+          'Regenerated the final article and sent the new version back to the evaluation specialist.',
       },
     ],
   };
@@ -1588,6 +1655,7 @@ export function createContentDemoData(task, project, options = {}) {
       ? fallbackKnowledgeAssetReferenceBlocks
       : [];
   const mediaAssets = project?.demoProject?.mediaAssets ?? [];
+  const selectedBrandLinks = createSelectedBrandLinkItems(project);
   const findMediaAsset = (predicate, fallbackIndex = 0) =>
     mediaAssets.find(predicate) ?? mediaAssets[fallbackIndex] ?? null;
   const finalArticleImages = [
@@ -1808,7 +1876,12 @@ export function createContentDemoData(task, project, options = {}) {
     description:
       'Compare CNC turning and milling by geometry, tolerance, cost, lead time, and supplier capability. Learn what overseas buyers should prepare before sending an RFQ.',
   };
-  const finalEvaluationReport = createFinalContentEvaluationReport({ finalArticle, primaryKeyword, tdk });
+  const finalEvaluationReport = createFinalContentEvaluationReport({
+    finalArticle,
+    primaryKeyword,
+    selectedLinks: selectedBrandLinks,
+    tdk,
+  });
   const revisionRequests = (options.revisionRequests ?? task?.content?.revisionRequests ?? [])
     .map(normalizeRevisionRequest)
     .filter((request) => request.text.trim());
@@ -1816,7 +1889,12 @@ export function createContentDemoData(task, project, options = {}) {
     const previousRound = rounds[rounds.length - 1];
     const baseArticle = previousRound?.finalArticle ?? finalArticle;
     const baseTdk = previousRound?.tdk ?? tdk;
-    const baseEvaluationReport = createFinalContentEvaluationReport({ finalArticle: baseArticle, primaryKeyword, tdk: baseTdk });
+    const baseEvaluationReport = createFinalContentEvaluationReport({
+      finalArticle: baseArticle,
+      primaryKeyword,
+      selectedLinks: selectedBrandLinks,
+      tdk: baseTdk,
+    });
     return [
       ...rounds,
       createFinalRevisionRound({
@@ -1835,6 +1913,9 @@ export function createContentDemoData(task, project, options = {}) {
   const latestFinalArticleId = latestRound?.finalArticle.id ?? 'final';
   const latestTdkId = latestRound?.tdk.id ?? 'tdk';
   const latestEvaluationReportId = latestRound?.evaluationReport.id ?? 'final-evaluation';
+  const referencedKnowledgeBlocks = referenceBlocks.filter((block) =>
+    ['knowledge-item', 'knowledge-asset'].includes(block.blockKind),
+  );
   const revisionArtifacts = Object.fromEntries(
     finalRevisionRounds.flatMap((round) => [
       [
@@ -1857,7 +1938,7 @@ export function createContentDemoData(task, project, options = {}) {
         round.evaluationReport.id,
         {
           ...round.evaluationReport,
-          subtitle: `文章终稿（第 ${round.version} 版）+ TDK`,
+          subtitle: `文章终稿（第 ${round.version} 版）`,
           type: 'evaluation',
         },
       ],
@@ -1866,10 +1947,12 @@ export function createContentDemoData(task, project, options = {}) {
   const artifacts = {
     references: {
       id: 'references',
-      title: '参考资料',
-      subtitle: `共 ${referenceBlocks.length} 个文本块`,
+      title: '引用知识',
+      titleEn: 'Referenced Knowledge',
+      subtitle: `共 ${referencedKnowledgeBlocks.length} 个文本块`,
+      subtitleEn: `${referencedKnowledgeBlocks.length} text blocks`,
       type: 'references',
-      referenceBlocks,
+      referenceBlocks: referencedKnowledgeBlocks,
     },
     'article-v1': {
       ...articleVersions[0],
@@ -1926,9 +2009,12 @@ export function createContentDemoData(task, project, options = {}) {
       id: `user-revision-request-v${round.version}`,
       agentTitle: '用户',
       completedText: '修改要求',
+      completedTextEn: 'Revision Request',
       kind: 'user-request',
       runningText: '修改要求',
+      runningTextEn: 'Revision Request',
       taskName: '修改要求',
+      taskNameEn: 'Revision Request',
       thinking: [round.request.text],
     },
     {
@@ -1938,8 +2024,11 @@ export function createContentDemoData(task, project, options = {}) {
         {
           id: `revision-read-v${round.version}`,
           completedText: '阅读修改要求完成',
+          completedTextEn: 'Review Revision Request completed',
           taskName: '阅读修改要求',
+          taskNameEn: 'Review Revision Request',
           runningText: '正在阅读修改要求...',
+          runningTextEn: 'Reviewing revision request...',
           thinking: [
             `正在理解用户对当前终稿的修改要求，并判断需要调整正文、CTA、素材引用还是 TDK。`,
             '本次修改会保留已通过评估的事实边界、图片 Alt 文本和引用关系，只调整用户指定的表达重点。',
@@ -1948,12 +2037,15 @@ export function createContentDemoData(task, project, options = {}) {
         {
           id: `revision-modify-v${round.version}`,
           completedText: '修改文章完成',
+          completedTextEn: 'Revise Article completed',
           taskName: '修改文章',
+          taskNameEn: 'Revise Article',
           runningText: '正在修改文章...',
+          runningTextEn: 'Revising article...',
           thinking: [
             '正在把用户要求转化为可执行修改点，并逐段调整文章终稿。',
-            `正在生成文章终稿（第 ${round.version} 版），并保留素材库图片、引用内容和已确认标题结构。`,
-            '已同步更新 TDK 数据，等待内容评估专家重新评估文章与 TDK。',
+            `正在生成文章终稿（第 ${round.version} 版），并保留素材库图片、引用知识和已确认标题结构。`,
+            '已生成新版文章终稿，等待内容评估专家重新评估文章终稿。',
           ],
           artifactIds: [round.revisionRecord.id, round.finalArticle.id],
         },
@@ -1962,11 +2054,16 @@ export function createContentDemoData(task, project, options = {}) {
     {
       id: `revision-evaluate-v${round.version}`,
       agentTitle: '内容评估专家',
-      taskName: `内容与TDK复评（第 ${round.version} 版）`,
-      runningText: `正在复评文章终稿（第 ${round.version} 版）与 TDK...`,
+      completedText: '文章终稿评估完成',
+      completedTextEn: 'Evaluate Final Draft completed',
+      taskName: '文章终稿评估',
+      taskNameEn: 'Evaluate Final Draft',
+      runningText: '正在评估文章终稿...',
+      runningTextEn: 'Evaluating final draft...',
       thinking: [
-        '正在复核用户修改是否破坏事实准确性、关键词自然度、图片 Alt 文本、CTA 和 TDK 一致性。',
-        `文章终稿（第 ${round.version} 版）与 TDK 均无 Low 项，可以作为当前最新可保存版本。`,
+        '正在复核用户修改是否破坏事实准确性、关键词自然度、图片 Alt 文本和 CTA 一致性。',
+        `文章终稿（第 ${round.version} 版）无 Low 项，可以作为当前最新可保存版本。`,
+        '以下是最终的内容评估报告。',
       ],
       artifactId: round.evaluationReport.id,
     },
@@ -2000,10 +2097,14 @@ export function createContentDemoData(task, project, options = {}) {
           {
             id: 'load-knowledge-items',
             completedText: '加载知识条目完毕',
+            completedTextEn: 'Load Knowledge Items completed',
             taskName: '加载知识条目',
+            taskNameEn: 'Load Knowledge Items',
             runningText: '正在加载知识条目...',
+            runningTextEn: 'Loading knowledge items...',
             sourceList: {
               emptyText: '未选择知识条目',
+              emptyTextEn: 'No knowledge items selected',
               items: selectedKnowledgeItems,
               variant: 'knowledge-items',
             },
@@ -2012,10 +2113,14 @@ export function createContentDemoData(task, project, options = {}) {
           {
             id: 'parse-knowledge-assets',
             completedText: '解析知识资料完毕',
+            completedTextEn: 'Parse Knowledge Files completed',
             taskName: '解析知识资料',
+            taskNameEn: 'Parse Knowledge Files',
             runningText: '正在解析知识资料...',
+            runningTextEn: 'Parsing knowledge files...',
             sourceList: {
               emptyText: '未选择知识资料',
+              emptyTextEn: 'No knowledge files selected',
               items: selectedKnowledgeAssets,
               variant: 'knowledge-assets',
             },
@@ -2024,8 +2129,11 @@ export function createContentDemoData(task, project, options = {}) {
           {
             id: 'extract-knowledge-signals',
             completedText: '提取相关信息完毕',
+            completedTextEn: 'Extract Key Insights completed',
             taskName: '提取相关信息',
+            taskNameEn: 'Extract Key Insights',
             runningText: '正在提取相关信息...',
+            runningTextEn: 'Extracting key insights...',
             thinking: [
               `已加载目标受众、知识条目和知识资料，重点关注 ${primaryKeyword}、DFM support、质量控制和 RFQ 准备。`,
               `已整理 ${referenceBlocks.length} 个来源文本块，其中 CNC Turning 与 DFM Support 将作为文章生成时的核心依据。`,
@@ -2042,8 +2150,11 @@ export function createContentDemoData(task, project, options = {}) {
           {
             id: 'read-confirmed-outline',
             completedText: '查看标题大纲完毕',
+            completedTextEn: 'Review Title Outline completed',
             taskName: '查看标题大纲',
+            taskNameEn: 'Review Title Outline',
             runningText: '正在查看标题大纲...',
+            runningTextEn: 'Reviewing title outline...',
             thinking: [
               `已读取用户确认后的文章标题和大纲：${outlineHeadings.slice(0, 4).join(' / ')}。`,
               '大纲要求先解释 CNC turning 与 CNC milling 的工艺边界，再进入采购决策标准、供应商能力和 RFQ 准备。',
@@ -2052,9 +2163,12 @@ export function createContentDemoData(task, project, options = {}) {
           },
           {
             id: 'generate-article-v1',
-            completedText: '生成文章完毕',
-            taskName: '生成文章',
-            runningText: '正在生成文章...',
+            completedText: '撰写文章初稿完毕',
+            completedTextEn: 'Write Article Draft completed',
+            taskName: '撰写文章初稿',
+            taskNameEn: 'Write Article Draft',
+            runningText: '正在撰写文章初稿...',
+            runningTextEn: 'Writing article draft...',
             thinking: [
               '正在按照文章策划和标题大纲生成第 1 版文章，先覆盖工艺选择、供应商能力和 RFQ 检查清单。',
               '正在插入知识库引用，并把 Rejin CNC 的 turning、milling、DFM 和出口沟通能力放入供应商选择语境。',
@@ -2070,9 +2184,12 @@ export function createContentDemoData(task, project, options = {}) {
         steps: [
           {
             id: 'evaluate-v1-check',
-            completedText: '内容评估完成',
-            taskName: '内容评估',
-            runningText: '正在评估文章第 1 版...',
+            completedText: '文章初稿评估完成',
+            completedTextEn: 'Evaluate Draft completed',
+            taskName: '文章初稿评估',
+            taskNameEn: 'Evaluate Draft',
+            runningText: '正在评估文章初稿...',
+            runningTextEn: 'Evaluating draft...',
             thinking: [
               '正在按标题、大纲、文章三类指标进行评估；Low 项会阻止通过，Medium 项会保留优化建议。',
               '第 1 版文章在 AI 概率、案例融入、权威引用和图片 Alt 文本上未达标，需要反馈给 Writer 优化。',
@@ -2082,8 +2199,11 @@ export function createContentDemoData(task, project, options = {}) {
           {
             id: 'suggest-v1',
             completedText: '思考优化方向完成',
+            completedTextEn: 'Plan Optimization completed',
             taskName: '思考优化方向',
+            taskNameEn: 'Plan Optimization',
             runningText: '正在思考优化方向...',
+            runningTextEn: 'Planning optimization...',
             thinking: [
               '正在把 Medium 与 Low 项转化为可执行修改建议，优先处理 Low 项。',
               '建议聚焦：补充 DFM/RFQ 场景、增加具体 CTA、补齐图片 Alt 文本、降低模板化表达。',
@@ -2099,8 +2219,11 @@ export function createContentDemoData(task, project, options = {}) {
           {
             id: 'revise-v2-read',
             completedText: '阅读修改建议完成',
+            completedTextEn: 'Review Suggestions completed',
             taskName: '阅读修改建议',
+            taskNameEn: 'Review Suggestions',
             runningText: '正在阅读修改建议...',
+            runningTextEn: 'Reviewing suggestions...',
             thinking: [
               '正在阅读修改建议，并定位需要优先修正的 Low 项与 Medium 项。',
               '修改重点会聚焦 DFM/RFQ 场景、具体 CTA、图片 Alt 文本和降低模板化表达。',
@@ -2109,8 +2232,11 @@ export function createContentDemoData(task, project, options = {}) {
           {
             id: 'revise-v2-modify',
             completedText: '修改文章完成',
+            completedTextEn: 'Revise Article completed',
             taskName: '修改文章',
+            taskNameEn: 'Revise Article',
             runningText: '正在修改文章...',
+            runningTextEn: 'Revising article...',
             thinking: [
               '正在补充 DFM review、inspection、internal link anchor、image Alt text 和 RFQ checklist。',
               '已生成第 2 版文章，并记录关键修改。',
@@ -2122,8 +2248,12 @@ export function createContentDemoData(task, project, options = {}) {
       {
         id: 'evaluate-v2',
         agentTitle: '内容评估专家',
-        taskName: '二次内容评估',
-        runningText: '正在评估文章第 2 版...',
+        completedText: '文章初稿评估完成',
+        completedTextEn: 'Evaluate Draft completed',
+        taskName: '文章初稿评估',
+        taskNameEn: 'Evaluate Draft',
+        runningText: '正在评估文章初稿...',
+        runningTextEn: 'Evaluating draft...',
         thinking: [
           '正在复核所有 Low 项是否已消除，并确认 Medium 项是否有建议可留给人工编辑。',
           '第 2 版没有 Low 项。',
@@ -2134,24 +2264,78 @@ export function createContentDemoData(task, project, options = {}) {
       {
         id: 'finalize',
         agentTitle: '内容运营专员 Writer',
-        taskName: '内容整合',
-        runningText: '正在整合内容并撰写 TDK...',
-        thinking: [
-          `正在插入 ${finalArticleImages.length} 张素材库图片与引用内容，整理文章终稿。`,
-          '已将 CNC turning 工艺图放入工艺选择段落，将 DFM/inspection 素材图放入供应商风险控制段落，并补齐图片 Alt 文本。',
-          '正在撰写 TDK，将 Title、Description 和 Keywords 与文章主题、主要关键词和 CTA 保持一致。',
-          '文章终稿与 TDK 已生成，等待内容评估专家进行最终复核。',
+        steps: [
+          {
+            id: 'insert-relevant-media',
+            completedText: '插入合适素材完成',
+            completedTextEn: 'Insert Relevant Media completed',
+            taskName: '插入合适素材',
+            taskNameEn: 'Insert Relevant Media',
+            runningText: '正在插入合适素材...',
+            runningTextEn: 'Inserting relevant media...',
+            sourceList: {
+              emptyText: '未插入相关素材',
+              emptyTextEn: 'No inserted media',
+              items: finalArticleImages.map((image, index) => ({
+                ...image,
+                id: image.assetId || image.imageUrl || `inserted-media-${index + 1}`,
+                label: image.title || image.alt || `素材 ${index + 1}`,
+              })),
+              variant: 'media',
+            },
+            thinking: [
+              '正在搜索素材库中与文章主题、工艺场景和段落语义匹配的素材，并插入到合适位置。',
+              '已将 CNC turning 工艺图放入工艺选择段落，将 DFM/inspection 素材图放入供应商风险控制段落，并补齐图片 Alt 文本。',
+            ],
+          },
+          {
+            id: 'insert-relevant-links',
+            completedText: '插入相关链接完成',
+            completedTextEn: 'Insert Relevant Links completed',
+            taskName: '插入相关链接',
+            taskNameEn: 'Insert Relevant Links',
+            runningText: '正在插入相关链接...',
+            runningTextEn: 'Inserting relevant links...',
+            sourceList: {
+              emptyText: '未找到可插入的品牌档案链接',
+              emptyTextEn: 'No brand profile links available',
+              items: selectedBrandLinks,
+              variant: 'links',
+            },
+            thinking: [
+              '正在从品牌档案中筛选公司相关链接与权威参考链接，优先匹配文章中的服务能力、工艺说明和采购决策段落。',
+              '已选择可支持文章可信度与转化路径的链接，等待整合到文章终稿。',
+            ],
+          },
+          {
+            id: 'finalize-content-tdk',
+            completedText: '整合内容并撰写 TDK 完成',
+            completedTextEn: 'Finalize Content & TDK completed',
+            taskName: '整合内容并撰写 TDK',
+            taskNameEn: 'Finalize Content & TDK',
+            runningText: '正在整合内容并撰写 TDK...',
+            runningTextEn: 'Finalizing content and writing TDK...',
+            thinking: [
+              '正在整合初稿、修改内容、素材和相关链接，生成可进入人工编辑的文章终稿。',
+              '正在撰写 TDK，将 Title、Description 和 Keywords 与文章主题、主要关键词和 CTA 保持一致。',
+              '文章终稿与 TDK 已生成，等待内容评估专家进行最终复核。',
+            ],
+            artifactIds: ['final', 'tdk'],
+          },
         ],
-        artifactIds: ['final', 'tdk'],
       },
       {
         id: 'final-evaluate',
         agentTitle: '内容评估专家',
-        taskName: '内容与TDK评估',
-        runningText: '正在评估文章终稿与 TDK...',
+        completedText: '文章终稿评估完成',
+        completedTextEn: 'Evaluate Final Draft completed',
+        taskName: '文章终稿评估',
+        taskNameEn: 'Evaluate Final Draft',
+        runningText: '正在评估文章终稿...',
+        runningTextEn: 'Evaluating final draft...',
         thinking: [
-          '正在对文章终稿进行最终质量评估，重点检查事实准确性、知识库引用、关键词自然度、CTA、可读性、素材库图片插入位置和图片 Alt 文本。',
-          '正在对 TDK 进行单独评估，检查 Title 关键词位置、Description 摘要价值、Keywords 语义覆盖和与正文的一致性。',
+          '正在对文章终稿进行最终质量评估，重点检查事实准确性、知识库引用、关键词自然度、CTA、可读性、素材插入位置、链接相关性和图片 Alt 文本。',
+          '正在对 TDK 进行评估，检查 Title 关键词位置、Description 摘要价值、Keywords 语义覆盖和与正文的一致性。',
           '文章终稿与 TDK 均无 Low 项，Medium 项已保留人工优化建议，内容符合评估标准。',
           '以下是最终的内容评估报告。',
         ],
