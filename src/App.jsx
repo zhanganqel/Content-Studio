@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import AppShell from './components/AppShell.jsx';
+import BlogArticleAiAutoCreationPage from './components/blog-article/BlogArticleAiAutoCreationPage.jsx';
 import BlogArticleAiCreateTaskPage from './components/blog-article/BlogArticleAiCreateTaskPage.jsx';
 import BlogArticleAiContentPage from './components/blog-article/BlogArticleAiContentPage.jsx';
 import BlogArticleAiOutlinePage from './components/blog-article/BlogArticleAiOutlinePage.jsx';
@@ -7,10 +8,14 @@ import BlogArticleAiPlanningPage from './components/blog-article/BlogArticleAiPl
 import BlogArticleEditor from './components/blog-article/BlogArticleEditor.jsx';
 import KnowledgeFilePreviewPage from './components/knowledge-assets/KnowledgeFilePreviewPage.jsx';
 import KnowledgeSourcePreviewPage from './components/knowledge-assets/KnowledgeSourcePreviewPage.jsx';
+import VideoGenerationPage from './components/video-ad/VideoGenerationPage.jsx';
 import { navSections, projects, searchScopes, userMenuItems } from './data/navigation.js';
 import { defaultLocale, messages } from './i18n/messages.js';
 import { createContentDemoData, getAiCreationTasks } from './services/blogArticleAiStore.js';
-import { getBlogArticleDrafts } from './services/blogArticleStore.js';
+import {
+  getAiTaskArticleContext,
+  migrateAiTaskArticleRuleStorage,
+} from './services/blogArticleAiArticleStore.js';
 
 const localeStorageKey = 'content-studio-locale';
 const aiPlanningSessionStorageKey = 'content-studio-active-ai-planning-session';
@@ -78,6 +83,11 @@ function getInitialProjectId(externalView) {
   return projects[0].id;
 }
 
+function getTaskCreateMode(task) {
+  const stage = task?.stage ?? '';
+  return task?.mode === 'auto' || stage.startsWith('auto') ? 'auto' : 'collaborative';
+}
+
 export default function App() {
   const [externalView] = useState(readExternalView);
   const [locale, setLocale] = useState(getInitialLocale);
@@ -89,11 +99,15 @@ export default function App() {
   const [searchScope, setSearchScope] = useState(searchScopes[0]);
   const [searchQuery, setSearchQuery] = useState('');
   const [blogAiCreateOpen, setBlogAiCreateOpen] = useState(false);
+  const [blogAiCreateMode, setBlogAiCreateMode] = useState('collaborative');
+  const [blogAiRecreateContext, setBlogAiRecreateContext] = useState(null);
+  const [blogAiAutoContext, setBlogAiAutoContext] = useState(null);
   const [blogAiPlanningContext, setBlogAiPlanningContext] = useState(null);
   const [blogAiOutlineContext, setBlogAiOutlineContext] = useState(null);
   const [blogAiContentContext, setBlogAiContentContext] = useState(null);
   const [blogArticleNotice, setBlogArticleNotice] = useState(null);
   const [blogEditorArticle, setBlogEditorArticle] = useState(null);
+  const [videoGenerationOpen, setVideoGenerationOpen] = useState(false);
   const t = messages[locale] ?? messages[defaultLocale];
 
   useEffect(() => {
@@ -105,12 +119,21 @@ export default function App() {
     [activeProjectId],
   );
 
+  migrateAiTaskArticleRuleStorage(activeProject);
+
   useEffect(() => {
     if (externalView?.view) {
       return;
     }
 
-    if (blogAiCreateOpen || blogAiPlanningContext || blogAiOutlineContext || blogAiContentContext || blogEditorArticle) {
+    if (
+      blogAiCreateOpen ||
+      blogAiAutoContext ||
+      blogAiPlanningContext ||
+      blogAiOutlineContext ||
+      blogAiContentContext ||
+      blogEditorArticle
+    ) {
       return;
     }
 
@@ -120,9 +143,14 @@ export default function App() {
     }
 
     const task = getAiCreationTasks(activeProject.id).find((item) => item.id === session.taskId);
-    const article = getBlogArticleDrafts(activeProject).find((item) => item.id === session.articleId);
+    const article = task ? getAiTaskArticleContext(activeProject, task) : null;
 
     if (task && article) {
+      if (session.view === 'auto') {
+        setBlogAiAutoContext({ article, task });
+        return;
+      }
+
       const stage =
         session.stage ??
         (task.stage?.startsWith('content') ? 'content' : task.stage?.startsWith('outline') ? 'outline' : 'planning');
@@ -139,6 +167,7 @@ export default function App() {
     clearAiPlanningSession();
   }, [
     activeProject,
+    blogAiAutoContext,
     blogAiContentContext,
     blogAiCreateOpen,
     blogAiOutlineContext,
@@ -194,6 +223,82 @@ export default function App() {
     setBlogArticleNotice((current) => (current?.id === noticeId ? null : current));
   }, []);
 
+  const openVideoGeneration = useCallback(() => {
+    setActiveItemId('video-ad');
+    setVideoGenerationOpen(true);
+  }, []);
+
+  const openBlogAiCreate = useCallback((mode = 'collaborative') => {
+    setActiveItemId('blog-article');
+    setBlogAiCreateMode(mode);
+    setBlogAiRecreateContext(null);
+    setBlogAiCreateOpen(true);
+    setBlogAiAutoContext(null);
+    setBlogAiPlanningContext(null);
+    setBlogAiOutlineContext(null);
+    setBlogAiContentContext(null);
+  }, []);
+
+  const openBlogAiRecreateTask = useCallback(
+    (task) => {
+      if (!task) return;
+
+      const latestTask = getAiCreationTasks(activeProject.id).find((item) => item.id === task.id) ?? task;
+      const mode = getTaskCreateMode(latestTask);
+
+      setActiveItemId('blog-article');
+      setBlogAiCreateMode(mode);
+      setBlogAiRecreateContext({
+        mode,
+        model: latestTask.model,
+        searchAnalyses: latestTask.searchAnalyses ?? [],
+        sourceTaskId: latestTask.id,
+        taskInput: latestTask.taskInput ?? {},
+      });
+      setBlogAiCreateOpen(true);
+      setBlogAiAutoContext(null);
+      setBlogAiPlanningContext(null);
+      setBlogAiOutlineContext(null);
+      setBlogAiContentContext(null);
+      clearAiPlanningSession();
+    },
+    [activeProject.id],
+  );
+
+  const openBlogAiTask = useCallback(
+    (task) => {
+      if (!task) return;
+
+      const latestTask = getAiCreationTasks(activeProject.id).find((item) => item.id === task.id) ?? task;
+      const article = getAiTaskArticleContext(activeProject, latestTask);
+
+      if (!article) {
+        return;
+      }
+
+      const stage = latestTask.stage?.startsWith('content')
+        ? 'content'
+        : latestTask.stage?.startsWith('outline')
+          ? 'outline'
+          : 'planning';
+
+      setActiveItemId('blog-article');
+      setBlogAiCreateOpen(false);
+      setBlogAiAutoContext({ article, task: latestTask });
+      setBlogAiPlanningContext(null);
+      setBlogAiOutlineContext(null);
+      setBlogAiContentContext(null);
+      writeAiPlanningSession({
+        articleId: article.id,
+        projectId: activeProject.id,
+        stage,
+        taskId: latestTask.id,
+        view: 'auto',
+      });
+    },
+    [activeProject],
+  );
+
   if (externalView?.view === 'knowledge-source-preview') {
     const task = getAiCreationTasks(activeProject.id).find((item) => item.id === externalView.taskId);
     const sourceBlock = task
@@ -220,13 +325,45 @@ export default function App() {
     );
   }
 
+  if (videoGenerationOpen) {
+    return (
+      <VideoGenerationPage
+        onBack={() => {
+          setActiveItemId('video-ad');
+          setVideoGenerationOpen(false);
+        }}
+        t={t}
+      />
+    );
+  }
+
   if (blogAiCreateOpen) {
     return (
       <BlogArticleAiCreateTaskPage
         locale={locale}
-        onClose={() => setBlogAiCreateOpen(false)}
-        onCreated={({ article, task }) => {
+        onClose={() => {
           setBlogAiCreateOpen(false);
+          setBlogAiRecreateContext(null);
+        }}
+        onCreated={({ article, mode, task }) => {
+          setBlogAiCreateOpen(false);
+          setBlogAiRecreateContext(null);
+          if (mode === 'auto') {
+            setBlogAiPlanningContext(null);
+            setBlogAiOutlineContext(null);
+            setBlogAiContentContext(null);
+            writeAiPlanningSession({
+              articleId: article.id,
+              projectId: activeProject.id,
+              stage: 'auto',
+              taskId: task.id,
+              view: 'auto',
+            });
+            setBlogAiAutoContext({ article, task });
+            return;
+          }
+
+          setBlogAiAutoContext(null);
           writeAiPlanningSession({
             articleId: article.id,
             projectId: activeProject.id,
@@ -235,8 +372,33 @@ export default function App() {
           });
           setBlogAiPlanningContext({ article, task });
         }}
+        mode={blogAiCreateMode}
+        project={activeProject}
+        recreateContext={blogAiRecreateContext}
+        t={t}
+      />
+    );
+  }
+
+  if (blogAiAutoContext) {
+    return (
+      <BlogArticleAiAutoCreationPage
+        article={blogAiAutoContext.article}
+        locale={locale}
+        onBack={() => {
+          setActiveItemId('blog-article');
+          clearAiPlanningSession();
+          setBlogAiAutoContext(null);
+        }}
+        onSaveAndEdit={(savedArticle) => {
+          clearAiPlanningSession();
+          setBlogAiAutoContext(null);
+          setBlogEditorArticle(savedArticle);
+        }}
+        onRecreateTask={openBlogAiRecreateTask}
         project={activeProject}
         t={t}
+        task={blogAiAutoContext.task}
       />
     );
   }
@@ -249,6 +411,8 @@ export default function App() {
         onBack={() => {
           clearAiPlanningSession();
           setBlogAiPlanningContext(null);
+          setBlogAiCreateMode('collaborative');
+          setBlogAiRecreateContext(null);
           setBlogAiCreateOpen(true);
         }}
         onClose={() => {
@@ -258,7 +422,7 @@ export default function App() {
           setBlogArticleNotice({
             id: Date.now(),
             articleId: blogAiPlanningContext.article.id,
-            message: 'AI 创作任务已创建，文章策划已保存',
+            message: '文章创作任务已创建，文章策划已保存',
             type: 'success',
           });
         }}
@@ -304,7 +468,7 @@ export default function App() {
           setBlogArticleNotice({
             id: Date.now(),
             articleId: blogAiOutlineContext.article.id,
-            message: 'AI 创作任务已创建，标题大纲已保存',
+            message: '文章创作任务已创建，标题大纲已保存',
             type: 'success',
           });
         }}
@@ -373,8 +537,11 @@ export default function App() {
       knowledgeItemFocusId={externalView?.view === 'knowledge-items' ? externalView.knowledgeItemId : ''}
       onBlogArticleNoticeConsumed={clearBlogArticleNotice}
       onLocaleChange={setLocale}
-      onOpenBlogAiCreate={() => setBlogAiCreateOpen(true)}
+      onOpenBlogAiCreate={openBlogAiCreate}
+      onOpenBlogAiTask={openBlogAiTask}
+      onOpenBlogAiRecreateTask={openBlogAiRecreateTask}
       onOpenBlogArticleEditor={setBlogEditorArticle}
+      onOpenVideoGeneration={openVideoGeneration}
       onProjectChange={setActiveProjectId}
       onSearchQueryChange={setSearchQuery}
       onSearchScopeChange={setSearchScope}

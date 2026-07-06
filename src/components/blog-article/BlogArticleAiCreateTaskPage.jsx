@@ -6,6 +6,7 @@ import {
   Check,
   ChevronDown,
   Database,
+  FilePenLine,
   FileText,
   HelpCircle,
   Layers3,
@@ -22,7 +23,8 @@ import {
 } from 'lucide-react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { getAudiencePersonaDrafts } from '../../services/audiencePersonaStore.js';
-import { createBlankBlogArticle, upsertBlogArticle } from '../../services/blogArticleStore.js';
+import { createBlogArticleId } from '../../services/blogArticleStore.js';
+import { getAiTaskArticleContext } from '../../services/blogArticleAiArticleStore.js';
 import { getBrandProfileDraft } from '../../services/brandProfileStore.js';
 import AiCreationStepLabel from './AiCreationStepLabel.jsx';
 import {
@@ -186,6 +188,7 @@ function flattenKnowledgeItems(draft) {
     const rows = draft.rows[type.id] ?? [];
     const nameField = type.fields.find((field) => field.key === type.nameFieldKey) ?? type.fields[1];
     const bodyField = type.fields.find((field) => field.aiRole === 'body') ?? type.fields[2];
+    const sourceUrlField = type.fields.find((field) => field.aiRole === 'sourceUrl');
     const tagsField = type.fields.find((field) => field.aiRole === 'tags');
 
     return rows.map((row) => ({
@@ -194,6 +197,7 @@ function flattenKnowledgeItems(draft) {
       typeName: type.name,
       title: getRowValue(row, nameField) || row.knowledgeId || 'Untitled knowledge',
       summary: getRowValue(row, bodyField),
+      sourceUrl: sourceUrlField ? getRowValue(row, sourceUrlField) : '',
       tags: tagsField ? getRowValue(row, tagsField).split(',').map((item) => item.trim()).filter(Boolean) : [],
     }));
   });
@@ -267,6 +271,73 @@ function getInitialForm({ brandProfile, knowledgeFiles, knowledgeItems, personas
     additionalRequirements: '',
     model: aiModelOptions[0],
     searchQuery: seed?.title ?? 'CNC machining supplier custom metal parts',
+  };
+}
+
+function normalizeReferenceArticles(referenceArticles) {
+  if (!Array.isArray(referenceArticles)) {
+    return [];
+  }
+
+  return referenceArticles
+    .map((item, index) => {
+      if (typeof item === 'string') {
+        return {
+          id: `recreated-reference-${index + 1}`,
+          title: '',
+          url: item,
+          source: 'manual',
+        };
+      }
+
+      return {
+        id: item?.id ?? `recreated-reference-${index + 1}`,
+        title: item?.title ?? '',
+        url: item?.url ?? '',
+        source: item?.source ?? 'manual',
+      };
+    })
+    .filter((item) => item.url);
+}
+
+function getIdsFromItems(items) {
+  return Array.isArray(items) ? items.map((item) => item?.id).filter(Boolean) : [];
+}
+
+function getInitialFormWithRecreateContext(defaultForm, recreateContext) {
+  const input = recreateContext?.taskInput;
+  if (!input || typeof input !== 'object') {
+    return defaultForm;
+  }
+
+  const {
+    articleTypeForStore,
+    knowledgeAssets,
+    knowledgeItems,
+    targetAudience,
+    targetAudienceName,
+    ...inputForm
+  } = input;
+  const recreatedKnowledgeItemIds = Array.isArray(input.knowledgeItemIds)
+    ? input.knowledgeItemIds
+    : getIdsFromItems(knowledgeItems);
+  const recreatedKnowledgeAssetIds = Array.isArray(input.knowledgeAssetIds)
+    ? input.knowledgeAssetIds
+    : getIdsFromItems(knowledgeAssets);
+
+  return {
+    ...defaultForm,
+    ...inputForm,
+    articleLanguage: normalizeArticleLanguage(input.articleLanguage ?? defaultForm.articleLanguage),
+    knowledgeAssetIds: recreatedKnowledgeAssetIds.length ? recreatedKnowledgeAssetIds : defaultForm.knowledgeAssetIds,
+    knowledgeItemIds: recreatedKnowledgeItemIds.length ? recreatedKnowledgeItemIds : defaultForm.knowledgeItemIds,
+    model: input.model ?? recreateContext.model ?? defaultForm.model,
+    referenceArticles: normalizeReferenceArticles(input.referenceArticles),
+    searchQuery: input.searchQuery || input.articleTopic || defaultForm.searchQuery,
+    secondaryKeywords: Array.isArray(input.secondaryKeywords)
+      ? input.secondaryKeywords
+      : splitAiKeywordText(input.secondaryKeywords),
+    targetAudienceId: input.targetAudienceId || targetAudience?.id || defaultForm.targetAudienceId,
   };
 }
 
@@ -1223,8 +1294,17 @@ function SearchResultCard({ added, copy, locale, result, onToggle }) {
   );
 }
 
-export default function BlogArticleAiCreateTaskPage({ locale, onClose, onCreated, project, t }) {
+export default function BlogArticleAiCreateTaskPage({
+  locale,
+  mode = 'collaborative',
+  onClose,
+  onCreated,
+  project,
+  recreateContext,
+  t,
+}) {
   const copy = t.blogArticle.aiCreation;
+  const isAutoMode = mode === 'auto';
   const selectedLabel = (count) => (locale === 'en-US' ? `${count} selected` : `已选择 ${count} 项`);
   const brandProfile = useMemo(() => getBrandProfileDraft(project), [project]);
   const personas = useMemo(() => getAudiencePersonaDrafts(project), [project]);
@@ -1232,8 +1312,12 @@ export default function BlogArticleAiCreateTaskPage({ locale, onClose, onCreated
   const knowledgeItems = useMemo(() => flattenKnowledgeItems(knowledgeDraft), [knowledgeDraft]);
   const knowledgeFiles = useMemo(() => listFiles(project).map((file) => getKnowledgeFileOption(project, file)), [project]);
   const initialForm = useMemo(
-    () => getInitialForm({ brandProfile, knowledgeFiles, knowledgeItems, personas, project }),
-    [brandProfile, knowledgeFiles, knowledgeItems, personas, project],
+    () =>
+      getInitialFormWithRecreateContext(
+        getInitialForm({ brandProfile, knowledgeFiles, knowledgeItems, personas, project }),
+        recreateContext,
+      ),
+    [brandProfile, knowledgeFiles, knowledgeItems, personas, project, recreateContext],
   );
   const initialSnapshot = useRef(JSON.stringify(initialForm));
   const [form, setForm] = useState(initialForm);
@@ -1257,6 +1341,9 @@ export default function BlogArticleAiCreateTaskPage({ locale, onClose, onCreated
   const selectedAudience = personas.find((persona) => persona.id === form.targetAudienceId);
   const hasDirtyChanges = JSON.stringify(form) !== initialSnapshot.current;
   const addedReferenceUrls = new Set(form.referenceArticles.map((item) => item.url));
+  const referenceSearchAnalyses = recreateContext?.searchAnalyses?.length
+    ? recreateContext.searchAnalyses
+    : aiReferenceSearchAnalyses;
 
   function updateField(field, value) {
     setForm((current) => ({ ...current, [field]: field === 'articleLanguage' ? normalizeArticleLanguage(value) : value }));
@@ -1354,30 +1441,24 @@ export default function BlogArticleAiCreateTaskPage({ locale, onClose, onCreated
       return;
     }
 
-    const article = {
-      ...createBlankBlogArticle(form.articleTopic || 'AI 创作任务'),
-      title: form.articleTopic,
-      articleType: getArticleTypeForStore(form.articleType),
-      targetAudiencePersonaId: form.targetAudienceId,
-      targetAudienceName: selectedAudience?.name ?? '',
-      keywords: [...splitAiKeywordText(form.primaryKeyword), ...form.secondaryKeywords].filter(Boolean),
-      updatedBy: 'Angel',
-    };
-    upsertBlogArticle(project, article);
-
     const task = saveAiCreationTask(project.id, {
-      articleId: article.id,
+      articleId: createBlogArticleId(),
       model: form.model,
+      mode,
+      stage: isAutoMode ? 'auto-generating' : 'planning',
       taskInput: {
         ...form,
         targetAudience: selectedAudience,
+        targetAudienceName: selectedAudience?.name ?? selectedAudience?.title ?? '',
+        articleTypeForStore: getArticleTypeForStore(form.articleType),
         knowledgeItems: selectedKnowledgeItems,
         knowledgeAssets: selectedAssets,
       },
-      searchAnalyses: aiReferenceSearchAnalyses,
+      searchAnalyses: referenceSearchAnalyses,
     });
+    const article = getAiTaskArticleContext(project, task);
 
-    onCreated({ article, task });
+    onCreated({ article, mode, task });
   }
 
   return (
@@ -1393,23 +1474,27 @@ export default function BlogArticleAiCreateTaskPage({ locale, onClose, onCreated
             <ArrowLeft className="h-5 w-5" />
           </button>
           <h1 className="w-[360px] text-[18px] font-bold leading-[28px] text-[#232E45]">
-            {copy.titles.create}
+            {isAutoMode ? copy.titles.autoCreate : copy.titles.create}
           </h1>
-          <div className="flex flex-1 items-center justify-center gap-5">
-            {copy.steps.map((step, index) => (
-              <div key={step} className="flex items-center gap-3">
-                <span
-                  className={`inline-flex h-7 w-7 items-center justify-center rounded-full text-[14px] font-bold ${
-                    index === 0 ? 'bg-[#365EFF] text-white' : 'bg-[#EEF0F4] text-[#A8ABB2]'
-                  }`}
-                >
-                  {index + 1}
-                </span>
-                <AiCreationStepLabel active={index === 0} step={step} />
-                {index < 3 ? <span className="h-px w-12 bg-[#E4E7ED]" /> : null}
-              </div>
-            ))}
-          </div>
+          {isAutoMode ? (
+            <div className="flex-1" />
+          ) : (
+            <div className="flex flex-1 items-center justify-center gap-5">
+              {copy.steps.map((step, index) => (
+                <div key={step} className="flex items-center gap-3">
+                  <span
+                    className={`inline-flex h-7 w-7 items-center justify-center rounded-full text-[14px] font-bold ${
+                      index === 0 ? 'bg-[#365EFF] text-white' : 'bg-[#EEF0F4] text-[#A8ABB2]'
+                    }`}
+                  >
+                    {index + 1}
+                  </span>
+                  <AiCreationStepLabel active={index === 0} step={step} />
+                  {index < 3 ? <span className="h-px w-12 bg-[#E4E7ED]" /> : null}
+                </div>
+              ))}
+            </div>
+          )}
           <div className="w-[260px]" />
         </div>
       </header>
@@ -1514,7 +1599,7 @@ export default function BlogArticleAiCreateTaskPage({ locale, onClose, onCreated
             </div>
           </FormCard>
 
-          <FormCard icon={Bot} title={copy.form.directionTitle} subtitle={copy.form.directionSubtitle}>
+          <FormCard icon={FilePenLine} title={copy.form.directionTitle} subtitle={copy.form.directionSubtitle}>
             <div className="grid grid-cols-2 gap-x-6 gap-y-4">
               <div className="col-span-2">
                 <Field error={errors.articleTopic} fieldKey="articleTopic" label={copy.fields.articleTopic} required>
@@ -1667,7 +1752,7 @@ export default function BlogArticleAiCreateTaskPage({ locale, onClose, onCreated
               </div>
             ) : (
               <div className="space-y-3">
-                {aiReferenceSearchAnalyses.map((result) => (
+                {referenceSearchAnalyses.map((result) => (
                   <SearchResultCard
                     added={addedReferenceUrls.has(result.url)}
                     copy={copy}

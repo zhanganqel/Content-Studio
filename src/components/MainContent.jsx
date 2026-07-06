@@ -3,6 +3,7 @@ import AudiencePersonaPage from './audience-persona/AudiencePersonaPage.jsx';
 import BlogArticlePage from './blog-article/BlogArticlePage.jsx';
 import KnowledgeAssetsPage from './knowledge-assets/KnowledgeAssetsPage.jsx';
 import KnowledgeItemsPage from './knowledge-items/KnowledgeItemsPage.jsx';
+import VideoAdPage from './video-ad/VideoAdPage.jsx';
 
 export default function MainContent({
   activeItem,
@@ -11,7 +12,10 @@ export default function MainContent({
   knowledgeItemFocusId,
   onBlogArticleNoticeConsumed,
   onOpenBlogAiCreate,
+  onOpenBlogAiTask,
+  onOpenBlogAiRecreateTask,
   onOpenBlogArticleEditor,
+  onOpenVideoGeneration,
   t,
 }) {
   if (activeItem?.id === 'brand-profile') {
@@ -62,10 +66,22 @@ export default function MainContent({
             creationNotice={blogArticleNotice}
             onCreationNoticeConsumed={onBlogArticleNoticeConsumed}
             onOpenAiCreation={onOpenBlogAiCreate}
+            onOpenAiTask={onOpenBlogAiTask}
+            onRecreateAiTask={onOpenBlogAiRecreateTask}
             onOpenEditor={onOpenBlogArticleEditor}
             project={activeProject}
             t={t}
           />
+        </div>
+      </main>
+    );
+  }
+
+  if (activeItem?.id === 'video-ad') {
+    return (
+      <main className="ml-[300px] h-screen overflow-y-auto bg-white pt-[72px]">
+        <div className="min-h-[calc(100vh-72px)] p-8">
+          <VideoAdPage onOpenVideoGeneration={onOpenVideoGeneration} t={t} />
         </div>
       </main>
     );

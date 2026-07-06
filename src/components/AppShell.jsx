@@ -20,7 +20,10 @@ export default function AppShell({
   onBlogArticleNoticeConsumed,
   onLocaleChange,
   onOpenBlogAiCreate,
+  onOpenBlogAiTask,
+  onOpenBlogAiRecreateTask,
   onOpenBlogArticleEditor,
+  onOpenVideoGeneration,
   onProjectChange,
   onSearchQueryChange,
   onSearchScopeChange,
@@ -58,7 +61,10 @@ export default function AppShell({
         knowledgeItemFocusId={knowledgeItemFocusId}
         onBlogArticleNoticeConsumed={onBlogArticleNoticeConsumed}
         onOpenBlogAiCreate={onOpenBlogAiCreate}
+        onOpenBlogAiTask={onOpenBlogAiTask}
+        onOpenBlogAiRecreateTask={onOpenBlogAiRecreateTask}
         onOpenBlogArticleEditor={onOpenBlogArticleEditor}
+        onOpenVideoGeneration={onOpenVideoGeneration}
         t={t}
       />
     </div>

@@ -300,10 +300,69 @@ export const messages = {
     blogArticle: {
       title: '博客文章',
       description:
-        '统一管理 AI 创作生成的博客文章，并在文本编辑器中完成改写、质量评估与发布。',
+        '统一管理文章创作生成并保存的博客文章，并在文本编辑器中完成改写、质量评估与发布。',
       createBlank: '新建空白文档',
-      aiCreate: 'AI 创作',
+      aiCreate: '文章创作',
       listTitle: '文章列表',
+      creationMode: {
+        title: '选择创作方式',
+        body: '根据本次内容生产方式选择协同创作或自动创作。',
+        collaborativeTitle: '协同创作',
+        collaborativeBody: '按步骤与 AI 一起完成策划、大纲、正文生成，可在关键节点人工确认和调整。',
+        autoTitle: '自动创作',
+        autoBody: '创建后后台自动完成生成，可同时创建多篇文章任务，适合批量生产内容初稿。',
+        close: '关闭',
+      },
+      taskList: {
+        title: '任务列表',
+        filters: {
+          statusLabel: '生成状态',
+          allStatuses: '生成状态',
+        },
+        status: {
+          generating: '生成中',
+          success: '成功',
+          stopped: '已中止',
+          failed: '生成失败',
+        },
+        stage: {
+          create: '正在创建任务',
+          planning: '正在生成文章策划',
+          outline: '正在生成标题大纲',
+          content: '正在撰写正文初稿',
+          auto: '正在自动创作',
+        },
+        actions: {
+          stop: '中止',
+          recreate: '重新创建',
+          saveAndEdit: '保存并编辑',
+          viewArticle: '查看文章',
+          viewProcess: '查看创作过程',
+        },
+        progress: '当前进度',
+        completedAt: '生成完成',
+        stoppedAt: '已中止',
+        failedNode: '失败节点',
+        error: '错误',
+        outputs: '产物',
+        outputNames: '文章终稿、TDK、评估报告',
+        stoppedBody: '保留已生成过程和产物',
+        unknownError: '模型调用异常',
+        deleteTitle: '删除创作任务',
+        deleteBody: (title) => `确认删除「${title}」吗？删除后仅移除任务记录，不会删除已保存文章。`,
+        toast: {
+          deleted: '创作任务已删除',
+          stopped: '创作任务已中止',
+          saved: '文章已保存，可继续编辑',
+          articleMissing: '文章不存在或已被删除',
+        },
+        empty: {
+          title: '暂无创作任务',
+          body: '点击右上角文章创作后，任务会在这里展示。',
+          filteredTitle: '暂无匹配任务',
+          filteredBody: '调整关键词、生成状态或高级筛选条件后再查看。',
+        },
+      },
       delete: '删除',
       duplicate: '复制',
       publishSettings: '发布设置',
@@ -322,10 +381,12 @@ export const messages = {
       aiCreation: {
         steps: ['创建任务', '文章策划', '标题大纲', '内容生成'],
         titles: {
-          create: 'AI 创作-创建任务',
-          planning: 'AI 创作-文章策划',
-          outline: 'AI 创作-标题大纲',
-          content: 'AI 创作-内容生成',
+          create: '协同创作-创建任务',
+          planning: '协同创作-文章策划',
+          outline: '协同创作-标题大纲',
+          content: '协同创作-内容生成',
+          autoCreate: '自动创作-创建任务',
+          auto: '文章创作-自动创作',
         },
         actions: {
           back: '返回',
@@ -390,6 +451,11 @@ export const messages = {
           done: '完成',
           stopped: '已中止',
         },
+        toast: {
+          autoFailed: '生成失败，可查看已完成内容',
+          autoStopped: '创作任务已中止',
+          autoStoppedManual: '任务已中止，可返回上一步重新创建任务',
+        },
         empty: {
           outlinePreviewTitle: '等待标题与大纲生成',
           outlinePreviewBody: '标题选择后会自动填写到右侧，文章大纲生成后可拖拽编辑。',
@@ -397,7 +463,7 @@ export const messages = {
           contentPreviewBody: '文章、评估报告、修改建议和 TDK 生成后不会自动切换，需要手动点击卡片查看。',
         },
         dialog: {
-          leaveTitle: '离开 AI 创作流程？',
+          leaveTitle: '离开文章创作流程？',
           leaveBody: '当前创建任务内容尚未保存，离开后本次填写的内容将丢失。',
           unsavedTitle: '内容未保存',
           unsavedBody: '当前标题或大纲尚未保存，是否放弃本次修改？',
@@ -421,8 +487,8 @@ export const messages = {
       },
       filters: {
         searchPlaceholder: '搜索文章主题 / 标题 / 关键词',
-        statusLabel: '状态',
-        allStatuses: '状态',
+        statusLabel: '发布状态',
+        allStatuses: '发布状态',
         advancedTitle: '高级筛选',
         audienceLabel: '目标受众',
         allAudiences: '目标受众',
@@ -447,7 +513,6 @@ export const messages = {
         saved: '文章已保存',
         deleted: '文章已删除',
         duplicated: '文章副本已创建',
-        aiComingSoon: 'AI 创作页面暂未开发',
         publishSettingsComingSoon: '发布设置暂未开发',
       },
       empty: {
@@ -455,6 +520,19 @@ export const messages = {
         body: '新建空白文档后，可在文本编辑器中完成文章撰写。',
         filteredTitle: '暂无匹配文章',
         filteredBody: '调整关键词、状态或高级筛选条件后再查看。',
+      },
+    },
+    videoAd: {
+      title: '视频/广告',
+      description:
+        '统一管理面向多渠道投放的视频创意、脚本与生成任务，后续可接入 AI Agent 完成视频生产。',
+      createVideo: '视频创作',
+      generation: {
+        label: '视频创作',
+        title: '视频生成',
+        back: '返回视频列表',
+        placeholderTitle: '视频生成工作台',
+        placeholderBody: '脚本、素材与生成过程将在这里承载，当前先保留页面骨架。',
       },
     },
     knowledgeItems: {
@@ -1042,10 +1120,71 @@ export const messages = {
     blogArticle: {
       title: 'Blog Articles',
       description:
-        'Manage blog articles generated with AI writing, then finish rewriting, quality checks, and publishing in the text editor.',
+        'Manage blog articles saved from Article Writing, then finish rewriting, quality checks, and publishing in the text editor.',
       createBlank: 'New Blank Document',
-      aiCreate: 'AI Writing',
+      aiCreate: 'Article Writing',
       listTitle: 'Article List',
+      creationMode: {
+        title: 'Choose Writing Mode',
+        body: 'Choose collaborative or automatic writing for this content task.',
+        collaborativeTitle: 'Collaborative Writing',
+        collaborativeBody:
+          'Work with AI step by step through strategy, outline, and draft generation, with human confirmation at key points.',
+        autoTitle: 'Auto Writing',
+        autoBody:
+          'Create tasks and let the system complete generation in the background. Suitable for producing multiple first drafts in batches.',
+        close: 'Close',
+      },
+      taskList: {
+        title: 'Task List',
+        filters: {
+          statusLabel: 'Generation Status',
+          allStatuses: 'Generation Status',
+        },
+        status: {
+          generating: 'Generating',
+          success: 'Success',
+          stopped: 'Stopped',
+          failed: 'Failed',
+        },
+        stage: {
+          create: 'Creating brief',
+          planning: 'Generating content strategy',
+          outline: 'Generating title and outline',
+          content: 'Writing draft',
+          auto: 'Auto writing',
+        },
+        actions: {
+          stop: 'Stop',
+          recreate: 'Recreate',
+          saveAndEdit: 'Save & Edit',
+          viewArticle: 'View Article',
+          viewProcess: 'View Process',
+        },
+        progress: 'Progress',
+        completedAt: 'Completed',
+        stoppedAt: 'Stopped',
+        failedNode: 'Failed Node',
+        error: 'Error',
+        outputs: 'Outputs',
+        outputNames: 'Final draft, TDK, review report',
+        stoppedBody: 'Generated process and outputs are retained',
+        unknownError: 'Model call timed out',
+        deleteTitle: 'Delete Writing Task',
+        deleteBody: (title) => `Delete "${title}"? This only removes the task record and will not delete saved articles.`,
+        toast: {
+          deleted: 'Writing task deleted',
+          stopped: 'Writing task stopped',
+          saved: 'Article saved. Continue editing.',
+          articleMissing: 'Article not found or has been deleted.',
+        },
+        empty: {
+          title: 'No writing tasks yet',
+          body: 'Use Article Writing in the top right to create tasks here.',
+          filteredTitle: 'No matching tasks',
+          filteredBody: 'Adjust keyword, generation status, or advanced filters and try again.',
+        },
+      },
       delete: 'Delete',
       duplicate: 'Duplicate',
       publishSettings: 'Publish Settings',
@@ -1064,10 +1203,12 @@ export const messages = {
       aiCreation: {
         steps: ['Content Brief', 'Content Strategy', 'Title Outline', 'Content Draft'],
         titles: {
-          create: 'AI Writing - Content Brief',
-          planning: 'AI Writing - Content Strategy',
-          outline: 'AI Writing - Title Outline',
-          content: 'AI Writing - Content Draft',
+          create: 'Collaborative Writing - Content Brief',
+          planning: 'Collaborative Writing - Content Strategy',
+          outline: 'Collaborative Writing - Title Outline',
+          content: 'Collaborative Writing - Content Draft',
+          autoCreate: 'Auto Writing - Content Brief',
+          auto: 'Auto Writing - Process',
         },
         actions: {
           back: 'Back',
@@ -1084,7 +1225,7 @@ export const messages = {
           leave: 'Leave',
           search: 'Search',
           searching: 'Searching',
-          createTask: 'Create Brief',
+          createTask: 'Create Task',
           addReference: '+ Add',
           added: 'Added',
           confirmTitle: 'Confirm Title',
@@ -1132,6 +1273,11 @@ export const messages = {
           done: 'Done',
           stopped: 'Stopped',
         },
+        toast: {
+          autoFailed: 'Generation failed. Completed content is still available.',
+          autoStopped: 'Writing task stopped.',
+          autoStoppedManual: 'Task stopped. You can go back and recreate the task.',
+        },
         empty: {
           outlinePreviewTitle: 'Waiting for Outline',
           outlinePreviewBody: 'Pick a title first. The outline will appear here for editing.',
@@ -1139,7 +1285,7 @@ export const messages = {
           contentPreviewBody: 'Generated drafts, reviews, suggestions, and TDK appear after you select a card.',
         },
         dialog: {
-          leaveTitle: 'Leave AI Writing?',
+          leaveTitle: 'Leave Article Writing?',
           leaveBody: 'This brief is not saved. Leaving will discard your input.',
           unsavedTitle: 'Unsaved Content',
           unsavedBody: 'Discard the unsaved title or outline changes?',
@@ -1163,8 +1309,8 @@ export const messages = {
       },
       filters: {
         searchPlaceholder: 'Search topic / title / keyword',
-        statusLabel: 'Status',
-        allStatuses: 'Status',
+        statusLabel: 'Publish Status',
+        allStatuses: 'Publish Status',
         advancedTitle: 'Advanced Filters',
         audienceLabel: 'Target Audience',
         allAudiences: 'Target Audience',
@@ -1189,7 +1335,6 @@ export const messages = {
         saved: 'Article saved',
         deleted: 'Article deleted',
         duplicated: 'Article copy created',
-        aiComingSoon: 'AI writing page is not available yet',
         publishSettingsComingSoon: 'Publish settings are not available yet',
       },
       empty: {
@@ -1197,6 +1342,19 @@ export const messages = {
         body: 'Create a blank document and write the article in the text editor.',
         filteredTitle: 'No matching articles',
         filteredBody: 'Adjust keyword, status, or advanced filters and try again.',
+      },
+    },
+    videoAd: {
+      title: 'Video / Ad',
+      description:
+        'Manage video concepts, scripts, and generation tasks for multi-channel campaigns. AI Agent production will be connected here.',
+      createVideo: 'Create Video',
+      generation: {
+        label: 'Video Creation',
+        title: 'Video Generation',
+        back: 'Back to Video List',
+        placeholderTitle: 'Video Generation Workspace',
+        placeholderBody: 'Scripts, assets, and generation progress will live here. This screen is a scaffold for now.',
       },
     },
     knowledgeItems: {

@@ -52,7 +52,7 @@ export default function KnowledgeSourcePreviewPage({ block, project }) {
             </div>
           ) : (
             <div className="px-6 py-16 text-center text-[14px] leading-[22px] text-[#909399]">
-              未找到对应的知识资料文本块，请从 AI 创作页面重新打开。
+              未找到对应的知识资料文本块，请从文章创作页面重新打开。
             </div>
           )}
         </section>

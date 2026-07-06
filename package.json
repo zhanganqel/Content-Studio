@@ -4,10 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --host 127.0.0.1",
+    "dev": "vite --host 127.0.0.1 --port 5173 --strictPort",
+    "dev:fresh": "vite --host 127.0.0.1 --port 5173 --strictPort --force",
     "build": "vite build",
-    "guidelines:dev": "vite --config guidelines/vite.config.js --host 127.0.0.1 --port 5174",
-    "guidelines:build": "vite build --config guidelines/vite.config.js",
     "preview": "vite preview --host 127.0.0.1"
   },
   "dependencies": {

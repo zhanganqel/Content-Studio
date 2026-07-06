@@ -1,39 +1,72 @@
 # Component Guidelines
 
-The active component guideline source is now managed in the isolated guidelines project:
+本文件是 Content Studio 共享组件使用规则。视觉 token、颜色、字体、间距、图标和 Figma 生成规范以根目录 `DESIGN.md` 为准；本文件只描述现有 React 组件的使用边界。
 
-- Preview project: `guidelines/`
-- Markdown source: `guidelines/docs/component-guidelines.md`
-- Local preview command: `pnpm guidelines:dev`
-- Build check command: `pnpm guidelines:build`
-
-Before building a new Content Studio screen, open the guidelines project and follow its components first. If a new visual variant is needed, update the guidelines project and Markdown document before implementing the feature.
+新增页面前先检查 `src/components/ui/` 是否已有可复用组件。只有当现有组件无法表达明确的新交互时，才新增组件或变体。
 
 ## Button
 
-- Page-level primary and secondary actions must use the shared `src/components/ui/Button.jsx` component.
-- Default button size is `h-9 px-4`, with `text-sm font-semibold`, `rounded-md`, and a 16px icon.
-- `primary` is a blue filled button for save, edit, create, apply, and other main actions.
-- `secondary` is a white button with blue border/text for export, add field, and other important auxiliary actions.
-- `neutral` is a white button with light gray border/text for cancel, continue editing, and low-risk actions.
-- `danger` is reserved for destructive confirmations such as discard changes or delete confirmation.
-- Do not hand-write page-level primary/secondary button Tailwind classes inside feature pages. Reuse the shared component and keep table icon buttons, navigation items, and segmented tabs as separate compact controls.
+- 页面级主要、次要、普通、危险操作必须优先使用 `src/components/ui/Button.jsx`。
+- 默认按钮尺寸是 `h-9 px-4`，文本为 `text-sm font-semibold`，圆角为 `rounded-md`。
+- 按钮内图标来自 `lucide-react`，默认 16px，并设置为装饰性图标。
+- `primary` 用于保存、新建、编辑、应用筛选等主操作。
+- `secondary` 用于导出、添加字段、打开选择器等重要辅助操作。
+- `neutral` 用于取消、继续编辑、关闭等低风险操作。
+- `danger` 只用于删除、放弃更改等破坏性确认。
+- 不要在业务页面手写一套新的页面级按钮样式；表格内图标按钮、导航项、分段控制可作为更紧凑的局部控件。
 
 ## Page Header
 
-- Top intro cards with title, description, and right-side actions must use the shared `src/components/ui/PageHeader.jsx` component.
-- Page header cards use `rounded-lg bg-slate-50 px-7 py-6`.
-- Right-side actions use `flex flex-none flex-wrap items-start gap-3` and align near the top of the card on desktop.
-- On narrow screens, actions stack below the title and description instead of compressing the copy.
-- Do not hand-write page header action alignment inside feature pages. Matching positions across pages must come from the shared component.
+- 页面顶部说明区优先使用 `src/components/ui/PageHeader.jsx`。
+- Header 承载标题、说明和右侧操作，不承载列表、表单或数据卡片。
+- 右侧操作使用共享按钮，并在桌面端靠右上对齐，在较窄空间自然换行。
+- 不要在每个业务页面重复手写 header 对齐和间距。
+
+## List Card
+
+- 除非需求明确指定特殊布局，所有列表型卡片必须优先使用 `src/components/ui/ListCard.jsx`。
+- `ListCard` 用于可重复列表项，例如文章、任务、受众画像、知识对象；不要在业务页面手写新的卡片边框、标题行、元信息行和操作区布局。
+- 卡片标题放在左侧主信息第一行，使用 `text-xl font-bold tracking-normal`。标题可点击时传 `onTitleClick`，由组件渲染为文本按钮；不可点击时由组件渲染普通标题。
+- 标题默认不带图标。只有受众画像、知识对象等需要实体识别的列表项才传 `leadingIcon`；入口按钮、任务状态、普通文章标题不额外加标题图标。
+- 状态标签通过 `statusTag` 放在标题右侧，使用圆角胶囊样式；状态标签不放到右侧操作区。
+- 多字段元信息必须通过 `metaItems` 传入，每个字段是一个独立 item，不要拼成长字符串来控制样式。
+- 元信息行统一使用横向排列并自动换行：`flex flex-wrap items-center gap-x-6 gap-y-2`。字段之间不用竖线、圆点或多空格分隔，靠统一间距区分。
+- 单个元信息字段采用「字段名：字段值」结构；字段名和值保持在同一 item 内。空值字段不渲染，避免出现空冒号或占位符。
+- 元信息字段可以配置 16px lucide 图标。日期、人员、行业、职位这类扫描型字段可以带图标；纯说明型长文本不带图标。
+- 长字段必须在自身 item 内截断或随 item 换行，不能挤压标题、状态标签或右侧操作区。
+- 标签组通过 `tags` 放在元信息下方；标签用于分类、关键词、已选项等非状态信息，不替代 `statusTag`。
+- 右侧文字操作通过 `actions` 传入，桌面端固定在卡片右上角，窄屏时折到正文下方。操作必须使用 lucide 16px 图标；普通操作为蓝色，删除等破坏性操作使用 `tone: 'danger'`。
+- 操作区只承载当前列表项的命令，不放元信息、状态说明或筛选控件。
 
 ## Toast
 
-- Toast must use the shared `src/components/ui/Toast.jsx` component.
-- Toast must render through a global portal into `document.body`; it must never participate in page layout or add spacing inside page content containers.
-- Toast position is fixed near the top of the viewport and horizontally centered against the full browser window, including the left navigation area.
-- Toast height should stay compact at about 40px. Reduce padding and icon size when tightening the component; keep the current text size standard.
-- Toast must not use borders. Use semantic background colors, semantic icon colors, and a light shadow only.
-- Toast width should fit its content instead of using a fixed page percentage. Short messages should stay on one line; long messages may wrap only when constrained and must be clamped to at most two lines.
-- Toast action buttons must use a compact icon-plus-text style: small leading icon, single-line label, blue text, no border, no button frame, and no background fill.
-- Supported semantic types are `success`, `info`, `warning`, and `error`.
+- 全局提示必须使用 `src/components/ui/Toast.jsx`。
+- Toast 通过 portal 渲染到 `document.body`，不得占用页面布局空间。
+- Toast 固定在视口顶部居中，短文案保持单行，长文案最多两行。
+- Toast 不使用边框，以语义背景色、语义图标色和轻量阴影表达状态。
+- 支持类型为 `success`、`info`、`warning`、`error`。
+
+## Layout Helpers
+
+- 需要固定视口和内部滚动的页面优先使用 `src/components/ui/FixedPageLayout.jsx`。
+- 跨页面复用布局 class 放在 `src/components/layoutClasses.js`。
+- 新增页面不要直接修改 `AppShell`、`Topbar`、`Sidebar` 的结构，除非需求涉及全局导航。
+
+## Forms
+
+- 表单字段保持 44px 左右点击高度。
+- 必填、错误、禁用、只读状态必须在字段旁可见。
+- 多选字段必须支持选中、取消选中、标签移除和键盘触发。
+- 表单保存失败时优先展示字段级错误，必要时滚动到第一个错误字段。
+
+## Icons
+
+- 图标库统一使用 `lucide-react`。
+- 按钮图标默认 16px，卡片或区域图标默认 20px，页面级说明图标可用 24px。
+- 仅图标按钮必须提供 `aria-label`。
+- 图标颜色跟随文字或组件状态，不新增独立装饰色。
+
+## Change Rule
+
+- 新增或修改共享组件时，同步更新 `DESIGN.md` 和本文件。
+- 如果页面需要新的视觉变体，先把变体命名、状态和使用场景写入规范，再实现。

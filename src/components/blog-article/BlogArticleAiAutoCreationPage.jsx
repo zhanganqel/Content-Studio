@@ -14,27 +14,73 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Toast from '../ui/Toast.jsx';
-import AiCreationStepLabel from './AiCreationStepLabel.jsx';
 import { formatTaskState, getTaskCompletedText, getTaskName, getTaskRunningText } from './aiTaskText.js';
 import { getAgentDisplay } from './agentDisplay.js';
 import {
   createContentDemoData,
-  resetAiContentTask,
-  splitAiKeywordText,
+  createOutlineDemoData,
+  createPlanningDemoData,
   updateAiCreationTask,
 } from '../../services/blogArticleAiStore.js';
-import { createBlogArticleId, getTodayString, upsertBlogArticle } from '../../services/blogArticleStore.js';
+import { saveAiTaskAsBlogArticle } from '../../services/blogArticleAiArticleStore.js';
+import { getTodayString } from '../../services/blogArticleStore.js';
+
+const stageOrder = ['planning', 'outline', 'content'];
 
 function getArtifactIcon(type) {
   if (type === 'evaluation') return ClipboardList;
   if (type === 'tdk') return Sparkles;
   if (type === 'references') return BookOpen;
+  if (type === 'strategy') return ClipboardList;
   return FileText;
 }
 
 function getLocalizedArtifactText(artifact, field, locale) {
   const localizedField = `${field}En`;
   return locale === 'en-US' && artifact?.[localizedField] ? artifact[localizedField] : artifact?.[field];
+}
+
+function getTaskStatus(task) {
+  const stage = task?.stage ?? '';
+  if (task?.errorMessage || stage === 'failed' || stage.endsWith('-failed')) return 'failed';
+  if (stage.endsWith('-stopped')) return 'stopped';
+  if (stage === 'content-completed') return 'success';
+  return 'generating';
+}
+
+function isAutoTask(task) {
+  const stage = task?.stage ?? '';
+  return task?.mode === 'auto' || stage.startsWith('auto');
+}
+
+function hasStagePayload(task, stageKey) {
+  const payload = task?.[stageKey];
+  if (!payload || typeof payload !== 'object') return false;
+
+  return Object.entries(payload).some(([key, value]) => {
+    if (key === 'updatedAt' || key === 'isStopped') return false;
+    if (Array.isArray(value)) return value.length > 0;
+    return Boolean(value);
+  });
+}
+
+function inferStageKey(task) {
+  const stage = task?.stage ?? '';
+  if (isAutoTask(task)) return 'content';
+  if (stage.startsWith('content') || stage === 'content-completed') return 'content';
+  if (stage.startsWith('outline')) return 'outline';
+  if (stage.startsWith('planning')) return 'planning';
+  if (hasStagePayload(task, 'content')) return 'content';
+  if (hasStagePayload(task, 'outline')) return 'outline';
+  return 'planning';
+}
+
+function getVisibleStages(task, status) {
+  if (status === 'success') return stageOrder;
+
+  const stageKey = inferStageKey(task);
+  const endIndex = stageOrder.indexOf(stageKey);
+  return stageOrder.slice(0, Math.max(0, endIndex) + 1);
 }
 
 function openAppViewInNewTab(params) {
@@ -48,11 +94,15 @@ function openAppViewInNewTab(params) {
   window.open(url.toString(), '_blank', 'noopener,noreferrer');
 }
 
+function prefixId(stageKey, id) {
+  return id ? `${stageKey}:${id}` : '';
+}
+
 function getArtifactIdsFromItem(item) {
   return item?.artifactIds ?? (item?.artifactId ? [item.artifactId] : []);
 }
 
-function getTaskSteps(task) {
+function getRawTaskSteps(task) {
   if (Array.isArray(task?.steps) && task.steps.length) {
     return task.steps.map((step, index) => ({
       ...step,
@@ -70,6 +120,113 @@ function getTaskSteps(task) {
       thinking: task?.thinking ?? [],
     },
   ];
+}
+
+function prefixSourceList(sourceList, stageKey) {
+  if (!sourceList) return sourceList;
+
+  return {
+    ...sourceList,
+    items: (sourceList.items ?? []).map((item) => ({
+      ...item,
+      id: prefixId(stageKey, item.id),
+    })),
+  };
+}
+
+function normalizeWorkflowItem(item, stageKey) {
+  const steps = getRawTaskSteps(item).map((step) => ({
+    ...step,
+    artifactId: step.artifactId ? prefixId(stageKey, step.artifactId) : '',
+    artifactIds: step.artifactIds.map((artifactId) => prefixId(stageKey, artifactId)),
+    id: prefixId(stageKey, step.id),
+    sourceList: prefixSourceList(step.sourceList, stageKey),
+  }));
+
+  return {
+    ...item,
+    artifactId: item.artifactId ? prefixId(stageKey, item.artifactId) : '',
+    artifactIds: getArtifactIdsFromItem(item).map((artifactId) => prefixId(stageKey, artifactId)),
+    id: prefixId(stageKey, item.id),
+    rawTaskIds: [prefixId(stageKey, item.id)],
+    stageKey,
+    steps,
+  };
+}
+
+function mergeSequentialAgentTasks(items) {
+  return items.reduce((groups, item) => {
+    const lastGroup = groups[groups.length - 1];
+    const canMerge =
+      lastGroup &&
+      lastGroup.agentTitle === item.agentTitle &&
+      lastGroup.kind !== 'user-request' &&
+      item.kind !== 'user-request';
+
+    if (canMerge) {
+      lastGroup.steps.push(...item.steps);
+      lastGroup.rawTaskIds.push(...item.rawTaskIds);
+      lastGroup.stageKeys = [...new Set([...lastGroup.stageKeys, item.stageKey])];
+      return groups;
+    }
+
+    groups.push({
+      ...item,
+      stageKeys: [item.stageKey],
+    });
+    return groups;
+  }, []);
+}
+
+function prefixArtifacts(artifacts, stageKey) {
+  return Object.fromEntries(
+    Object.entries(artifacts ?? {}).map(([id, artifact]) => {
+      const nextId = prefixId(stageKey, id);
+      return [
+        nextId,
+        {
+          ...artifact,
+          id: nextId,
+          originalId: artifact.id ?? id,
+          stageKey,
+        },
+      ];
+    }),
+  );
+}
+
+function buildAutoDemoData(task, project, revisionRequests) {
+  const status = getTaskStatus(task);
+  const visibleStages = getVisibleStages(task, status);
+  const stageData = {
+    planning: createPlanningDemoData(task, project),
+    outline: createOutlineDemoData(task, project),
+    content: createContentDemoData(task, project, { revisionRequests }),
+  };
+  const artifacts = {};
+  const workflowItems = [];
+
+  visibleStages.forEach((stageKey) => {
+    const data = stageData[stageKey];
+    Object.assign(artifacts, prefixArtifacts(data.artifacts, stageKey));
+    workflowItems.push(...data.workflow.map((item) => normalizeWorkflowItem(item, stageKey)));
+  });
+
+  const contentData = stageData.content;
+  const latestFinalArtifactId = prefixId('content', contentData.latestFinalArticleId || 'final');
+
+  return {
+    artifacts,
+    contentData,
+    latestFinalArtifactId,
+    stageData,
+    visibleStages,
+    workflow: mergeSequentialAgentTasks(workflowItems),
+  };
+}
+
+function getTaskSteps(task) {
+  return Array.isArray(task?.steps) ? task.steps : [];
 }
 
 function getStepRevealCount(step) {
@@ -118,7 +275,6 @@ function getActiveStepState(task, visibleThinkingCounts, visibleArtifactIds) {
       complete: true,
       hasMoreThinking: false,
       step: null,
-      thinkingCount: 0,
     };
   }
 
@@ -132,67 +288,121 @@ function getActiveStepState(task, visibleThinkingCounts, visibleArtifactIds) {
     complete: false,
     hasMoreThinking: thinkingCount < getStepRevealCount(step),
     step,
-    thinkingCount,
   };
 }
 
-function getInitialPlaybackState(workflow, task) {
-  const alreadyCompleted = task?.stage === 'content-completed';
-  const savedCompletedTaskIds = task?.content?.completedTaskIds ?? [];
-  const savedArtifactId = task?.content?.currentArtifactId ?? '';
-  const savedVisibleArtifactIds = task?.content?.visibleArtifactIds ?? [];
+function getSavedCompletedIds(task, stageKey) {
+  const savedIds = task?.[stageKey]?.completedTaskIds ?? [];
+  return new Set(savedIds.map((id) => prefixId(stageKey, id)));
+}
 
-  if (alreadyCompleted) {
+function getInitialGeneratingState(workflow, task, currentStageKey) {
+  const stageStartIndex = workflow.findIndex((item) => item.stageKeys.includes(currentStageKey));
+  const startIndex = stageStartIndex >= 0 ? stageStartIndex : 0;
+  const completedTaskIds = workflow.slice(0, startIndex).map((item) => item.id);
+  const savedCompletedIds = getSavedCompletedIds(task, currentStageKey);
+  let currentTaskIndex = startIndex;
+
+  for (let index = startIndex; index < workflow.length; index += 1) {
+    const item = workflow[index];
+    if (item.stageKeys.includes(currentStageKey) && item.rawTaskIds.every((id) => savedCompletedIds.has(id))) {
+      completedTaskIds.push(item.id);
+      currentTaskIndex = index + 1;
+      continue;
+    }
+
+    break;
+  }
+
+  const currentIndex = Math.min(currentTaskIndex, Math.max(workflow.length - 1, 0));
+  const completedWorkflow = workflow.filter((item) => completedTaskIds.includes(item.id));
+  const currentStageVisibleArtifacts = (task?.[currentStageKey]?.visibleArtifactIds ?? []).map((id) =>
+    prefixId(currentStageKey, id),
+  );
+
+  return {
+    completedTaskIds,
+    currentTaskIndex: currentIndex,
+    isComplete: false,
+    selectedArtifactId: '',
+    visibleArtifactIds: [...new Set([...getWorkflowArtifactIds(completedWorkflow), ...currentStageVisibleArtifacts])],
+    visibleThinkingCounts: getWorkflowThinkingCounts(workflow, currentIndex),
+  };
+}
+
+function getSavedWorkflowState(workflow, task) {
+  const completedTaskIds = [];
+  const visibleArtifactIds = [];
+
+  stageOrder.forEach((stageKey) => {
+    const payload = task?.[stageKey] ?? {};
+    const savedCompletedIds = new Set((payload.completedTaskIds ?? []).map((id) => prefixId(stageKey, id)));
+
+    workflow.forEach((item) => {
+      const itemScopedToStage = item.stageKeys.includes(stageKey);
+      const itemCompletedInStage = item.rawTaskIds
+        ?.filter((id) => isStageScopedId(id, stageKey))
+        .every((id) => savedCompletedIds.has(id));
+
+      if (itemScopedToStage && itemCompletedInStage) {
+        completedTaskIds.push(item.id);
+      }
+    });
+
+    visibleArtifactIds.push(...(payload.visibleArtifactIds ?? []).map((id) => prefixId(stageKey, id)));
+
+    if (payload.currentArtifactId) {
+      visibleArtifactIds.push(prefixId(stageKey, payload.currentArtifactId));
+    }
+  });
+
+  const uniqueCompletedTaskIds = [...new Set(completedTaskIds)];
+  const uniqueVisibleArtifactIds = [...new Set(visibleArtifactIds)];
+  const completedIndexes = uniqueCompletedTaskIds
+    .map((id) => workflow.findIndex((item) => item.id === id))
+    .filter((index) => index >= 0);
+  const lastCompletedIndex = completedIndexes.length ? Math.max(...completedIndexes) : -1;
+  const currentTaskIndex = Math.min(Math.max(lastCompletedIndex + 1, 0), Math.max(workflow.length - 1, 0));
+  const completedWorkflow = workflow.filter((item) => uniqueCompletedTaskIds.includes(item.id));
+
+  return {
+    completedTaskIds: uniqueCompletedTaskIds,
+    currentTaskIndex,
+    isComplete: false,
+    selectedArtifactId: '',
+    visibleArtifactIds: uniqueVisibleArtifactIds,
+    visibleThinkingCounts: getWorkflowThinkingCounts(completedWorkflow),
+  };
+}
+
+function getInitialAutoState(workflow, task, status, latestFinalArtifactId) {
+  if (status === 'success') {
     return {
       completedTaskIds: workflow.map((item) => item.id),
       currentTaskIndex: workflow.length,
       isComplete: true,
-      selectedArtifactId: savedArtifactId,
+      selectedArtifactId: latestFinalArtifactId,
       visibleArtifactIds: getWorkflowArtifactIds(workflow),
       visibleThinkingCounts: getWorkflowThinkingCounts(workflow),
     };
   }
 
-  if (task?.stage === 'content-stopped' && savedCompletedTaskIds.length) {
-    const currentTaskIndex = Math.min(savedCompletedTaskIds.length, workflow.length - 1);
+  if (status === 'failed' || status === 'stopped') {
+    return getSavedWorkflowState(workflow, task);
+  }
+
+  if (status === 'generating' && isAutoTask(task)) {
     return {
-      completedTaskIds: savedCompletedTaskIds,
-      currentTaskIndex,
+      completedTaskIds: [],
+      currentTaskIndex: 0,
       isComplete: false,
-      selectedArtifactId: savedArtifactId,
-      visibleArtifactIds: savedVisibleArtifactIds,
-      visibleThinkingCounts: getWorkflowThinkingCounts(workflow, currentTaskIndex + 1),
+      selectedArtifactId: '',
+      visibleArtifactIds: [],
+      visibleThinkingCounts: {},
     };
   }
 
-  return {
-    completedTaskIds: [],
-    currentTaskIndex: 0,
-    isComplete: false,
-    selectedArtifactId: '',
-    visibleArtifactIds: [],
-    visibleThinkingCounts: {},
-  };
-}
-
-function Stepper({ copy }) {
-  return (
-    <div className="flex flex-1 items-center justify-center gap-5">
-      {copy.steps.map((step, index) => (
-        <div key={step} className="flex items-center gap-3">
-          <span
-            className={`inline-flex h-7 w-7 items-center justify-center rounded-full text-[14px] font-semibold ${
-              index === 3 ? 'bg-[#365EFF] text-white' : 'bg-[#E9ECF2] text-[#A8ABB2]'
-            }`}
-          >
-            {index + 1}
-          </span>
-          <AiCreationStepLabel active={index === 3} step={step} />
-          {index < copy.steps.length - 1 ? <span className="h-px w-16 bg-[#E4E7ED]" /> : null}
-        </div>
-      ))}
-    </div>
-  );
+  return getInitialGeneratingState(workflow, task, inferStageKey(task));
 }
 
 function AgentAvatar({ agentTitle }) {
@@ -238,11 +448,9 @@ function ThinkingBlock({ children }) {
   return (
     <div
       className={`ml-2 border-l-2 pl-5 text-[14px] leading-[22px] ${
-        emphasisMatch
-          ? 'border-[#365EFF] font-semibold text-[#303133]'
-          : 'border-[#E4E7ED] text-[#606266]'
+        emphasisMatch ? 'border-[#365EFF] font-semibold text-[#303133]' : 'border-[#E4E7ED] text-[#606266]'
       }`}
-      style={{ animation: 'aiContentFadeInUp 180ms ease-out both' }}
+      style={{ animation: 'aiAutoFadeInUp 180ms ease-out both' }}
     >
       {emphasisMatch ? emphasisMatch[1] : children}
     </div>
@@ -281,7 +489,7 @@ function StepSourceList({ locale, sourceList }) {
   return (
     <div
       className="ml-2 border-l-2 border-[#E4E7ED] pl-5"
-      style={{ animation: 'aiContentFadeInUp 180ms ease-out both' }}
+      style={{ animation: 'aiAutoFadeInUp 180ms ease-out both' }}
     >
       {items.length ? (
         sourceList.variant === 'knowledge-assets' ? (
@@ -364,85 +572,21 @@ function StepSourceList({ locale, sourceList }) {
   );
 }
 
-function RevisionRequestBox({ copy, disabled, locale, onChange, onSubmit, value }) {
-  return (
-    <form
-      className={`ml-14 mb-8 w-[560px] max-w-[calc(100%-56px)] rounded-[8px] border p-4 ${
-        disabled ? 'border-[#DCDFE6] bg-[#F7F8FB]' : 'border-[#C7D2FE] bg-[#F5F7FF]'
-      }`}
-      onSubmit={(event) => {
-        event.preventDefault();
-        onSubmit();
-      }}
-    >
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h3 className="text-[14px] font-semibold leading-[22px] text-[#303133]">
-            {locale === 'en-US' ? 'Revision Request' : '修改要求'}
-          </h3>
-          <p className="mt-0.5 text-[12px] leading-[18px] text-[#909399]">
-            {disabled
-              ? locale === 'en-US'
-                ? 'Submitted. Revising now.'
-                : '已提交，正在按要求修改'
-              : locale === 'en-US'
-                ? 'After final review, ask AI to revise and recheck.'
-                : '文章终稿评估完成后，可继续让 AI 按要求修改并复评。'}
-          </p>
-        </div>
-        {disabled ? (
-          <span className="rounded-full bg-[#EEF3FF] px-2.5 py-1 text-[12px] font-semibold text-[#365EFF]">
-            {locale === 'en-US' ? 'Working' : '处理中'}
-          </span>
-        ) : null}
-      </div>
-      <textarea
-        autoComplete="off"
-        className="mt-3 h-[88px] w-full resize-none rounded-[6px] border border-[#DCDFE6] bg-white px-3 py-2 text-[14px] leading-[22px] text-[#303133] outline-none transition placeholder:text-[#B4B8C2] focus:border-[#365EFF] focus:ring-2 focus:ring-[#E8EEFF] disabled:cursor-not-allowed disabled:bg-[#F5F7FA] disabled:text-[#606266]"
-        disabled={disabled}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={
-          locale === 'en-US'
-            ? 'Enter revision notes, such as stronger CTA, shorter copy, or more case details'
-            : '请输入希望 AI 继续修改的要求，如加强采购转化、压缩篇幅、补充某类案例等'
-        }
-        value={value}
-      />
-      <div className="mt-3 flex items-center justify-between gap-3">
-        <p className="text-[12px] leading-[18px] text-[#909399]">
-          {locale === 'en-US'
-            ? 'Submitting creates a revision record, a new final draft, and a new final review.'
-            : '提交后会生成修改记录、文章终稿新版，并重新评估文章终稿。'}
-        </p>
-        <button
-          type="submit"
-          className="inline-flex h-8 flex-none items-center justify-center rounded-[6px] bg-[#365EFF] px-4 text-[13px] font-semibold text-white transition hover:bg-[#2547D0] disabled:cursor-not-allowed disabled:bg-[#A8B9FF]"
-          disabled={disabled || !value.trim()}
-        >
-          {locale === 'en-US' ? 'Submit' : '提交修改要求'}
-        </button>
-      </div>
-    </form>
-  );
-}
-
 function WorkflowTask({
   artifacts,
   completed,
+  copy,
   isCurrent,
   isStopped,
+  locale,
   onArtifactClick,
   selectedArtifactId,
   showArtifactIds,
   task,
   visibleThinkingCounts,
-  locale,
-  copy,
 }) {
-  const steps = getTaskSteps(task);
-
   if (task.kind === 'user-request') {
-    const userStep = steps[0];
+    const userStep = getTaskSteps(task)[0];
     const thinkingCount = visibleThinkingCounts[userStep.id] ?? 0;
     const visibleText = userStep.thinking.slice(0, thinkingCount).join('\n') || getTaskRunningText(task, locale);
     const agentDisplay = getAgentDisplay(task.agentTitle, locale);
@@ -454,7 +598,7 @@ function WorkflowTask({
             <div className="text-[13px] font-semibold leading-[20px] text-[#606266]">{agentDisplay.name}</div>
             <div
               className="mt-2 whitespace-pre-wrap rounded-[8px] bg-[#365EFF] px-4 py-3 text-left text-[14px] leading-[22px] text-white shadow-[0_4px_12px_rgba(54,94,255,0.16)]"
-              style={{ animation: 'aiContentFadeInUp 180ms ease-out both' }}
+              style={{ animation: 'aiAutoFadeInUp 180ms ease-out both' }}
             >
               {visibleText}
             </div>
@@ -466,6 +610,7 @@ function WorkflowTask({
   }
 
   const agentDisplay = getAgentDisplay(task.agentTitle, locale);
+  const steps = getTaskSteps(task);
 
   return (
     <section className="flex gap-4">
@@ -510,6 +655,7 @@ function WorkflowTask({
                       .map((artifactId) => {
                         const artifact = artifacts[artifactId];
                         if (!artifact) return null;
+
                         return (
                           <ArtifactCard
                             key={artifactId}
@@ -531,6 +677,47 @@ function WorkflowTask({
   );
 }
 
+function RevisionRequestBox({ disabled, locale, onChange, onSubmit, value }) {
+  return (
+    <form
+      className="ml-14 mb-8 w-[560px] max-w-[calc(100%-56px)] rounded-[8px] border border-[#C7D2FE] bg-[#F5F7FF] p-4"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSubmit();
+      }}
+    >
+      <h3 className="text-[14px] font-semibold leading-[22px] text-[#303133]">
+        {locale === 'en-US' ? 'Revision Request' : '修改要求'}
+      </h3>
+      <p className="mt-0.5 text-[12px] leading-[18px] text-[#909399]">
+        {locale === 'en-US'
+          ? 'After reviewing the final draft, add revision notes for follow-up editing.'
+          : '文章终稿生成后，可在这里保留后续修改要求。'}
+      </p>
+      <textarea
+        autoComplete="off"
+        className="mt-3 h-[88px] w-full resize-none rounded-[6px] border border-[#DCDFE6] bg-white px-3 py-2 text-[14px] leading-[22px] text-[#303133] outline-none transition placeholder:text-[#B4B8C2] focus:border-[#365EFF] focus:ring-2 focus:ring-[#E8EEFF]"
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={
+          locale === 'en-US'
+            ? 'Enter revision notes, such as stronger CTA, shorter copy, or more case details'
+            : '请输入希望 AI 继续修改的要求，如加强采购转化、压缩篇幅、补充某类案例等'
+        }
+        value={value}
+      />
+      <div className="mt-3 flex justify-end">
+        <button
+          type="submit"
+          className="inline-flex h-8 flex-none items-center justify-center rounded-[6px] bg-[#365EFF] px-4 text-[13px] font-semibold text-white transition hover:bg-[#2547D0] disabled:cursor-not-allowed disabled:bg-[#A8B9FF]"
+          disabled={disabled || !value.trim()}
+        >
+          {locale === 'en-US' ? 'Save Note' : '保存修改要求'}
+        </button>
+      </div>
+    </form>
+  );
+}
+
 function EmptyPreview({ copy }) {
   return (
     <div className="flex h-full items-center justify-center px-8 text-center">
@@ -549,31 +736,15 @@ function EmptyPreview({ copy }) {
   );
 }
 
-function RatingBadge({ rating }) {
-  const classes = {
-    High: 'bg-[#ECFDF5] text-[#00A85F]',
-    Medium: 'bg-[#FFF7E6] text-[#D97706]',
-    Low: 'bg-[#FFF1F0] text-[#D92D20]',
-  };
-
-  return (
-    <span className={`inline-flex h-6 items-center rounded-full px-2 text-[12px] font-semibold ${classes[rating]}`}>
-      {rating}
-    </span>
-  );
-}
-
 function ArticleBody({ content }) {
-  const lines = content.split('\n');
+  const lines = String(content ?? '').split('\n');
   const blocks = [];
 
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index].trim();
     if (!line) continue;
 
-    if (line.startsWith('# ')) {
-      continue;
-    }
+    if (line.startsWith('# ')) continue;
 
     if (line.startsWith('## ')) {
       blocks.push(
@@ -656,6 +827,20 @@ function ArticlePreview({ artifact }) {
   );
 }
 
+function RatingBadge({ rating }) {
+  const classes = {
+    High: 'bg-[#ECFDF5] text-[#00A85F]',
+    Medium: 'bg-[#FFF7E6] text-[#D97706]',
+    Low: 'bg-[#FFF1F0] text-[#D92D20]',
+  };
+
+  return (
+    <span className={`inline-flex h-6 items-center rounded-full px-2 text-[12px] font-semibold ${classes[rating]}`}>
+      {rating}
+    </span>
+  );
+}
+
 function EvaluationPreview({ artifact }) {
   return (
     <div className="flex h-full flex-col">
@@ -675,7 +860,7 @@ function EvaluationPreview({ artifact }) {
       <div className="min-h-0 flex-1 overflow-y-auto bg-[#F7F8FB] px-6 py-5">
         <div className="rounded-[8px] bg-white p-4 text-[14px] leading-[22px] text-[#606266]">{artifact.summary}</div>
         <div className="mt-4 space-y-4">
-          {artifact.groups.map((group) => (
+          {(artifact.groups ?? []).map((group) => (
             <section key={group.name} className="rounded-[8px] bg-white p-4">
               <h3 className="text-[15px] font-bold leading-[24px] text-[#303133]">{group.name}</h3>
               <div className="mt-3 overflow-hidden rounded-[8px] border border-[#EBEEF5]">
@@ -718,7 +903,7 @@ function SuggestionPreview({ artifact }) {
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
         <div className="space-y-3">
-          {artifact.items.map((item) => (
+          {(artifact.items ?? []).map((item) => (
             <div key={`${item.group}-${item.metric}`} className="rounded-[8px] border border-[#EBEEF5] p-4">
               <div className="flex items-center justify-between gap-3">
                 <div className="text-[14px] font-bold text-[#303133]">{item.group} / {item.metric}</div>
@@ -741,7 +926,7 @@ function RevisionPreview({ artifact }) {
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
         <div className="space-y-4">
-          {artifact.changes.map((change, index) => (
+          {(artifact.changes ?? []).map((change, index) => (
             <div key={`${change.type}-${index}`} className="space-y-2">
               {change.before ? (
                 <div className="rounded-[8px] bg-[#F5F7FA] px-4 py-3 text-[14px] leading-[22px] text-[#909399] line-through">
@@ -775,7 +960,7 @@ function TdkPreview({ artifact }) {
         <div className="mt-5">
           <span className="mb-2 block text-[14px] font-semibold text-[#303133]">关键词</span>
           <div className="flex min-h-10 flex-wrap gap-2 rounded-[6px] border border-[#DCDFE6] px-3 py-2">
-            {artifact.tdk.keywords.map((keyword) => (
+            {(artifact.tdk.keywords ?? []).map((keyword) => (
               <span key={keyword} className="rounded-full bg-[#EEF3FF] px-2.5 py-1 text-[13px] font-semibold text-[#365EFF]">
                 {keyword}
               </span>
@@ -790,6 +975,58 @@ function TdkPreview({ artifact }) {
             value={artifact.tdk.description}
           />
         </label>
+      </div>
+    </div>
+  );
+}
+
+function StrategyPreview({ artifact }) {
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex h-[58px] flex-none items-center border-b border-[#EBEEF5] px-6">
+        <div>
+          <h2 className="text-[16px] font-bold leading-[24px] text-[#303133]">{artifact.title}</h2>
+          <p className="mt-0.5 text-[13px] leading-[20px] text-[#909399]">{artifact.subtitle}</p>
+        </div>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-7 py-6">
+        <pre className="whitespace-pre-wrap font-sans text-[14px] leading-[24px] text-[#3F3F46]">{artifact.content}</pre>
+      </div>
+    </div>
+  );
+}
+
+function ProjectReportPreview({ artifact }) {
+  const report = artifact.report ?? {};
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex h-[58px] flex-none items-center border-b border-[#EBEEF5] px-6">
+        <div>
+          <h2 className="text-[16px] font-bold leading-[24px] text-[#303133]">{artifact.title}</h2>
+          <p className="mt-0.5 text-[13px] leading-[20px] text-[#909399]">{artifact.subtitle}</p>
+        </div>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto bg-[#F7F8FB] px-6 py-5">
+        <div className="space-y-4">
+          <section className="rounded-[8px] bg-white p-4">
+            <h3 className="text-[15px] font-bold leading-[24px] text-[#303133]">基础信息</h3>
+            <div className="mt-3 space-y-2">
+              {(report.basicInfo ?? []).map((item) => (
+                <div key={item.label} className="rounded-[6px] border border-[#EBEEF5] px-3 py-2">
+                  <div className="text-[13px] font-semibold text-[#303133]">{item.label}：{item.value}</div>
+                  <p className="mt-1 text-[12px] leading-[18px] text-[#909399]">{item.note}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+          {(report.summarySections ?? []).map((section) => (
+            <section key={section.title} className="rounded-[8px] bg-white p-4">
+              <h3 className="text-[15px] font-bold leading-[24px] text-[#303133]">{section.title}</h3>
+              <p className="mt-2 text-[14px] leading-[24px] text-[#606266]">{section.content}</p>
+            </section>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -819,6 +1056,86 @@ function ReferenceOutline({ outline }) {
           ) : null}
         </div>
       ))}
+    </div>
+  );
+}
+
+function PlanningReferencesPreview({ artifact }) {
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex h-[58px] flex-none items-center border-b border-[#EBEEF5] px-6">
+        <div>
+          <h2 className="text-[16px] font-bold leading-[24px] text-[#303133]">{artifact.title}</h2>
+          <p className="mt-0.5 text-[13px] leading-[20px] text-[#909399]">{artifact.subtitle}</p>
+        </div>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+        <div className="space-y-3">
+          {(artifact.references ?? []).map((reference) => (
+            <article key={reference.id} className="rounded-[8px] border border-[#EBEEF5] p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <a
+                    className="text-[14px] font-bold leading-[22px] text-[#365EFF] hover:text-[#2547D0]"
+                    href={reference.url}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    {reference.title}
+                  </a>
+                  <p className="mt-2 text-[13px] leading-[20px] text-[#606266]">{reference.summary}</p>
+                </div>
+                <span className="rounded-full bg-[#EEF3FF] px-2.5 py-1 text-[12px] font-semibold text-[#365EFF]">
+                  {reference.relevanceLabel}
+                </span>
+              </div>
+              <div className="mt-4 rounded-[8px] border border-[#EBEEF5] bg-[#F7F8FB] px-4 py-3">
+                <ReferenceOutline outline={reference.outline} />
+              </div>
+            </article>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OutlineNode({ node }) {
+  return (
+    <li className="rounded-[8px] border border-[#EBEEF5] bg-white px-4 py-3">
+      <div className="flex items-center gap-2 text-[14px] font-semibold leading-[22px] text-[#303133]">
+        <span className="inline-flex h-6 items-center rounded-[4px] border border-[#C7D2FE] px-2 text-[12px] font-bold text-[#365EFF]">
+          {node.level}
+        </span>
+        {node.title}
+      </div>
+      {node.children?.length ? (
+        <ul className="mt-3 space-y-3 pl-5">
+          {node.children.map((child) => (
+            <OutlineNode key={child.id} node={child} />
+          ))}
+        </ul>
+      ) : null}
+    </li>
+  );
+}
+
+function OutlinePreview({ artifact }) {
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex h-[58px] flex-none items-center border-b border-[#EBEEF5] px-6">
+        <div>
+          <h2 className="text-[16px] font-bold leading-[24px] text-[#303133]">{artifact.title}</h2>
+          <p className="mt-0.5 text-[13px] leading-[20px] text-[#909399]">{artifact.subtitle}</p>
+        </div>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto bg-[#F7F8FB] px-6 py-5">
+        <ul className="space-y-3">
+          {(artifact.outlineTree ?? []).map((node) => (
+            <OutlineNode key={node.id} node={node} />
+          ))}
+        </ul>
+      </div>
     </div>
   );
 }
@@ -904,7 +1221,7 @@ function isReferenceBlockInTab(block, tab) {
 
 function ReferencesPreview({ artifact, locale, onOpenKnowledgeItem, onOpenSourcePreview }) {
   const [activeTab, setActiveTab] = useState('knowledge-items');
-  const filteredBlocks = artifact.referenceBlocks.filter((block) => isReferenceBlockInTab(block, activeTab));
+  const filteredBlocks = (artifact.referenceBlocks ?? []).filter((block) => isReferenceBlockInTab(block, activeTab));
   const firstBlockId = filteredBlocks[0]?.id ?? '';
   const tabs = getReferenceTabs(locale);
   const [expandedId, setExpandedId] = useState(firstBlockId);
@@ -963,7 +1280,10 @@ function ReferencesPreview({ artifact, locale, onOpenKnowledgeItem, onOpenSource
 
 function PreviewPanel({ artifact, copy, locale, onOpenKnowledgeItem, onOpenSourcePreview }) {
   if (!artifact) return <EmptyPreview copy={copy} />;
-  if (artifact.type === 'references') {
+  if (artifact.type === 'project-report') return <ProjectReportPreview artifact={artifact} />;
+  if (artifact.type === 'strategy') return <StrategyPreview artifact={artifact} />;
+  if (artifact.type === 'outline') return <OutlinePreview artifact={artifact} />;
+  if (artifact.type === 'references' && artifact.referenceBlocks) {
     return (
       <ReferencesPreview
         artifact={artifact}
@@ -973,6 +1293,7 @@ function PreviewPanel({ artifact, copy, locale, onOpenKnowledgeItem, onOpenSourc
       />
     );
   }
+  if (artifact.type === 'references') return <PlanningReferencesPreview artifact={artifact} />;
   if (artifact.type === 'evaluation') return <EvaluationPreview artifact={artifact} />;
   if (artifact.type === 'suggestion') return <SuggestionPreview artifact={artifact} />;
   if (artifact.type === 'revision') return <RevisionPreview artifact={artifact} />;
@@ -980,204 +1301,80 @@ function PreviewPanel({ artifact, copy, locale, onOpenKnowledgeItem, onOpenSourc
   return <ArticlePreview artifact={artifact} />;
 }
 
-function ReferenceDrawer({
-  activeTab,
-  articleGenerated,
-  citationUsages,
+export default function BlogArticleAiAutoCreationPage({
+  article,
   locale,
-  onClose,
-  onOpenKnowledgeItem,
-  onOpenSourcePreview,
-  onTabChange,
-  references,
+  onBack,
+  onRecreateTask,
+  onSaveAndEdit,
+  project,
+  t,
+  task,
 }) {
-  const tabs = getReferenceTabs(locale);
-  const filtered = articleGenerated
-    ? citationUsages
-        .map((usage) => ({
-          ...usage,
-          sourceBlock: references.find((block) => block.id === usage.sourceBlockId),
-        }))
-        .filter((item) => item.sourceBlock && isReferenceBlockInTab(item.sourceBlock, activeTab))
-    : [];
-
-  function openCitationSource(usage) {
-    const block = usage.sourceBlock;
-    if (!block) return;
-
-    if (block.blockKind === 'reference-web' && block.sourceUrl) {
-      window.open(block.sourceUrl, '_blank', 'noopener,noreferrer');
-      return;
-    }
-
-    if (block.blockKind === 'knowledge-item') {
-      onOpenKnowledgeItem(block);
-      return;
-    }
-
-    if (block.blockKind === 'knowledge-asset') {
-      onOpenSourcePreview(block);
-    }
-  }
-
-  return (
-    <aside className="h-[calc(100vh-152px)] overflow-hidden rounded-[8px] bg-white shadow-[0_2px_10px_rgba(31,45,61,0.04)]">
-      <div className="flex h-[58px] items-center justify-between border-b border-[#EBEEF5] px-5">
-        <div className="flex items-center gap-2">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              className={`rounded-[6px] px-3 py-1.5 text-[14px] font-semibold ${
-                activeTab === tab.id ? 'bg-[#EEF3FF] text-[#365EFF]' : 'text-[#606266]'
-              }`}
-              onClick={() => onTabChange(tab.id)}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-        <button
-          type="button"
-          className="inline-flex h-8 w-8 items-center justify-center rounded-[6px] text-[#606266] hover:bg-[#F5F7FA]"
-          onClick={onClose}
-          aria-label={locale === 'en-US' ? 'Close referenced knowledge' : '关闭引用知识'}
-        >
-          <X className="h-4 w-4" />
-        </button>
-      </div>
-      <div className="min-h-0 h-[calc(100%-58px)] overflow-y-auto p-4">
-        {!articleGenerated ? (
-          <div className="flex h-full items-center justify-center px-6 text-center">
-            <p className="text-[14px] leading-[22px] text-[#909399]">
-              {locale === 'en-US'
-                ? 'Citations and matched content appear after draft generation.'
-                : '文章生成后将展示引用标识与对应内容。'}
-            </p>
-          </div>
-        ) : (
-          <>
-            <div className="mb-4 text-[14px] leading-[22px] text-[#606266]">
-              {locale === 'en-US'
-                ? `${filtered.length} citations matched to generated content.`
-                : `总计 ${filtered.length} 条实际引用，按文章生成内容对应展示。`}
-            </div>
-            <div className="space-y-3">
-              {filtered.map((item) => (
-                <article key={item.id} className="rounded-[8px] border border-[#6B7DFF] bg-[#F5F7FF] p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <button
-                      type="button"
-                      className="min-w-0 text-left text-[14px] font-bold leading-[22px] text-[#365EFF] hover:text-[#2547D0]"
-                      onClick={() => openCitationSource(item)}
-                    >
-                      <span className="mr-2 inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#E5E7EB] text-[12px] font-bold text-[#606266]">
-                        {item.marker}
-                      </span>
-                      {item.sourceName}
-                    </button>
-                  </div>
-                  <div className="mt-3 rounded-[8px] bg-white px-3 py-2">
-                    <div className="text-[12px] font-semibold text-[#A8ABB2]">
-                      {locale === 'en-US' ? 'Source' : '来源文本块'}
-                    </div>
-                    <p className="mt-1 text-[13px] leading-[20px] text-[#606266]">{item.sourceSnippet}</p>
-                  </div>
-                  <div className="mt-3 rounded-[8px] border border-[#CDEFD8] bg-[#ECFDF5] px-3 py-2">
-                    <div className="text-[12px] font-semibold text-[#00A85F]">
-                      {locale === 'en-US' ? 'Generated' : '文章生成内容'}
-                    </div>
-                    <p className="mt-1 text-[13px] leading-[20px] text-[#26734D]">{item.generatedContent}</p>
-                  </div>
-                </article>
-              ))}
-            </div>
-          </>
-        )}
-      </div>
-    </aside>
-  );
-}
-
-export default function BlogArticleAiContentPage({ article, locale, onBack, onSaveAndEdit, project, t, task }) {
   const copy = t.blogArticle.aiCreation;
-  const [revisionRequests, setRevisionRequests] = useState(() => task?.content?.revisionRequests ?? []);
+  const taskListCopy = t.blogArticle.taskList;
+  const [revisionRequests] = useState(() => task?.content?.revisionRequests ?? []);
   const [revisionInput, setRevisionInput] = useState('');
+  const [localStatus, setLocalStatus] = useState(() => getTaskStatus(task));
   const demoData = useMemo(
-    () => createContentDemoData(task, project, { revisionRequests }),
+    () => buildAutoDemoData(task, project, revisionRequests),
     [project, revisionRequests, task],
   );
-  const workflow = demoData.workflow;
-  const initialPlaybackState = useMemo(() => getInitialPlaybackState(workflow, task), [workflow, task]);
-  const [currentTaskIndex, setCurrentTaskIndex] = useState(initialPlaybackState.currentTaskIndex);
-  const [visibleThinkingCounts, setVisibleThinkingCounts] = useState(initialPlaybackState.visibleThinkingCounts);
-  const [visibleArtifactIds, setVisibleArtifactIds] = useState(initialPlaybackState.visibleArtifactIds);
-  const [completedTaskIds, setCompletedTaskIds] = useState(initialPlaybackState.completedTaskIds);
-  const [isComplete, setIsComplete] = useState(initialPlaybackState.isComplete);
-  const [isStopped, setIsStopped] = useState(task?.stage === 'content-stopped' || Boolean(task?.content?.isStopped));
-  const [selectedArtifactId, setSelectedArtifactId] = useState(initialPlaybackState.selectedArtifactId);
+  const initialState = useMemo(
+    () => getInitialAutoState(demoData.workflow, task, localStatus, demoData.latestFinalArtifactId),
+    [demoData.latestFinalArtifactId, demoData.workflow, localStatus, task],
+  );
+  const [currentTaskIndex, setCurrentTaskIndex] = useState(initialState.currentTaskIndex);
+  const [visibleThinkingCounts, setVisibleThinkingCounts] = useState(initialState.visibleThinkingCounts);
+  const [visibleArtifactIds, setVisibleArtifactIds] = useState(initialState.visibleArtifactIds);
+  const [completedTaskIds, setCompletedTaskIds] = useState(initialState.completedTaskIds);
+  const [isComplete, setIsComplete] = useState(initialState.isComplete);
+  const [isStopped, setIsStopped] = useState(localStatus === 'stopped');
+  const [selectedArtifactId, setSelectedArtifactId] = useState(initialState.selectedArtifactId);
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
-  const [referenceOpen, setReferenceOpen] = useState(false);
-  const [referenceTab, setReferenceTab] = useState('knowledge-items');
   const [toast, setToast] = useState(null);
+  const [stopTaskToast, setStopTaskToast] = useState(null);
   const workflowRef = useRef(null);
 
+  const workflow = demoData.workflow;
+  const artifacts = demoData.artifacts;
   const currentTask = workflow[currentTaskIndex];
   const visibleTaskList = workflow.slice(0, Math.min(currentTaskIndex + 1, workflow.length));
-  const selectedArtifact = selectedArtifactId ? demoData.artifacts[selectedArtifactId] : null;
-  const articleGenerated = visibleArtifactIds.some((artifactId) => demoData.artifacts[artifactId]?.type === 'article');
-  const finalEvaluationReady = visibleArtifactIds.includes('final-evaluation') || completedTaskIds.includes('final-evaluate');
-  const showRevisionRequestBox =
-    finalEvaluationReady && isComplete && !isStopped;
+  const selectedArtifact = selectedArtifactId ? artifacts[selectedArtifactId] : null;
+  const canStop = localStatus === 'generating' && !isStopped && !isComplete;
+  const canSaveAndEdit = localStatus === 'success';
+  const showRevisionRequestBox = canSaveAndEdit;
 
   useEffect(() => {
-    setRevisionInput('');
-  }, [task.id]);
-
-  function buildContentPayload(data = demoData, overrides = {}) {
-    return {
-      articleVersions: data.articleVersions,
-      citationUsages: data.citationUsages,
-      completedTaskIds,
-      currentArtifactId: selectedArtifactId,
-      evaluationReports: data.evaluationReports,
-      finalEvaluationReport: data.latestEvaluationReport ?? data.finalEvaluationReport,
-      finalArticle: data.latestFinalArticle ?? data.finalArticle,
-      finalRevisionRounds: data.finalRevisionRounds,
-      isStopped,
-      latestEvaluationReportId: data.latestEvaluationReportId,
-      latestFinalArticleId: data.latestFinalArticleId,
-      latestTdkId: data.latestTdkId,
-      referenceBlocks: data.referenceBlocks,
-      revisionRecords: data.revisionRecords,
-      revisionRequests: data.revisionRequests,
-      revisionSuggestions: data.revisionSuggestions,
-      savedArticleId: task?.content?.savedArticleId,
-      tdk: data.latestTdk ?? data.tdk,
-      updatedAt: getTodayString(),
-      visibleArtifactIds,
-      ...overrides,
-    };
-  }
-
-  useEffect(() => {
-    updateAiCreationTask(project.id, task.id, {
-      stage: isComplete ? 'content-completed' : isStopped ? 'content-stopped' : 'content',
-      content: buildContentPayload(),
-    });
-  }, []);
-
-  useEffect(() => {
-    if (!toast || toast.actionLabel) {
-      return undefined;
+    if (localStatus === 'failed') {
+      setToast({
+        id: Date.now(),
+        message: task?.errorMessage || copy.toast?.autoFailed || '生成失败，可查看已完成内容',
+        type: 'error',
+      });
     }
+  }, [copy.toast, localStatus, task?.errorMessage]);
 
-    const timer = window.setTimeout(() => setToast(null), 2200);
+  useEffect(() => {
+    if (!toast) return undefined;
+
+    const timer = window.setTimeout(() => setToast(null), 2600);
     return () => window.clearTimeout(timer);
   }, [toast]);
 
   useEffect(() => {
-    if (isStopped || isComplete || !currentTask) {
+    if (localStatus !== 'stopped') return;
+
+    setStopTaskToast((current) =>
+      current ?? {
+        id: Date.now(),
+        task,
+      },
+    );
+  }, [localStatus, task]);
+
+  useEffect(() => {
+    if (isStopped || isComplete || localStatus !== 'generating' || !currentTask) {
       return undefined;
     }
 
@@ -1204,14 +1401,36 @@ export default function BlogArticleAiContentPage({ article, locale, onBack, onSa
       setCompletedTaskIds(nextCompletedTaskIds);
 
       if (currentTaskIndex + 1 >= workflow.length) {
+        const completedStage = inferStageKey(task);
+        const nextStage = completedStage === 'content' ? 'content-completed' : `${completedStage}-completed`;
+        const nextSelectedArtifactId =
+          nextStage === 'content-completed' ? demoData.latestFinalArtifactId : selectedArtifactId;
+        const nextStagePayload =
+          completedStage === 'content' && isAutoTask(task)
+            ? buildStagePayloadPatch(demoData.visibleStages, demoData, task, {
+                completedTaskIds: nextCompletedTaskIds,
+                isStopped: false,
+                selectedArtifactId: nextSelectedArtifactId,
+                visibleArtifactIds,
+                workflow,
+              })
+            : {
+                [completedStage]: buildStagePayload(completedStage, demoData, task, {
+                  completedTaskIds: getCompletedTaskIdsForStage(nextCompletedTaskIds, workflow, completedStage),
+                  currentArtifactId: getSelectedArtifactIdForStage(nextSelectedArtifactId, completedStage),
+                  isStopped: false,
+                  visibleArtifactIds: getVisibleArtifactIdsForStage(visibleArtifactIds, completedStage),
+                }),
+              };
+
         setIsComplete(true);
+        setLocalStatus(nextStage === 'content-completed' ? 'success' : 'generating');
+        if (nextStage === 'content-completed') {
+          setSelectedArtifactId(nextSelectedArtifactId);
+        }
         updateAiCreationTask(project.id, task.id, {
-          stage: 'content-completed',
-          content: buildContentPayload(demoData, {
-            completedTaskIds: nextCompletedTaskIds,
-            isStopped: false,
-            visibleArtifactIds: [...new Set([...visibleArtifactIds, ...getTaskArtifactIds(currentTask)])],
-          }),
+          stage: nextStage,
+          ...nextStagePayload,
         });
         return;
       }
@@ -1227,9 +1446,10 @@ export default function BlogArticleAiContentPage({ article, locale, onBack, onSa
     demoData,
     isComplete,
     isStopped,
+    localStatus,
     project.id,
     selectedArtifactId,
-    task.id,
+    task,
     visibleArtifactIds,
     visibleThinkingCounts,
     workflow.length,
@@ -1242,10 +1462,10 @@ export default function BlogArticleAiContentPage({ article, locale, onBack, onSa
     window.requestAnimationFrame(() => {
       container.scrollTo({
         top: container.scrollHeight,
-        behavior: 'smooth',
+        behavior: localStatus === 'success' ? 'auto' : 'smooth',
       });
     });
-  }, [autoScrollEnabled, completedTaskIds, currentTaskIndex, visibleArtifactIds, visibleThinkingCounts]);
+  }, [autoScrollEnabled, completedTaskIds, currentTaskIndex, localStatus, visibleArtifactIds, visibleThinkingCounts]);
 
   function handleWorkflowScroll() {
     const container = workflowRef.current;
@@ -1256,113 +1476,56 @@ export default function BlogArticleAiContentPage({ article, locale, onBack, onSa
   }
 
   function handleStopTask() {
-    if (isStopped || isComplete) return;
+    if (!canStop) return;
+
+    const flowStage = inferStageKey(task);
+    const nextStage = isAutoTask(task) ? 'auto-stopped' : `${flowStage}-stopped`;
+    const stoppedPayload = isAutoTask(task)
+      ? buildStagePayloadPatch(demoData.visibleStages, demoData, task, {
+          completedTaskIds,
+          isStopped: true,
+          selectedArtifactId,
+          visibleArtifactIds,
+          workflow,
+        })
+      : {
+          [flowStage]: buildStagePayload(flowStage, demoData, task, {
+            completedTaskIds: getCompletedTaskIdsForStage(completedTaskIds, workflow, flowStage),
+            currentArtifactId: getSelectedArtifactIdForStage(selectedArtifactId, flowStage),
+            isStopped: true,
+            visibleArtifactIds: getVisibleArtifactIdsForStage(visibleArtifactIds, flowStage),
+          }),
+        };
 
     setIsStopped(true);
-    updateAiCreationTask(project.id, task.id, {
-      stage: 'content-stopped',
-      content: buildContentPayload(demoData, {
-        completedTaskIds,
-        currentArtifactId: selectedArtifactId,
-        isStopped: true,
-        updatedAt: getTodayString(),
-        visibleArtifactIds,
-      }),
+    setLocalStatus('stopped');
+    const nextTask = updateAiCreationTask(project.id, task.id, {
+      stage: nextStage,
+      ...stoppedPayload,
     });
-    setToast({
-      actionLabel: copy.actions.regenerate,
-      message:
-        locale === 'en-US'
-          ? 'Task stopped. Go back or regenerate.'
-          : '任务已中止，可返回上一步修改或重新生成',
-      type: 'warning',
-    });
-  }
-
-  function handleRegenerate() {
-    resetAiContentTask(project.id, task.id);
-    window.location.reload();
-  }
-
-  function handleSubmitRevisionRequest() {
-    const text = revisionInput.trim();
-    if (!text || !isComplete || isStopped) return;
-
-    const version = revisionRequests.length + 2;
-    const nextRevisionRequests = [
-      ...revisionRequests,
-      {
-        createdAt: getTodayString(),
-        id: `revision-request-${Date.now()}`,
-        status: 'submitted',
-        text,
-        version,
+    setStopTaskToast({
+      id: Date.now(),
+      task: nextTask ?? {
+        ...task,
+        stage: nextStage,
+        ...stoppedPayload,
       },
-    ];
-    const nextDemoData = createContentDemoData(task, project, { revisionRequests: nextRevisionRequests });
-    const nextCurrentTaskIndex = workflow.length;
-
-    setRevisionRequests(nextRevisionRequests);
-    setRevisionInput('');
-    setIsComplete(false);
-    setIsStopped(false);
-    setAutoScrollEnabled(true);
-    setCurrentTaskIndex(nextCurrentTaskIndex);
-    setVisibleThinkingCounts((current) => ({
-      ...current,
-      [getTaskSteps(nextDemoData.workflow[nextCurrentTaskIndex])[0]?.id]: 0,
-    }));
-    updateAiCreationTask(project.id, task.id, {
-      stage: 'content',
-      content: buildContentPayload(nextDemoData, {
-        completedTaskIds,
-        currentArtifactId: selectedArtifactId,
-        isStopped: false,
-        revisionRequests: nextDemoData.revisionRequests,
-        updatedAt: getTodayString(),
-        visibleArtifactIds,
-      }),
     });
   }
 
   function handleSaveAndEdit() {
-    const finalArticle = demoData.latestFinalArticle;
-    const tdk = demoData.latestTdk;
-    const taskInput = task?.taskInput ?? {};
-    const nextArticle = {
-      ...article,
-      aiTaskId: task.id,
-      articleType: taskInput.articleType || article?.articleType || 'Comparison',
-      content: finalArticle.content,
-      embeddedMediaAssets: finalArticle.images ?? [],
-      evaluationReport: demoData.latestEvaluationReport,
-      id: article?.id || createBlogArticleId(),
-      keywords: [
-        ...new Set([
-          ...(tdk.keywords ?? []),
-          ...splitAiKeywordText(taskInput.primaryKeyword),
-          ...(taskInput.secondaryKeywords ?? []),
-        ].filter(Boolean)),
-      ],
-      status: 'draft',
-      targetAudienceName: taskInput.targetAudience?.name || taskInput.targetAudienceName || article?.targetAudienceName || '',
-      tdk,
-      title: finalArticle.headline,
-      updatedAt: getTodayString(),
-      updatedBy: 'Angel',
-    };
+    if (!canSaveAndEdit) return;
 
-    upsertBlogArticle(project, nextArticle);
-    updateAiCreationTask(project.id, task.id, {
-      stage: 'content-completed',
-      content: buildContentPayload(demoData, {
-        completedTaskIds: workflow.map((item) => item.id),
+    const { article: nextArticle } = saveAiTaskAsBlogArticle(project, task, {
+      article,
+      content: buildStagePayload('content', demoData, task, {
+        completedTaskIds: getCompletedTaskIdsForStage(workflow.map((item) => item.id), workflow, 'content'),
+        currentArtifactId: getSelectedArtifactIdForStage(demoData.latestFinalArtifactId, 'content'),
         isStopped: false,
-        savedArticleId: nextArticle.id,
-        updatedAt: getTodayString(),
-        visibleArtifactIds,
+        visibleArtifactIds: getVisibleArtifactIdsForStage(getWorkflowArtifactIds(workflow), 'content'),
       }),
     });
+
     onSaveAndEdit(nextArticle);
   }
 
@@ -1392,11 +1555,22 @@ export default function BlogArticleAiContentPage({ article, locale, onBack, onSa
     });
   }
 
+  function handleSaveRevisionNote() {
+    if (!revisionInput.trim()) return;
+
+    setRevisionInput('');
+    setToast({
+      id: Date.now(),
+      message: locale === 'en-US' ? 'Revision note saved.' : '修改要求已保存',
+      type: 'success',
+    });
+  }
+
   return (
     <div className="min-h-screen bg-[#F7F8FB] text-[#303133]">
       <style>
         {`
-          @keyframes aiContentFadeInUp {
+          @keyframes aiAutoFadeInUp {
             from { opacity: 0; transform: translateY(8px); }
             to { opacity: 1; transform: translateY(0); }
           }
@@ -1408,32 +1582,17 @@ export default function BlogArticleAiContentPage({ article, locale, onBack, onSa
             type="button"
             className="mr-3 inline-flex h-8 w-8 items-center justify-center rounded-[6px] text-[#232E45] transition hover:bg-[#F5F7FA]"
             onClick={onBack}
-            aria-label="返回"
+            aria-label={locale === 'en-US' ? 'Back' : '返回'}
           >
             <ArrowLeft className="h-5 w-5" />
           </button>
-          <h1 className="w-[360px] text-[18px] font-bold leading-[28px] text-[#232E45]">
-            {copy.titles.content}
+          <h1 className="text-[18px] font-bold leading-[28px] text-[#232E45]">
+            {copy.titles.auto}
           </h1>
-          <Stepper copy={copy} />
-          <div className="flex w-[360px] justify-end">
-            <button
-              type="button"
-              className="inline-flex h-8 items-center justify-center gap-2 whitespace-nowrap rounded-[6px] bg-white px-3 text-[14px] font-semibold text-[#365EFF] shadow-[0_2px_8px_rgba(31,45,61,0.12)] transition hover:bg-[#F5F7FF]"
-              onClick={() => setReferenceOpen((current) => !current)}
-            >
-              <BookOpen className="h-4 w-4" />
-              {copy.actions.references}
-            </button>
-          </div>
         </div>
       </header>
 
-      <main
-        className={`mx-auto grid max-w-[1600px] gap-4 px-6 pb-[84px] pt-[68px] ${
-          referenceOpen ? 'grid-cols-[400px_minmax(0,1fr)_420px]' : 'grid-cols-2'
-        }`}
-      >
+      <main className="mx-auto grid max-w-[1600px] grid-cols-2 gap-4 px-6 pb-[84px] pt-[68px]">
         <section
           ref={workflowRef}
           className="h-[calc(100vh-152px)] overflow-y-auto rounded-[8px] bg-white px-8 py-7 shadow-[0_2px_10px_rgba(31,45,61,0.04)]"
@@ -1447,7 +1606,7 @@ export default function BlogArticleAiContentPage({ article, locale, onBack, onSa
               return (
                 <WorkflowTask
                   key={workflowTask.id}
-                  artifacts={demoData.artifacts}
+                  artifacts={artifacts}
                   completed={completed}
                   copy={copy}
                   isCurrent={isCurrent}
@@ -1463,12 +1622,10 @@ export default function BlogArticleAiContentPage({ article, locale, onBack, onSa
             })}
             {showRevisionRequestBox ? (
               <RevisionRequestBox
-                key={`${task.id}-${revisionRequests.length}`}
-                copy={copy}
                 disabled={false}
                 locale={locale}
                 onChange={setRevisionInput}
-                onSubmit={handleSubmitRevisionRequest}
+                onSubmit={handleSaveRevisionNote}
                 value={revisionInput}
               />
             ) : null}
@@ -1484,62 +1641,137 @@ export default function BlogArticleAiContentPage({ article, locale, onBack, onSa
             onOpenSourcePreview={handleOpenSourcePreview}
           />
         </section>
-
-        {referenceOpen ? (
-          <ReferenceDrawer
-            activeTab={referenceTab}
-            articleGenerated={articleGenerated}
-            citationUsages={demoData.citationUsages}
-            locale={locale}
-            onClose={() => setReferenceOpen(false)}
-            onOpenKnowledgeItem={handleOpenKnowledgeItem}
-            onOpenSourcePreview={handleOpenSourcePreview}
-            onTabChange={setReferenceTab}
-            references={demoData.referenceBlocks}
-          />
-        ) : null}
       </main>
 
       <footer className="fixed bottom-0 left-0 right-0 z-40 h-[60px] border-t border-[#EBEEF5] bg-white/95 backdrop-blur">
-        <div className="mx-auto flex h-full max-w-[1600px] items-center justify-between px-6">
+        <div className="mx-auto flex h-full max-w-[1600px] items-center justify-end gap-3 px-6">
           <button
             type="button"
-            className="inline-flex h-8 items-center justify-center whitespace-nowrap rounded-[6px] border border-[#365EFF] px-4 text-[14px] font-semibold text-[#365EFF] transition hover:bg-[#EEF3FF]"
-            onClick={onBack}
+            className="inline-flex h-8 items-center justify-center whitespace-nowrap rounded-[6px] border border-[#365EFF] px-4 text-[14px] font-semibold text-[#365EFF] transition hover:bg-[#EEF3FF] disabled:cursor-not-allowed disabled:border-[#DCDFE6] disabled:text-[#A8ABB2] disabled:hover:bg-white"
+            disabled={!canStop}
+            onClick={handleStopTask}
           >
-            {copy.actions.previous}
+            {copy.actions.stop}
           </button>
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              className="inline-flex h-8 items-center justify-center whitespace-nowrap rounded-[6px] border border-[#365EFF] px-4 text-[14px] font-semibold text-[#365EFF] transition hover:bg-[#EEF3FF] disabled:cursor-not-allowed disabled:border-[#DCDFE6] disabled:text-[#A8ABB2] disabled:hover:bg-white"
-              disabled={isComplete || isStopped}
-              onClick={handleStopTask}
-            >
-              {copy.actions.stop}
-            </button>
-            <button
-              type="button"
-              className="inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-[6px] bg-[#365EFF] px-5 text-[14px] font-semibold text-white transition hover:bg-[#2547D0] disabled:cursor-not-allowed disabled:bg-[#A8B9FF]"
-              disabled={!isComplete || isStopped}
-              onClick={handleSaveAndEdit}
-            >
-              <Save className="h-4 w-4" />
-              {copy.actions.saveAndEdit}
-            </button>
-          </div>
+          <button
+            type="button"
+            className="inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-[6px] bg-[#365EFF] px-5 text-[14px] font-semibold text-white transition hover:bg-[#2547D0] disabled:cursor-not-allowed disabled:bg-[#A8B9FF]"
+            disabled={!canSaveAndEdit}
+            onClick={handleSaveAndEdit}
+          >
+            <Save className="h-4 w-4" />
+            {copy.actions.saveAndEdit}
+          </button>
         </div>
       </footer>
 
       {toast ? (
         <Toast
-          actionLabel={toast.actionLabel}
           message={toast.message}
-          onAction={toast.actionLabel ? handleRegenerate : undefined}
-          onClose={toast.actionLabel ? () => setToast(null) : undefined}
           type={toast.type}
         />
       ) : null}
+
+      {stopTaskToast ? (
+        <Toast
+          key={stopTaskToast.id}
+          actionLabel={taskListCopy.actions.recreate}
+          message={copy.toast?.autoStoppedManual || copy.toast?.autoStopped || copy.actions.stop}
+          onAction={() => {
+            const recreateTask = stopTaskToast.task;
+            setStopTaskToast(null);
+            onRecreateTask?.(recreateTask);
+          }}
+          onClose={() => setStopTaskToast(null)}
+          testId="blog-article-auto-stop-toast"
+          type="info"
+        />
+      ) : null}
     </div>
+  );
+}
+
+function stripStagePrefix(id) {
+  return String(id ?? '').split(':').pop();
+}
+
+function isStageScopedId(id, stageKey) {
+  return String(id ?? '').startsWith(`${stageKey}:`);
+}
+
+function getCompletedTaskIdsForStage(completedTaskIds, workflow, stageKey) {
+  const completedSet = new Set(completedTaskIds);
+
+  return workflow
+    .filter((item) => completedSet.has(item.id))
+    .flatMap((item) => item.rawTaskIds ?? [])
+    .filter((id) => isStageScopedId(id, stageKey))
+    .map(stripStagePrefix);
+}
+
+function getVisibleArtifactIdsForStage(visibleArtifactIds, stageKey) {
+  return visibleArtifactIds.filter((id) => isStageScopedId(id, stageKey)).map(stripStagePrefix);
+}
+
+function getSelectedArtifactIdForStage(selectedArtifactId, stageKey) {
+  return isStageScopedId(selectedArtifactId, stageKey) ? stripStagePrefix(selectedArtifactId) : '';
+}
+
+function buildStagePayload(stageKey, demoData, task, overrides = {}) {
+  if (stageKey === 'content') {
+    const contentData = demoData.contentData;
+    return {
+      ...(task?.content ?? {}),
+      articleVersions: contentData.articleVersions,
+      citationUsages: contentData.citationUsages,
+      evaluationReports: contentData.evaluationReports,
+      finalEvaluationReport: contentData.latestEvaluationReport ?? contentData.finalEvaluationReport,
+      finalArticle: contentData.latestFinalArticle ?? contentData.finalArticle,
+      finalRevisionRounds: contentData.finalRevisionRounds,
+      latestEvaluationReportId: contentData.latestEvaluationReportId,
+      latestFinalArticleId: contentData.latestFinalArticleId,
+      latestTdkId: contentData.latestTdkId,
+      referenceBlocks: contentData.referenceBlocks,
+      revisionRecords: contentData.revisionRecords,
+      revisionRequests: contentData.revisionRequests,
+      revisionSuggestions: contentData.revisionSuggestions,
+      tdk: contentData.latestTdk ?? contentData.tdk,
+      updatedAt: getTodayString(),
+      ...overrides,
+    };
+  }
+
+  if (stageKey === 'outline') {
+    const outlineData = demoData.stageData.outline;
+    return {
+      ...(task?.outline ?? {}),
+      outlineTree: outlineData.outlineTree,
+      titleDraft: outlineData.selectedTitle,
+      titleOptions: outlineData.titleOptions,
+      updatedAt: getTodayString(),
+      ...overrides,
+    };
+  }
+
+  const planningData = demoData.stageData.planning;
+  return {
+    ...(task?.planning ?? {}),
+    strategyContent: planningData.artifacts.strategy?.content,
+    updatedAt: getTodayString(),
+    ...overrides,
+  };
+}
+
+function buildStagePayloadPatch(stageKeys, demoData, task, state) {
+  return Object.fromEntries(
+    stageKeys.map((stageKey) => [
+      stageKey,
+      buildStagePayload(stageKey, demoData, task, {
+        completedTaskIds: getCompletedTaskIdsForStage(state.completedTaskIds, state.workflow, stageKey),
+        currentArtifactId: getSelectedArtifactIdForStage(state.selectedArtifactId, stageKey),
+        isStopped: state.isStopped,
+        visibleArtifactIds: getVisibleArtifactIdsForStage(state.visibleArtifactIds, stageKey),
+      }),
+    ]),
   );
 }

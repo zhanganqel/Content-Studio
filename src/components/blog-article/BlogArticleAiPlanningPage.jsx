@@ -144,7 +144,25 @@ function ArtifactCard({ artifact, onClick, selected }) {
   );
 }
 
-function WorkflowTask({
+function groupWorkflowTasks(tasks) {
+  return tasks.reduce((groups, task) => {
+    const lastGroup = groups[groups.length - 1];
+
+    if (lastGroup?.agentTitle === task.agentTitle) {
+      lastGroup.tasks.push(task);
+      return groups;
+    }
+
+    groups.push({
+      agentTitle: task.agentTitle,
+      id: `${task.agentTitle}-${task.id}`,
+      tasks: [task],
+    });
+    return groups;
+  }, []);
+}
+
+function WorkflowTaskItem({
   artifact,
   completed,
   isCurrent,
@@ -157,37 +175,79 @@ function WorkflowTask({
   locale,
   copy,
 }) {
-  const agentDisplay = getAgentDisplay(task.agentTitle, locale);
   const taskName = getTaskName(task, locale);
 
   return (
+    <div className="flex items-start gap-3">
+      <StatusIcon completed={completed} stopped={isStopped && isCurrent && !completed} />
+      <div className="min-w-0 flex-1">
+        <div className="text-[14px] font-semibold leading-[20px] text-[#303133]">
+          {completed
+            ? getTaskCompletedText(task, copy.status.done, locale)
+            : isStopped && isCurrent
+              ? formatTaskState(taskName, copy.status.stopped, locale)
+              : getTaskRunningText(task, locale)}
+        </div>
+        <div className="mt-3 space-y-4">
+          {task.thinking.slice(0, thinkingCount).map((paragraph, index) => (
+            <ThinkingBlock key={`${task.id}-thinking-${index}`}>{paragraph}</ThinkingBlock>
+          ))}
+          {showArtifact && artifact ? (
+            <ArtifactCard
+              artifact={artifact}
+              onClick={() => onArtifactClick(artifact.id)}
+              selected={selectedArtifactId === artifact.id}
+            />
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function WorkflowAgentGroup({
+  completedTaskIds,
+  copy,
+  currentTask,
+  demoData,
+  group,
+  isStopped,
+  locale,
+  onArtifactClick,
+  selectedArtifactId,
+  visibleArtifactIds,
+  visibleThinkingCounts,
+}) {
+  const agentDisplay = getAgentDisplay(group.agentTitle, locale);
+
+  return (
     <section className="flex gap-4">
-      <AgentAvatar agentTitle={task.agentTitle} />
+      <AgentAvatar agentTitle={group.agentTitle} />
       <div className="min-w-0 flex-1 pb-8">
         <div className="text-[15px] font-semibold leading-[24px] text-[#303133]">{agentDisplay.name}</div>
-        <div className="mt-3 flex items-start gap-3">
-          <StatusIcon completed={completed} stopped={isStopped && isCurrent && !completed} />
-          <div className="min-w-0 flex-1">
-            <div className="text-[14px] font-semibold leading-[20px] text-[#303133]">
-              {completed
-                ? getTaskCompletedText(task, copy.status.done, locale)
-                : isStopped && isCurrent
-                  ? formatTaskState(taskName, copy.status.stopped, locale)
-                  : getTaskRunningText(task, locale)}
-            </div>
-            <div className="mt-3 space-y-4">
-              {task.thinking.slice(0, thinkingCount).map((paragraph, index) => (
-                <ThinkingBlock key={`${task.id}-thinking-${index}`}>{paragraph}</ThinkingBlock>
-              ))}
-              {showArtifact && artifact ? (
-                <ArtifactCard
-                  artifact={artifact}
-                  onClick={() => onArtifactClick(artifact.id)}
-                  selected={selectedArtifactId === artifact.id}
-                />
-              ) : null}
-            </div>
-          </div>
+        <div className="mt-3 space-y-7">
+          {group.tasks.map((workflowTask) => {
+            const artifact = workflowTask.artifactId ? demoData.artifacts[workflowTask.artifactId] : null;
+            const completed = completedTaskIds.includes(workflowTask.id);
+            const isCurrent = workflowTask.id === currentTask?.id && !completed;
+
+            return (
+              <WorkflowTaskItem
+                key={workflowTask.id}
+                artifact={artifact}
+                completed={completed}
+                copy={copy}
+                isCurrent={isCurrent}
+                isStopped={isStopped}
+                locale={locale}
+                onArtifactClick={onArtifactClick}
+                selectedArtifactId={selectedArtifactId}
+                showArtifact={Boolean(workflowTask.artifactId && visibleArtifactIds.includes(workflowTask.artifactId))}
+                task={workflowTask}
+                thinkingCount={visibleThinkingCounts[workflowTask.id] ?? 0}
+              />
+            );
+          })}
         </div>
       </div>
     </section>
@@ -638,6 +698,7 @@ export default function BlogArticleAiPlanningPage({ article, locale, onBack, onC
   const workflowRef = useRef(null);
 
   const visibleTaskList = workflow.slice(0, Math.min(currentTaskIndex + 1, workflow.length));
+  const visibleTaskGroups = useMemo(() => groupWorkflowTasks(visibleTaskList), [visibleTaskList]);
   const selectedArtifact = selectedArtifactId ? demoData.artifacts[selectedArtifactId] : null;
   const strategyDirty = isEditingStrategy && strategyDraft !== strategyContent;
   const currentTask = workflow[currentTaskIndex];
@@ -914,28 +975,22 @@ export default function BlogArticleAiPlanningPage({ article, locale, onBack, onC
           onScroll={handleWorkflowScroll}
         >
           <div className="space-y-1">
-            {visibleTaskList.map((workflowTask) => {
-              const artifact = workflowTask.artifactId ? demoData.artifacts[workflowTask.artifactId] : null;
-              const completed = completedTaskIds.includes(workflowTask.id);
-              const isCurrent = workflowTask.id === currentTask?.id && !completed;
-
-              return (
-                <WorkflowTask
-                  key={workflowTask.id}
-                  artifact={artifact}
-                  completed={completed}
-                  copy={copy}
-                  isCurrent={isCurrent}
-                  isStopped={isStopped}
-                  locale={locale}
-                  onArtifactClick={handleArtifactClick}
-                  selectedArtifactId={selectedArtifactId}
-                  showArtifact={Boolean(workflowTask.artifactId && visibleArtifactIds.includes(workflowTask.artifactId))}
-                  task={workflowTask}
-                  thinkingCount={visibleThinkingCounts[workflowTask.id] ?? 0}
-                />
-              );
-            })}
+            {visibleTaskGroups.map((group) => (
+              <WorkflowAgentGroup
+                key={group.id}
+                completedTaskIds={completedTaskIds}
+                copy={copy}
+                currentTask={currentTask}
+                demoData={demoData}
+                group={group}
+                isStopped={isStopped}
+                locale={locale}
+                onArtifactClick={handleArtifactClick}
+                selectedArtifactId={selectedArtifactId}
+                visibleArtifactIds={visibleArtifactIds}
+                visibleThinkingCounts={visibleThinkingCounts}
+              />
+            ))}
           </div>
         </section>
 

@@ -403,7 +403,25 @@ function TitleSelection({
   );
 }
 
-function WorkflowTask({
+function groupWorkflowTasks(tasks) {
+  return tasks.reduce((groups, task) => {
+    const lastGroup = groups[groups.length - 1];
+
+    if (lastGroup?.agentTitle === task.agentTitle) {
+      lastGroup.tasks.push(task);
+      return groups;
+    }
+
+    groups.push({
+      agentTitle: task.agentTitle,
+      id: `${task.agentTitle}-${task.id}`,
+      tasks: [task],
+    });
+    return groups;
+  }, []);
+}
+
+function WorkflowTaskItem({
   artifact,
   completed,
   isCurrent,
@@ -423,49 +441,105 @@ function WorkflowTask({
   locale,
   copy,
 }) {
-  const agentDisplay = getAgentDisplay(task.agentTitle, locale);
   const taskName = getTaskName(task, locale);
 
   return (
+    <div className="flex items-start gap-3">
+      <StatusIcon completed={completed} stopped={isStopped && isCurrent && !completed} />
+      <div className="min-w-0 flex-1">
+        <div className="text-[14px] font-semibold leading-[20px] text-[#303133]">
+          {completed
+            ? getTaskCompletedText(task, copy.status.done, locale)
+            : isStopped && isCurrent
+              ? formatTaskState(taskName, copy.status.stopped, locale)
+              : getTaskRunningText(task, locale)}
+        </div>
+        <div className="mt-3 space-y-4">
+          {task.thinking.slice(0, thinkingCount).map((paragraph, index) => (
+            <ThinkingBlock key={`${task.id}-thinking-${index}`}>{paragraph}</ThinkingBlock>
+          ))}
+          {showTitleSelection ? (
+            <TitleSelection
+              onConfirmTitle={onConfirmTitle}
+              copy={copy}
+              locale={locale}
+              onRegenerateTitle={onRegenerateTitle}
+              onSelectTitle={onSelectTitle}
+              selectedTitleId={selectedTitleId}
+              titleConfirmed={titleConfirmed}
+              titleOptions={titleOptions}
+            />
+          ) : null}
+          {showArtifact && artifact ? (
+            <ArtifactCard
+              artifact={artifact}
+              onClick={() => onArtifactClick(artifact.id)}
+              selected={selectedArtifactId === artifact.id}
+            />
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function WorkflowAgentGroup({
+  completedTaskIds,
+  copy,
+  currentArtifact,
+  currentTask,
+  group,
+  isStopped,
+  locale,
+  onArtifactClick,
+  onConfirmTitle,
+  onRegenerateTitle,
+  onSelectTitle,
+  selectedArtifactId,
+  selectedTitleId,
+  titleConfirmed,
+  titleOptions,
+  titlesVisible,
+  visibleArtifactIds,
+  visibleThinkingCounts,
+}) {
+  const agentDisplay = getAgentDisplay(group.agentTitle, locale);
+
+  return (
     <section className="flex gap-4">
-      <AgentAvatar agentTitle={task.agentTitle} />
+      <AgentAvatar agentTitle={group.agentTitle} />
       <div className="min-w-0 flex-1 pb-8">
         <div className="text-[15px] font-semibold leading-[24px] text-[#303133]">{agentDisplay.name}</div>
-        <div className="mt-3 flex items-start gap-3">
-          <StatusIcon completed={completed} stopped={isStopped && isCurrent && !completed} />
-          <div className="min-w-0 flex-1">
-            <div className="text-[14px] font-semibold leading-[20px] text-[#303133]">
-              {completed
-                ? getTaskCompletedText(task, copy.status.done, locale)
-                : isStopped && isCurrent
-                  ? formatTaskState(taskName, copy.status.stopped, locale)
-                  : getTaskRunningText(task, locale)}
-            </div>
-            <div className="mt-3 space-y-4">
-              {task.thinking.slice(0, thinkingCount).map((paragraph, index) => (
-                <ThinkingBlock key={`${task.id}-thinking-${index}`}>{paragraph}</ThinkingBlock>
-              ))}
-              {showTitleSelection ? (
-                <TitleSelection
-                  onConfirmTitle={onConfirmTitle}
-                  copy={copy}
-                  locale={locale}
-                  onRegenerateTitle={onRegenerateTitle}
-                  onSelectTitle={onSelectTitle}
-                  selectedTitleId={selectedTitleId}
-                  titleConfirmed={titleConfirmed}
-                  titleOptions={titleOptions}
-                />
-              ) : null}
-              {showArtifact && artifact ? (
-                <ArtifactCard
-                  artifact={artifact}
-                  onClick={() => onArtifactClick(artifact.id)}
-                  selected={selectedArtifactId === artifact.id}
-                />
-              ) : null}
-            </div>
-          </div>
+        <div className="mt-3 space-y-7">
+          {group.tasks.map((workflowTask) => {
+            const artifact = workflowTask.artifactId ? currentArtifact : null;
+            const completed = completedTaskIds.includes(workflowTask.id);
+            const isCurrent = workflowTask.id === currentTask?.id && !completed;
+
+            return (
+              <WorkflowTaskItem
+                key={workflowTask.id}
+                artifact={artifact}
+                completed={completed}
+                copy={copy}
+                isCurrent={isCurrent}
+                isStopped={isStopped}
+                locale={locale}
+                onArtifactClick={onArtifactClick}
+                onConfirmTitle={onConfirmTitle}
+                onRegenerateTitle={onRegenerateTitle}
+                onSelectTitle={onSelectTitle}
+                selectedArtifactId={selectedArtifactId}
+                selectedTitleId={selectedTitleId}
+                showArtifact={Boolean(workflowTask.artifactId && visibleArtifactIds.includes(workflowTask.artifactId))}
+                showTitleSelection={Boolean(workflowTask.titleSelection && titlesVisible)}
+                task={workflowTask}
+                thinkingCount={visibleThinkingCounts[workflowTask.id] ?? 0}
+                titleConfirmed={titleConfirmed}
+                titleOptions={titleOptions}
+              />
+            );
+          })}
         </div>
       </div>
     </section>
@@ -739,6 +813,7 @@ export default function BlogArticleAiOutlinePage({ article, locale, onBack, onCl
 
   const currentTask = workflow[currentTaskIndex];
   const visibleTaskList = workflow.slice(0, Math.min(currentTaskIndex + 1, workflow.length));
+  const visibleTaskGroups = useMemo(() => groupWorkflowTasks(visibleTaskList), [visibleTaskList]);
   const outlineDirty = titleDraft !== savedTitleDraft || JSON.stringify(outlineTree) !== JSON.stringify(savedOutlineTree);
   const currentArtifact = {
     ...demoData.artifacts.outline,
@@ -1237,35 +1312,29 @@ export default function BlogArticleAiOutlinePage({ article, locale, onBack, onCl
           onScroll={handleWorkflowScroll}
         >
           <div className="space-y-1">
-            {visibleTaskList.map((workflowTask) => {
-              const artifact = workflowTask.artifactId ? currentArtifact : null;
-              const completed = completedTaskIds.includes(workflowTask.id);
-              const isCurrent = workflowTask.id === currentTask?.id && !completed;
-
-              return (
-                <WorkflowTask
-                  key={workflowTask.id}
-                  artifact={artifact}
-                  completed={completed}
-                  copy={copy}
-                  isCurrent={isCurrent}
-                  isStopped={isStopped}
-                  locale={locale}
-                  onArtifactClick={setSelectedArtifactId}
-                  onConfirmTitle={handleConfirmTitle}
-                  onRegenerateTitle={handleRegenerateTitle}
-                  onSelectTitle={handleSelectTitle}
-                  selectedArtifactId={selectedArtifactId}
-                  selectedTitleId={selectedTitleId}
-                  showArtifact={Boolean(workflowTask.artifactId && visibleArtifactIds.includes(workflowTask.artifactId))}
-                  showTitleSelection={Boolean(workflowTask.titleSelection && titlesVisible)}
-                  task={workflowTask}
-                  thinkingCount={visibleThinkingCounts[workflowTask.id] ?? 0}
-                  titleConfirmed={titleConfirmed}
-                  titleOptions={titleOptions}
-                />
-              );
-            })}
+            {visibleTaskGroups.map((group) => (
+              <WorkflowAgentGroup
+                key={group.id}
+                completedTaskIds={completedTaskIds}
+                copy={copy}
+                currentArtifact={currentArtifact}
+                currentTask={currentTask}
+                group={group}
+                isStopped={isStopped}
+                locale={locale}
+                onArtifactClick={setSelectedArtifactId}
+                onConfirmTitle={handleConfirmTitle}
+                onRegenerateTitle={handleRegenerateTitle}
+                onSelectTitle={handleSelectTitle}
+                selectedArtifactId={selectedArtifactId}
+                selectedTitleId={selectedTitleId}
+                titleConfirmed={titleConfirmed}
+                titleOptions={titleOptions}
+                titlesVisible={titlesVisible}
+                visibleArtifactIds={visibleArtifactIds}
+                visibleThinkingCounts={visibleThinkingCounts}
+              />
+            ))}
           </div>
         </section>
 

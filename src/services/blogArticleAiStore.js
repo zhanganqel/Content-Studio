@@ -91,6 +91,51 @@ function createSelectedBrandLinkItems(project) {
   ];
 }
 
+function createSelectedKnowledgeLinkItems(knowledgeItems = []) {
+  const seenUrls = new Set();
+
+  return knowledgeItems
+    .map((item) => item?.sourceUrl || item?.url || item?.productUrl || item?.serviceUrl || item?.caseUrl || item?.faqUrl)
+    .filter(Boolean)
+    .filter((url) => {
+      if (seenUrls.has(url)) return false;
+      seenUrls.add(url);
+      return true;
+    })
+    .slice(0, 4)
+    .map((url, index) => ({
+      group: 'knowledge',
+      id: `knowledge-link-${index + 1}`,
+      label: formatUrlLabel(url),
+      url,
+    }));
+}
+
+function resolveKnowledgeSourceItems(inputItems, fallbackItems, project) {
+  const sourceItems = Array.isArray(inputItems) ? inputItems : fallbackItems;
+  const projectKnowledgeItems = project?.demoProject?.knowledgeItems ?? [];
+
+  return sourceItems.map((item) => {
+    if (
+      item?.sourceUrl ||
+      item?.url ||
+      item?.productUrl ||
+      item?.serviceUrl ||
+      item?.caseUrl ||
+      item?.faqUrl
+    ) {
+      return item;
+    }
+
+    const matchedItem = projectKnowledgeItems.find((candidate) => {
+      const itemKeys = [item?.id, item?.knowledgeId, item?.sourceId, item?.title, item?.name, item?.label].filter(Boolean);
+      return itemKeys.some((key) => [candidate.id, candidate.knowledgeId, candidate.title, candidate.name].includes(key));
+    });
+
+    return matchedItem ? { ...matchedItem, ...item, sourceUrl: matchedItem.sourceUrl } : item;
+  });
+}
+
 export const aiReferenceSearchAnalyses = [
   {
     id: 'search-cnc-supplier-guide',
@@ -285,8 +330,20 @@ export function updateAiCreationTask(projectId, taskId, patch) {
   return nextTasks.find((task) => task.id === taskId);
 }
 
+export function deleteAiCreationTask(projectId, taskId) {
+  const currentTasks = getAiCreationTasks(projectId);
+  const nextTasks = currentTasks.filter((task) => task.id !== taskId);
+
+  if (typeof window !== 'undefined') {
+    window.localStorage.setItem(getStorageKey(projectId), serializeTasks(nextTasks));
+  }
+
+  return nextTasks;
+}
+
 export function resetAiPlanningTask(projectId, taskId) {
   return updateAiCreationTask(projectId, taskId, {
+    errorMessage: '',
     stage: 'planning',
     planning: {
       completedTaskIds: [],
@@ -300,6 +357,7 @@ export function resetAiPlanningTask(projectId, taskId) {
 
 export function resetAiOutlineTask(projectId, taskId) {
   return updateAiCreationTask(projectId, taskId, {
+    errorMessage: '',
     stage: 'outline',
     outline: {
       confirmedTitleId: '',
@@ -318,6 +376,7 @@ export function resetAiOutlineTask(projectId, taskId) {
 
 export function resetAiContentTask(projectId, taskId) {
   return updateAiCreationTask(projectId, taskId, {
+    errorMessage: '',
     stage: 'content',
     content: {
       articleVersions: [],
@@ -336,7 +395,57 @@ export function resetAiContentTask(projectId, taskId) {
       revisionRequests: [],
       revisionRecords: [],
       revisionSuggestions: [],
+      savedArticleId: '',
       tdk: null,
+      updatedAt: today(),
+    },
+  });
+}
+
+export function resetAiAutoTask(projectId, taskId) {
+  return updateAiCreationTask(projectId, taskId, {
+    errorMessage: '',
+    mode: 'auto',
+    stage: 'auto-generating',
+    content: {
+      articleVersions: [],
+      completedTaskIds: [],
+      currentArtifactId: '',
+      evaluationReports: [],
+      finalEvaluationReport: null,
+      finalArticle: null,
+      finalRevisionRounds: [],
+      isStopped: false,
+      latestEvaluationReportId: '',
+      latestFinalArticleId: '',
+      latestTdkId: '',
+      citationUsages: [],
+      referenceBlocks: [],
+      revisionRequests: [],
+      revisionRecords: [],
+      revisionSuggestions: [],
+      savedArticleId: '',
+      tdk: null,
+      updatedAt: today(),
+      visibleArtifactIds: [],
+    },
+    outline: {
+      confirmedTitleId: '',
+      completedTaskIds: [],
+      currentArtifactId: '',
+      isStopped: false,
+      outlineTree: [],
+      selectedTitleId: '',
+      titleConfirmed: false,
+      titleDraft: '',
+      titleOptions: [],
+      updatedAt: today(),
+    },
+    planning: {
+      completedTaskIds: [],
+      currentArtifactId: '',
+      isStopped: false,
+      strategyContent: '',
       updatedAt: today(),
     },
   });
@@ -839,24 +948,39 @@ export function createPlanningDemoData(task, project) {
         id: 'summarize-project',
         agent: 'SEO策略Agent',
         agentTitle: 'SEO策略专家 Strategist',
-        completedText: '阅读项目分析报告完成',
-        completedTextEn: 'Review Project Analysis completed',
-        taskName: '阅读项目分析报告',
-        taskNameEn: 'Review Project Analysis',
-        runningText: '正在阅读项目分析报告...',
-        runningTextEn: 'Reviewing project analysis...',
+        completedText: '查看项目分析报告，了解项目背景完毕',
+        completedTextEn: 'Reviewed project analysis and context',
+        taskName: '查看项目分析报告，了解项目背景',
+        taskNameEn: 'Review project analysis and context',
+        runningText: '正在查看项目分析报告，了解项目背景...',
+        runningTextEn: 'Reviewing project analysis and context...',
+        thinking: [
+          '品牌要求强调可信、专业、避免夸张承诺，因此后续方案会使用证据型表达，突出能力边界和可验证信息。',
+          '知识库中 CNC Turning、CNC Milling、DFM Support 和质量控制信息可支撑文章差异化，避免只输出通用工艺科普。',
+        ],
+      },
+      {
+        id: 'analyze-market-audience',
+        agent: 'SEO策略Agent',
+        agentTitle: 'SEO策略专家 Strategist',
+        completedText: '分析目标市场与受众完毕',
+        completedTextEn: 'Analyzed target market and audience',
+        taskName: '分析目标市场与受众',
+        taskNameEn: 'Analyze target market and audience',
+        runningText: '正在分析目标市场与受众...',
+        runningTextEn: 'Analyzing target market and audience...',
         thinking: [
           '目标受众更关注供应商风险、质量稳定性、交期可控和沟通效率，因此文章需要把技术参数翻译成采购决策语言。',
           '搜索意图不是单纯学习概念，而是为了判断哪种工艺、哪类供应商更适合当前零件需求，内容应包含选择标准与询盘准备建议。',
-          '品牌要求强调可信、专业、避免夸张承诺，因此后续方案会使用证据型表达，突出能力边界和可验证信息。',
+          '目标市场语境需要兼顾技术说明和采购行动建议，让内容既能服务搜索理解，也能承接询盘转化。',
         ],
       },
       {
         id: 'analyze-references',
         agent: 'SEO策略Agent',
         agentTitle: 'SEO策略专家 Strategist',
-        completedText: '分析参考文章完成',
-        completedTextEn: 'Analyze Reference Articles completed',
+        completedText: '分析参考文章完毕',
+        completedTextEn: 'Analyzed reference articles',
         taskName: '分析参考文章',
         taskNameEn: 'Analyze Reference Articles',
         runningText: '正在分析参考文章...',
@@ -1282,6 +1406,7 @@ function createFinalContentEvaluationReport({ finalArticle, primaryKeyword, sele
     suggestion,
   });
   const imageCount = finalArticle?.images?.length ?? 0;
+  const knowledgeLinkCount = selectedLinks.filter((link) => link.group === 'knowledge').length;
   const companyLinkCount = selectedLinks.filter((link) => link.group === 'company').length;
   const authorityLinkCount = selectedLinks.filter((link) => link.group === 'authority').length;
 
@@ -1315,6 +1440,7 @@ function createFinalContentEvaluationReport({ finalArticle, primaryKeyword, sele
           makeItem('素材插入相关性', imageCount >= 2 ? 'High' : 'Medium', imageCount >= 2 ? '' : '建议至少插入 2 张与工艺和质检段落相关的素材。'),
           makeItem('图片Alt文本', 'High'),
           makeItem('图片与段落相关性', 'High'),
+          makeItem('知识条目链接', knowledgeLinkCount >= 1 ? 'High' : 'Medium', knowledgeLinkCount >= 1 ? '' : '建议至少插入 1 条知识条目链接。'),
           makeItem('公司相关链接', companyLinkCount >= 1 ? 'High' : 'Medium', companyLinkCount >= 1 ? '' : '建议至少插入 1 条公司相关链接。'),
           makeItem('权威参考链接', authorityLinkCount >= 1 ? 'High' : 'Medium', authorityLinkCount >= 1 ? '' : '建议至少插入 1 条权威参考链接。'),
           makeItem('链接与段落语义匹配', 'High'),
@@ -1608,7 +1734,8 @@ export function createContentDemoData(task, project, options = {}) {
         { id: 'asset-service-capability', title: '主要服务.xlsx' },
         { id: 'asset-solution', title: '解决方案.xlsx' },
       ];
-  const selectedKnowledgeItems = normalizeSourceListItems(input.knowledgeItems, fallbackKnowledgeItems);
+  const selectedKnowledgeSourceItems = resolveKnowledgeSourceItems(input.knowledgeItems, fallbackKnowledgeItems, project);
+  const selectedKnowledgeItems = normalizeSourceListItems(selectedKnowledgeSourceItems, fallbackKnowledgeItems);
   const selectedKnowledgeAssetFiles = Array.isArray(input.knowledgeAssets) ? input.knowledgeAssets : fallbackKnowledgeAssets;
   const selectedKnowledgeAssets = normalizeSourceListItems(selectedKnowledgeAssetFiles, fallbackKnowledgeAssets);
   const references = getReferenceArticles(task).slice(0, 3);
@@ -1656,6 +1783,8 @@ export function createContentDemoData(task, project, options = {}) {
       : [];
   const mediaAssets = project?.demoProject?.mediaAssets ?? [];
   const selectedBrandLinks = createSelectedBrandLinkItems(project);
+  const selectedKnowledgeLinks = createSelectedKnowledgeLinkItems(selectedKnowledgeSourceItems);
+  const selectedLinks = [...selectedKnowledgeLinks, ...selectedBrandLinks];
   const findMediaAsset = (predicate, fallbackIndex = 0) =>
     mediaAssets.find(predicate) ?? mediaAssets[fallbackIndex] ?? null;
   const finalArticleImages = [
@@ -1879,7 +2008,7 @@ export function createContentDemoData(task, project, options = {}) {
   const finalEvaluationReport = createFinalContentEvaluationReport({
     finalArticle,
     primaryKeyword,
-    selectedLinks: selectedBrandLinks,
+    selectedLinks,
     tdk,
   });
   const revisionRequests = (options.revisionRequests ?? task?.content?.revisionRequests ?? [])
@@ -1892,7 +2021,7 @@ export function createContentDemoData(task, project, options = {}) {
     const baseEvaluationReport = createFinalContentEvaluationReport({
       finalArticle: baseArticle,
       primaryKeyword,
-      selectedLinks: selectedBrandLinks,
+      selectedLinks,
       tdk: baseTdk,
     });
     return [
@@ -2297,13 +2426,13 @@ export function createContentDemoData(task, project, options = {}) {
             runningText: '正在插入相关链接...',
             runningTextEn: 'Inserting relevant links...',
             sourceList: {
-              emptyText: '未找到可插入的品牌档案链接',
-              emptyTextEn: 'No brand profile links available',
-              items: selectedBrandLinks,
+              emptyText: '未找到可插入的知识条目或品牌档案链接',
+              emptyTextEn: 'No knowledge item or brand profile links available',
+              items: selectedLinks,
               variant: 'links',
             },
             thinking: [
-              '正在从品牌档案中筛选公司相关链接与权威参考链接，优先匹配文章中的服务能力、工艺说明和采购决策段落。',
+              '正在从引用的知识条目和品牌档案中筛选相关链接，优先匹配文章中的服务能力、工艺说明和采购决策段落。',
               '已选择可支持文章可信度与转化路径的链接，等待整合到文章终稿。',
             ],
           },

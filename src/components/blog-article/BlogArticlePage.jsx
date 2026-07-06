@@ -2,9 +2,15 @@ import {
   Bot,
   CalendarClock,
   ChevronDown,
+  CircleStop,
   Copy,
+  FilePenLine,
   FilePlus2,
+  FileSearch,
   FileText,
+  History,
+  RefreshCw,
+  Save,
   Search,
   Settings2,
   SlidersHorizontal,
@@ -15,8 +21,15 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { adaptivePageLayout } from '../layoutClasses.js';
 import Button from '../ui/Button.jsx';
+import ListCard from '../ui/ListCard.jsx';
 import PageHeader from '../ui/PageHeader.jsx';
 import Toast from '../ui/Toast.jsx';
+import {
+  deleteAiCreationTask,
+  getAiCreationTasks,
+  updateAiCreationTask,
+} from '../../services/blogArticleAiStore.js';
+import { saveAiTaskAsBlogArticle } from '../../services/blogArticleAiArticleStore.js';
 import {
   articleStatusOptions,
   articleTypeOptions,
@@ -35,6 +48,8 @@ const emptyAdvancedFilters = {
   updatedBy: 'all',
 };
 
+const taskStatusValues = ['generating', 'success', 'stopped', 'failed'];
+
 function hasAdvancedFilterValue(filters) {
   return (
     filters.audiencePersonaId !== 'all' ||
@@ -45,13 +60,109 @@ function hasAdvancedFilterValue(filters) {
   );
 }
 
-function getSearchText(article) {
+function normalizeArticleType(value) {
+  return String(value ?? '').replace(/（.*$/, '').trim();
+}
+
+function getTaskInput(task) {
+  return task?.taskInput ?? {};
+}
+
+function getTaskAudienceId(task) {
+  const input = getTaskInput(task);
+  return input.targetAudienceId || input.targetAudience?.id || '';
+}
+
+function getTaskAudienceName(task) {
+  const input = getTaskInput(task);
+  return input.targetAudience?.title || input.targetAudience?.name || input.targetAudienceName || getTaskAudienceId(task);
+}
+
+function getTaskArticleType(task) {
+  return normalizeArticleType(getTaskInput(task).articleType);
+}
+
+function getTaskTitle(task) {
+  return (
+    task?.content?.finalArticle?.headline ||
+    task?.outline?.titleDraft ||
+    getTaskInput(task).articleTopic ||
+    '文章创作任务'
+  );
+}
+
+function getTaskSavedArticleId(task) {
+  return task?.content?.savedArticleId || '';
+}
+
+function getTaskUpdatedAt(task) {
+  return task?.updatedAt || task?.createdAt || getTodayString();
+}
+
+function getTaskUpdatedBy(task) {
+  return task?.updatedBy || getTaskInput(task).updatedBy || 'Angel';
+}
+
+function getTaskFlowStage(task) {
+  const stage = task?.stage ?? '';
+  if (task?.mode === 'auto' || stage.startsWith('auto')) return 'auto';
+  if (stage.startsWith('content')) return 'content';
+  if (stage.startsWith('outline')) return 'outline';
+  return 'planning';
+}
+
+function getTaskGenerationStatus(task) {
+  const stage = task?.stage ?? '';
+  if (task?.errorMessage || stage === 'failed' || stage.endsWith('-failed')) return 'failed';
+  if (stage.endsWith('-stopped')) return 'stopped';
+  if (stage === 'content-completed') return 'success';
+  return 'generating';
+}
+
+function getTaskProgress(task) {
+  const stage = task?.stage ?? '';
+  if (stage === 'content-completed') return 100;
+  if (stage === 'auto-generating') return 62;
+  if (stage.startsWith('content')) return 82;
+  if (stage === 'outline-completed') return 70;
+  if (stage.startsWith('outline')) return 55;
+  if (stage === 'planning-completed') return 35;
+  if (stage.startsWith('planning')) return 22;
+  return 8;
+}
+
+function getTaskStageLabel(task, copy) {
+  const stage = task?.stage ?? '';
+  if (stage.startsWith('auto')) return copy.taskList.stage.auto;
+  if (stage.startsWith('content')) return copy.taskList.stage.content;
+  if (stage.startsWith('outline')) return copy.taskList.stage.outline;
+  if (stage.startsWith('planning')) return copy.taskList.stage.planning;
+  return copy.taskList.stage.create;
+}
+
+function getArticleSearchText(article) {
   return [
     article.title,
     article.targetAudienceName,
     article.articleType,
     article.updatedBy,
     ...(article.keywords ?? []),
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+}
+
+function getTaskSearchText(task) {
+  const input = getTaskInput(task);
+  return [
+    getTaskTitle(task),
+    input.articleTopic,
+    input.primaryKeyword,
+    ...(input.secondaryKeywords ?? []),
+    getTaskArticleType(task),
+    getTaskAudienceName(task),
+    getTaskUpdatedBy(task),
   ]
     .filter(Boolean)
     .join(' ')
@@ -69,6 +180,21 @@ function StatusBadge({ copy, status }) {
   return (
     <span className={`inline-flex flex-none items-center rounded-full px-3 py-1 text-sm font-semibold ring-1 ${classes[status]}`}>
       {copy.status[status]}
+    </span>
+  );
+}
+
+function GenerationStatusBadge({ copy, status }) {
+  const classes = {
+    failed: 'bg-red-50 text-red-600 ring-red-200',
+    generating: 'bg-blue-50 text-blue-600 ring-blue-200',
+    stopped: 'bg-slate-100 text-slate-600 ring-slate-200',
+    success: 'bg-emerald-50 text-emerald-600 ring-emerald-200',
+  };
+
+  return (
+    <span className={`inline-flex flex-none items-center rounded-full px-3 py-1 text-sm font-semibold ring-1 ${classes[status]}`}>
+      {copy.taskList.status[status]}
     </span>
   );
 }
@@ -120,69 +246,390 @@ function ConfirmDialog({
   );
 }
 
+function CreationModeDialog({ copy, onCancel, onSelect }) {
+  const modes = [
+    {
+      body: copy.creationMode.collaborativeBody,
+      icon: FilePenLine,
+      id: 'collaborative',
+      title: copy.creationMode.collaborativeTitle,
+    },
+    {
+      body: copy.creationMode.autoBody,
+      icon: Bot,
+      id: 'auto',
+      title: copy.creationMode.autoTitle,
+    },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4" onMouseDown={onCancel}>
+      <div
+        className="relative w-full max-w-[660px] rounded-xl bg-white p-8 shadow-[0_18px_48px_rgba(15,23,42,0.18)]"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <button
+          type="button"
+          className="absolute right-5 top-5 inline-flex h-8 w-8 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-50 hover:text-slate-700"
+          onClick={onCancel}
+          aria-label={copy.creationMode.close}
+        >
+          <X className="h-4 w-4" />
+        </button>
+        <h3 className="text-2xl font-bold tracking-normal text-slate-900">{copy.creationMode.title}</h3>
+        <p className="mt-3 text-base leading-6 text-slate-500">{copy.creationMode.body}</p>
+        <div className="mt-8 grid gap-5 sm:grid-cols-2">
+          {modes.map((mode) => {
+            const Icon = mode.icon;
+
+            return (
+              <button
+                key={mode.id}
+                type="button"
+                className="min-h-[168px] rounded-lg border border-slate-200 bg-white p-5 text-left transition hover:border-blue-300 hover:bg-blue-50/40 hover:shadow-[0_10px_24px_rgba(54,94,255,0.08)] focus:outline-none focus:ring-2 focus:ring-blue-100"
+                onClick={() => onSelect(mode.id)}
+              >
+                <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+                  <Icon className="h-5 w-5" />
+                </span>
+                <span className="mt-4 block text-xl font-bold tracking-normal text-slate-900">{mode.title}</span>
+                <span className="mt-3 block text-base leading-7 text-slate-500">{mode.body}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FilterToolbar({
+  advancedFilters,
+  audienceOptions,
+  copy,
+  draftAdvancedFilters,
+  filterOpen,
+  filterRef,
+  hasActiveFilters,
+  hasAdvancedFilters,
+  onApplyAdvancedFilters,
+  onClearAdvancedFilters,
+  onClearAllFilters,
+  onSearchChange,
+  onStatusChange,
+  onToggleAdvancedFilter,
+  onUpdateDraftAdvancedFilter,
+  searchPlaceholder,
+  searchQuery,
+  setFilterOpen,
+  statusFilter,
+  statusLabel,
+  statusOptions,
+  typeOptions,
+  updatedByOptions,
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <label className="relative block w-full sm:w-[360px]">
+        <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+        <input
+          className="h-11 w-full rounded-md border border-slate-200 bg-white pl-10 pr-3 text-base text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+          onChange={(event) => onSearchChange(event.target.value)}
+          placeholder={searchPlaceholder}
+          type="search"
+          value={searchQuery}
+        />
+      </label>
+
+      <div className="w-[180px]">
+        <SelectControl
+          label={statusLabel}
+          onChange={onStatusChange}
+          options={statusOptions}
+          value={statusFilter}
+        />
+      </div>
+
+      <div ref={filterRef} className="relative">
+        <button
+          type="button"
+          className={`relative inline-flex h-11 w-11 items-center justify-center rounded-md border text-sm font-semibold transition ${
+            hasAdvancedFilters || filterOpen
+              ? 'border-blue-200 bg-blue-50 text-blue-600'
+              : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-700'
+          }`}
+          onClick={onToggleAdvancedFilter}
+          aria-expanded={filterOpen}
+          aria-label={copy.filters.advancedTitle}
+        >
+          <SlidersHorizontal className="h-4 w-4" />
+          {hasAdvancedFilters ? (
+            <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-blue-600" />
+          ) : null}
+        </button>
+
+        {filterOpen ? (
+          <form
+            className="absolute right-0 top-[calc(100%+8px)] z-40 w-[calc(100vw-64px)] rounded-lg border border-slate-200 bg-white p-4 shadow-menu sm:w-[520px]"
+            onSubmit={(event) => {
+              event.preventDefault();
+              onApplyAdvancedFilters();
+            }}
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <h4 className="text-base font-bold text-slate-800">{copy.filters.advancedTitle}</h4>
+              <button
+                type="button"
+                className="rounded-full p-1 text-slate-400 transition hover:bg-slate-50 hover:text-slate-700"
+                onClick={() => setFilterOpen(false)}
+                aria-label={copy.filters.close}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-slate-500">
+                  {copy.filters.audienceLabel}
+                </span>
+                <SelectControl
+                  label={copy.filters.audienceLabel}
+                  onChange={(value) => onUpdateDraftAdvancedFilter('audiencePersonaId', value)}
+                  options={audienceOptions}
+                  value={draftAdvancedFilters.audiencePersonaId}
+                />
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-slate-500">
+                  {copy.filters.typeLabel}
+                </span>
+                <SelectControl
+                  label={copy.filters.typeLabel}
+                  onChange={(value) => onUpdateDraftAdvancedFilter('articleType', value)}
+                  options={typeOptions}
+                  value={draftAdvancedFilters.articleType}
+                />
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-slate-500">
+                  {copy.filters.updatedFrom}
+                </span>
+                <input
+                  className="h-11 w-full rounded-md border border-slate-200 px-3 text-base text-slate-700 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  onChange={(event) => onUpdateDraftAdvancedFilter('updatedFrom', event.target.value)}
+                  type="date"
+                  value={draftAdvancedFilters.updatedFrom}
+                />
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-slate-500">
+                  {copy.filters.updatedTo}
+                </span>
+                <input
+                  className="h-11 w-full rounded-md border border-slate-200 px-3 text-base text-slate-700 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  onChange={(event) => onUpdateDraftAdvancedFilter('updatedTo', event.target.value)}
+                  type="date"
+                  value={draftAdvancedFilters.updatedTo}
+                />
+              </label>
+              <label className="block sm:col-span-2">
+                <span className="mb-2 block text-sm font-medium text-slate-500">
+                  {copy.filters.updatedByLabel}
+                </span>
+                <SelectControl
+                  label={copy.filters.updatedByLabel}
+                  onChange={(value) => onUpdateDraftAdvancedFilter('updatedBy', value)}
+                  options={updatedByOptions}
+                  value={draftAdvancedFilters.updatedBy}
+                />
+              </label>
+            </div>
+
+            <div className="mt-5 flex justify-end gap-3">
+              <Button variant="neutral" onClick={onClearAdvancedFilters}>
+                {copy.filters.clearAdvanced}
+              </Button>
+              <Button type="submit">
+                {copy.filters.apply}
+              </Button>
+            </div>
+          </form>
+        ) : null}
+      </div>
+
+      {hasActiveFilters ? (
+        <Button variant="neutral" onClick={onClearAllFilters}>
+          {copy.filters.clearAll}
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
 function ArticleCard({
   article,
   copy,
+  highlighted = false,
   onDelete,
   onDuplicate,
   onOpenEditor,
   onPublishSettings,
+  setCardRef,
 }) {
   return (
-    <article className="rounded-lg border border-slate-200 bg-white px-7 py-5 transition hover:border-blue-200 hover:shadow-[0_18px_34px_rgba(15,23,42,0.08)]">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-        <div className="min-w-0">
-          <div className="flex min-w-0 flex-wrap items-center gap-3">
-            <button
-              type="button"
-              className="min-w-0 truncate text-left text-xl font-bold tracking-normal text-slate-800 transition hover:text-blue-600"
-              onClick={() => onOpenEditor(article)}
-            >
-              {article.title}
-            </button>
-            <StatusBadge copy={copy} status={article.status} />
-          </div>
+    <div ref={setCardRef} data-blog-article-id={article.id}>
+      <ListCard
+        className={
+          highlighted
+            ? '!border-blue-500 !bg-blue-50 shadow-[0_18px_34px_rgba(54,94,255,0.14)] ring-2 ring-blue-100'
+            : ''
+        }
+        title={article.title}
+        titleAriaLabel={article.title}
+        onTitleClick={() => onOpenEditor(article)}
+        statusTag={<StatusBadge copy={copy} status={article.status} />}
+        metaItems={[
+          {
+            icon: CalendarClock,
+            key: 'updatedAt',
+            label: copy.fields.updatedAt,
+            value: article.updatedAt,
+          },
+          {
+            icon: UserRound,
+            key: 'updatedBy',
+            label: copy.fields.updatedBy,
+            value: article.updatedBy,
+          },
+        ]}
+        actions={[
+          {
+            icon: Trash2,
+            key: 'delete',
+            label: copy.delete,
+            onClick: () => onDelete(article),
+            tone: 'danger',
+          },
+          {
+            icon: Copy,
+            key: 'duplicate',
+            label: copy.duplicate,
+            onClick: () => onDuplicate(article),
+          },
+          {
+            icon: Settings2,
+            key: 'publishSettings',
+            label: copy.publishSettings,
+            onClick: () => onPublishSettings(article),
+          },
+        ]}
+      />
+    </div>
+  );
+}
 
-          <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-base font-medium text-slate-500">
-            <span className="inline-flex items-center gap-2">
-              <CalendarClock className="h-4 w-4" />
-              {copy.fields.updatedAt}: {article.updatedAt}
-            </span>
-            <span className="inline-flex items-center gap-2">
-              <UserRound className="h-4 w-4" />
-              {copy.fields.updatedBy}: {article.updatedBy}
-            </span>
-          </div>
-        </div>
+function getTaskMeta(task, copy) {
+  const status = getTaskGenerationStatus(task);
+  const date = getTaskUpdatedAt(task);
 
-        <div className="flex flex-none items-center gap-4">
-          <button
-            type="button"
-            className="inline-flex items-center gap-1.5 text-sm font-semibold text-red-500 transition hover:text-red-400"
-            onClick={() => onDelete(article)}
-          >
-            <Trash2 className="h-4 w-4" />
-            {copy.delete}
-          </button>
-          <button
-            type="button"
-            className="inline-flex items-center gap-1.5 text-sm font-semibold text-blue-600 transition hover:text-blue-500"
-            onClick={() => onDuplicate(article)}
-          >
-            <Copy className="h-4 w-4" />
-            {copy.duplicate}
-          </button>
-          <button
-            type="button"
-            className="inline-flex items-center gap-1.5 text-sm font-semibold text-blue-600 transition hover:text-blue-500"
-            onClick={() => onPublishSettings(article)}
-          >
-            <Settings2 className="h-4 w-4" />
-            {copy.publishSettings}
-          </button>
-        </div>
+  if (status === 'success') {
+    return `${copy.taskList.completedAt}: ${date}    ${copy.taskList.outputs}: ${copy.taskList.outputNames}`;
+  }
+
+  if (status === 'stopped') {
+    return `${copy.taskList.stoppedAt}: ${date}    ${copy.taskList.stoppedBody}`;
+  }
+
+  if (status === 'failed') {
+    return `${copy.taskList.failedNode}: ${getTaskStageLabel(task, copy)}    ${copy.taskList.error}: ${
+      task.errorMessage || copy.taskList.unknownError
+    }`;
+  }
+
+  return `${copy.taskList.progress}: ${getTaskProgress(task)}%    ${getTaskStageLabel(task, copy)}`;
+}
+
+function TaskCard({
+  copy,
+  onDelete,
+  onOpenProcess,
+  onRecreate,
+  onSaveAndEdit,
+  onStop,
+  onViewArticle,
+  task,
+}) {
+  const status = getTaskGenerationStatus(task);
+  const savedArticleId = getTaskSavedArticleId(task);
+
+  return (
+    <ListCard
+      title={getTaskTitle(task)}
+      titleAriaLabel={getTaskTitle(task)}
+      onTitleClick={() => onOpenProcess?.(task)}
+      statusTag={<GenerationStatusBadge copy={copy} status={status} />}
+      actions={[
+        {
+          hidden: status === 'generating',
+          icon: Trash2,
+          key: 'delete',
+          label: copy.delete,
+          onClick: () => onDelete(task),
+          tone: 'danger',
+        },
+        {
+          hidden: status !== 'generating',
+          icon: CircleStop,
+          key: 'stop',
+          label: copy.taskList.actions.stop,
+          onClick: () => onStop(task),
+        },
+        {
+          hidden: status !== 'success' || Boolean(savedArticleId),
+          icon: Save,
+          key: 'saveAndEdit',
+          label: copy.taskList.actions.saveAndEdit,
+          onClick: () => onSaveAndEdit(task),
+        },
+        {
+          hidden: status !== 'success' || !savedArticleId,
+          icon: FileSearch,
+          key: 'viewArticle',
+          label: copy.taskList.actions.viewArticle,
+          onClick: () => onViewArticle(task),
+        },
+        {
+          hidden: status !== 'stopped' && status !== 'failed',
+          icon: RefreshCw,
+          key: 'recreate',
+          label: copy.taskList.actions.recreate,
+          onClick: () => onRecreate(task),
+        },
+        {
+          icon: History,
+          key: 'viewProcess',
+          label: copy.taskList.actions.viewProcess,
+          onClick: () => onOpenProcess?.(task),
+        },
+      ]}
+    >
+      <p className="text-base font-medium text-slate-500">{getTaskMeta(task, copy)}</p>
+    </ListCard>
+  );
+}
+
+function EmptyState({ body, title }) {
+  return (
+    <div className="grid h-full min-h-[420px] place-items-center rounded-lg border border-dashed border-slate-200 bg-slate-50 px-6 text-center">
+      <div>
+        <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
+          <FileText className="h-5 w-5" />
+        </span>
+        <h3 className="mt-5 text-xl font-bold text-slate-800">{title}</h3>
+        <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-slate-500">{body}</p>
       </div>
-    </article>
+    </div>
   );
 }
 
@@ -190,29 +637,54 @@ export default function BlogArticlePage({
   creationNotice,
   onCreationNoticeConsumed,
   onOpenAiCreation,
+  onOpenAiTask,
+  onRecreateAiTask,
   onOpenEditor,
   project,
   t,
 }) {
   const copy = t.blogArticle;
+  const [activeTab, setActiveTab] = useState('articles');
   const [articles, setArticles] = useState(() => getBlogArticleDrafts(project));
-  const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [advancedFilters, setAdvancedFilters] = useState(emptyAdvancedFilters);
-  const [draftAdvancedFilters, setDraftAdvancedFilters] = useState(emptyAdvancedFilters);
-  const [filterOpen, setFilterOpen] = useState(false);
+  const [tasks, setTasks] = useState(() => getAiCreationTasks(project.id));
+  const [articleSearchQuery, setArticleSearchQuery] = useState('');
+  const [articleStatusFilter, setArticleStatusFilter] = useState('all');
+  const [articleAdvancedFilters, setArticleAdvancedFilters] = useState(emptyAdvancedFilters);
+  const [draftArticleAdvancedFilters, setDraftArticleAdvancedFilters] = useState(emptyAdvancedFilters);
+  const [articleFilterOpen, setArticleFilterOpen] = useState(false);
+  const [taskSearchQuery, setTaskSearchQuery] = useState('');
+  const [taskStatusFilter, setTaskStatusFilter] = useState('all');
+  const [taskAdvancedFilters, setTaskAdvancedFilters] = useState(emptyAdvancedFilters);
+  const [draftTaskAdvancedFilters, setDraftTaskAdvancedFilters] = useState(emptyAdvancedFilters);
+  const [taskFilterOpen, setTaskFilterOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [taskDeleteTarget, setTaskDeleteTarget] = useState(null);
+  const [creationModeOpen, setCreationModeOpen] = useState(false);
   const [toast, setToast] = useState(null);
-  const filterRef = useRef(null);
+  const [articleFocus, setArticleFocus] = useState({ id: '', token: 0 });
+  const articleFilterRef = useRef(null);
+  const taskFilterRef = useRef(null);
+  const articleCardRefs = useRef(new Map());
 
   useEffect(() => {
+    setActiveTab('articles');
     setArticles(getBlogArticleDrafts(project));
-    setSearchQuery('');
-    setStatusFilter('all');
-    setAdvancedFilters(emptyAdvancedFilters);
-    setDraftAdvancedFilters(emptyAdvancedFilters);
-    setFilterOpen(false);
+    setTasks(getAiCreationTasks(project.id));
+    setArticleSearchQuery('');
+    setArticleStatusFilter('all');
+    setArticleAdvancedFilters(emptyAdvancedFilters);
+    setDraftArticleAdvancedFilters(emptyAdvancedFilters);
+    setArticleFilterOpen(false);
+    setTaskSearchQuery('');
+    setTaskStatusFilter('all');
+    setTaskAdvancedFilters(emptyAdvancedFilters);
+    setDraftTaskAdvancedFilters(emptyAdvancedFilters);
+    setTaskFilterOpen(false);
     setDeleteTarget(null);
+    setTaskDeleteTarget(null);
+    setCreationModeOpen(false);
+    setArticleFocus({ id: '', token: 0 });
+    articleCardRefs.current.clear();
   }, [project]);
 
   useEffect(() => {
@@ -221,6 +693,7 @@ export default function BlogArticlePage({
     }
 
     setArticles(getBlogArticleDrafts(project));
+    setTasks(getAiCreationTasks(project.id));
     setToast({
       id: creationNotice.id,
       message: creationNotice.message,
@@ -240,19 +713,23 @@ export default function BlogArticlePage({
 
   useEffect(() => {
     function handleClickOutside(event) {
-      if (filterRef.current && !filterRef.current.contains(event.target)) {
-        setFilterOpen(false);
+      if (articleFilterOpen && articleFilterRef.current && !articleFilterRef.current.contains(event.target)) {
+        setArticleFilterOpen(false);
+      }
+
+      if (taskFilterOpen && taskFilterRef.current && !taskFilterRef.current.contains(event.target)) {
+        setTaskFilterOpen(false);
       }
     }
 
-    if (filterOpen) {
+    if (articleFilterOpen || taskFilterOpen) {
       document.addEventListener('mousedown', handleClickOutside);
     }
 
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [filterOpen]);
+  }, [articleFilterOpen, taskFilterOpen]);
 
-  const audienceOptions = useMemo(() => {
+  const articleAudienceOptions = useMemo(() => {
     const personas = project?.demoProject?.audiencePersonas ?? [];
     const seen = new Set();
     const options = [{ value: 'all', label: copy.filters.allAudiences }];
@@ -277,7 +754,30 @@ export default function BlogArticlePage({
     return options;
   }, [articles, copy.filters.allAudiences, project]);
 
-  const updatedByOptions = useMemo(() => {
+  const taskAudienceOptions = useMemo(() => {
+    const personas = project?.demoProject?.audiencePersonas ?? [];
+    const seen = new Set();
+    const options = [{ value: 'all', label: copy.filters.allAudiences }];
+
+    personas.forEach((persona) => {
+      if (!seen.has(persona.id)) {
+        seen.add(persona.id);
+        options.push({ value: persona.id, label: persona.title });
+      }
+    });
+
+    tasks.forEach((task) => {
+      const audienceId = getTaskAudienceId(task);
+      if (audienceId && !seen.has(audienceId)) {
+        seen.add(audienceId);
+        options.push({ value: audienceId, label: getTaskAudienceName(task) || audienceId });
+      }
+    });
+
+    return options;
+  }, [copy.filters.allAudiences, project, tasks]);
+
+  const articleUpdatedByOptions = useMemo(() => {
     const users = Array.from(new Set(articles.map((article) => article.updatedBy).filter(Boolean)));
     return [
       { value: 'all', label: copy.filters.allUpdatedBy },
@@ -285,35 +785,65 @@ export default function BlogArticlePage({
     ];
   }, [articles, copy.filters.allUpdatedBy]);
 
-  const statusOptions = [
+  const taskUpdatedByOptions = useMemo(() => {
+    const users = Array.from(new Set(tasks.map(getTaskUpdatedBy).filter(Boolean)));
+    return [
+      { value: 'all', label: copy.filters.allUpdatedBy },
+      ...users.map((user) => ({ value: user, label: user })),
+    ];
+  }, [copy.filters.allUpdatedBy, tasks]);
+
+  const articleStatusOptionsForSelect = [
     { value: 'all', label: copy.filters.allStatuses },
     ...articleStatusOptions.map((status) => ({ value: status, label: copy.status[status] })),
   ];
-  const typeOptions = [
+  const taskStatusOptionsForSelect = [
+    { value: 'all', label: copy.taskList.filters.allStatuses },
+    ...taskStatusValues.map((status) => ({ value: status, label: copy.taskList.status[status] })),
+  ];
+  const articleTypeOptionsForSelect = [
     { value: 'all', label: copy.filters.allTypes },
     ...articleTypeOptions.map((type) => ({ value: type, label: type })),
   ];
+  const taskTypeOptionsForSelect = useMemo(() => {
+    const types = [...articleTypeOptions];
+    tasks.forEach((task) => {
+      const type = getTaskArticleType(task);
+      if (type && !types.includes(type)) {
+        types.push(type);
+      }
+    });
 
-  const hasAdvancedFilters = hasAdvancedFilterValue(advancedFilters);
-  const hasActiveFilters = Boolean(searchQuery.trim()) || statusFilter !== 'all' || hasAdvancedFilters;
+    return [
+      { value: 'all', label: copy.filters.allTypes },
+      ...types.map((type) => ({ value: type, label: type })),
+    ];
+  }, [copy.filters.allTypes, tasks]);
+
+  const hasArticleAdvancedFilters = hasAdvancedFilterValue(articleAdvancedFilters);
+  const hasTaskAdvancedFilters = hasAdvancedFilterValue(taskAdvancedFilters);
+  const hasArticleActiveFilters =
+    Boolean(articleSearchQuery.trim()) || articleStatusFilter !== 'all' || hasArticleAdvancedFilters;
+  const hasTaskActiveFilters =
+    Boolean(taskSearchQuery.trim()) || taskStatusFilter !== 'all' || hasTaskAdvancedFilters;
 
   const filteredArticles = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
+    const query = articleSearchQuery.trim().toLowerCase();
 
     return articles.filter((article) => {
-      const matchesQuery = !query || getSearchText(article).includes(query);
-      const matchesStatus = statusFilter === 'all' || article.status === statusFilter;
+      const matchesQuery = !query || getArticleSearchText(article).includes(query);
+      const matchesStatus = articleStatusFilter === 'all' || article.status === articleStatusFilter;
       const matchesAudience =
-        advancedFilters.audiencePersonaId === 'all' ||
-        article.targetAudiencePersonaId === advancedFilters.audiencePersonaId;
+        articleAdvancedFilters.audiencePersonaId === 'all' ||
+        article.targetAudiencePersonaId === articleAdvancedFilters.audiencePersonaId;
       const matchesType =
-        advancedFilters.articleType === 'all' || article.articleType === advancedFilters.articleType;
+        articleAdvancedFilters.articleType === 'all' || article.articleType === articleAdvancedFilters.articleType;
       const matchesUpdatedBy =
-        advancedFilters.updatedBy === 'all' || article.updatedBy === advancedFilters.updatedBy;
+        articleAdvancedFilters.updatedBy === 'all' || article.updatedBy === articleAdvancedFilters.updatedBy;
       const matchesUpdatedFrom =
-        !advancedFilters.updatedFrom || article.updatedAt >= advancedFilters.updatedFrom;
+        !articleAdvancedFilters.updatedFrom || article.updatedAt >= articleAdvancedFilters.updatedFrom;
       const matchesUpdatedTo =
-        !advancedFilters.updatedTo || article.updatedAt <= advancedFilters.updatedTo;
+        !articleAdvancedFilters.updatedTo || article.updatedAt <= articleAdvancedFilters.updatedTo;
 
       return (
         matchesQuery &&
@@ -325,7 +855,58 @@ export default function BlogArticlePage({
         matchesUpdatedTo
       );
     });
-  }, [advancedFilters, articles, searchQuery, statusFilter]);
+  }, [articleAdvancedFilters, articleSearchQuery, articleStatusFilter, articles]);
+
+  const filteredTasks = useMemo(() => {
+    const query = taskSearchQuery.trim().toLowerCase();
+
+    return tasks.filter((task) => {
+      const taskDate = getTaskUpdatedAt(task);
+      const matchesQuery = !query || getTaskSearchText(task).includes(query);
+      const matchesStatus = taskStatusFilter === 'all' || getTaskGenerationStatus(task) === taskStatusFilter;
+      const matchesAudience =
+        taskAdvancedFilters.audiencePersonaId === 'all' || getTaskAudienceId(task) === taskAdvancedFilters.audiencePersonaId;
+      const matchesType =
+        taskAdvancedFilters.articleType === 'all' || getTaskArticleType(task) === taskAdvancedFilters.articleType;
+      const matchesUpdatedBy =
+        taskAdvancedFilters.updatedBy === 'all' || getTaskUpdatedBy(task) === taskAdvancedFilters.updatedBy;
+      const matchesUpdatedFrom = !taskAdvancedFilters.updatedFrom || taskDate >= taskAdvancedFilters.updatedFrom;
+      const matchesUpdatedTo = !taskAdvancedFilters.updatedTo || taskDate <= taskAdvancedFilters.updatedTo;
+
+      return (
+        matchesQuery &&
+        matchesStatus &&
+        matchesAudience &&
+        matchesType &&
+        matchesUpdatedBy &&
+        matchesUpdatedFrom &&
+        matchesUpdatedTo
+      );
+    });
+  }, [taskAdvancedFilters, taskSearchQuery, taskStatusFilter, tasks]);
+
+  useEffect(() => {
+    if (!articleFocus.id || activeTab !== 'articles') {
+      return undefined;
+    }
+
+    const target = articleCardRefs.current.get(articleFocus.id);
+    if (!target) {
+      return undefined;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+    const timer = window.setTimeout(() => {
+      setArticleFocus((current) => (current.token === articleFocus.token ? { id: '', token: current.token } : current));
+    }, 2600);
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+    };
+  }, [activeTab, articleFocus, filteredArticles]);
 
   function persist(nextArticles, message, type = 'success') {
     const saved = saveBlogArticleDrafts(project.id, nextArticles);
@@ -336,6 +917,14 @@ export default function BlogArticlePage({
     }
 
     return saved;
+  }
+
+  function refreshTasks(message, type = 'success') {
+    setTasks(getAiCreationTasks(project.id));
+
+    if (message) {
+      setToast({ id: Date.now(), message, type });
+    }
   }
 
   function createBlankArticle() {
@@ -370,50 +959,211 @@ export default function BlogArticlePage({
     setDeleteTarget(null);
   }
 
-  function toggleAdvancedFilter() {
-    setDraftAdvancedFilters(advancedFilters);
-    setFilterOpen((current) => !current);
+  function confirmDeleteTask() {
+    if (!taskDeleteTarget) {
+      return;
+    }
+
+    deleteAiCreationTask(project.id, taskDeleteTarget.id);
+    refreshTasks(copy.taskList.toast.deleted);
+    setTaskDeleteTarget(null);
   }
 
-  function updateDraftAdvancedFilter(field, value) {
-    setDraftAdvancedFilters((current) => ({
+  function updateDraftArticleAdvancedFilter(field, value) {
+    setDraftArticleAdvancedFilters((current) => ({
       ...current,
       [field]: value,
     }));
   }
 
-  function applyAdvancedFilters() {
-    setAdvancedFilters(draftAdvancedFilters);
-    setFilterOpen(false);
+  function updateDraftTaskAdvancedFilter(field, value) {
+    setDraftTaskAdvancedFilters((current) => ({
+      ...current,
+      [field]: value,
+    }));
   }
 
-  function clearAdvancedFilters() {
-    setAdvancedFilters(emptyAdvancedFilters);
-    setDraftAdvancedFilters(emptyAdvancedFilters);
-    setFilterOpen(false);
+  function applyArticleAdvancedFilters() {
+    setArticleAdvancedFilters(draftArticleAdvancedFilters);
+    setArticleFilterOpen(false);
   }
 
-  function clearAllFilters() {
-    setSearchQuery('');
-    setStatusFilter('all');
-    clearAdvancedFilters();
+  function applyTaskAdvancedFilters() {
+    setTaskAdvancedFilters(draftTaskAdvancedFilters);
+    setTaskFilterOpen(false);
+  }
+
+  function clearArticleAdvancedFilters() {
+    setArticleAdvancedFilters(emptyAdvancedFilters);
+    setDraftArticleAdvancedFilters(emptyAdvancedFilters);
+    setArticleFilterOpen(false);
+  }
+
+  function clearTaskAdvancedFilters() {
+    setTaskAdvancedFilters(emptyAdvancedFilters);
+    setDraftTaskAdvancedFilters(emptyAdvancedFilters);
+    setTaskFilterOpen(false);
+  }
+
+  function clearAllArticleFilters() {
+    setArticleSearchQuery('');
+    setArticleStatusFilter('all');
+    clearArticleAdvancedFilters();
+  }
+
+  function clearAllTaskFilters() {
+    setTaskSearchQuery('');
+    setTaskStatusFilter('all');
+    clearTaskAdvancedFilters();
   }
 
   function openAiCreation() {
-    if (onOpenAiCreation) {
-      onOpenAiCreation();
-      return;
-    }
+    setCreationModeOpen(true);
+  }
 
-    setToast({ id: Date.now(), message: copy.toast.aiComingSoon, type: 'info' });
+  function selectCreationMode(mode) {
+    setCreationModeOpen(false);
+    onOpenAiCreation?.(mode);
   }
 
   function openPublishSettings() {
     setToast({ id: Date.now(), message: copy.toast.publishSettingsComingSoon, type: 'info' });
   }
 
+  function stopTask(task) {
+    const flowStage = getTaskFlowStage(task);
+    const nextStage = flowStage === 'auto' ? 'auto-stopped' : `${flowStage}-stopped`;
+    const payloadStage = flowStage === 'auto' ? 'content' : flowStage;
+
+    updateAiCreationTask(project.id, task.id, {
+      stage: nextStage,
+      [payloadStage]: {
+        ...(task[payloadStage] ?? {}),
+        isStopped: true,
+        updatedAt: getTodayString(),
+      },
+    });
+    refreshTasks(copy.taskList.toast.stopped, 'warning');
+  }
+
+  function recreateTask(task) {
+    onRecreateAiTask?.(task);
+  }
+
+  function saveTaskAndEdit(task) {
+    const { article: nextArticle } = saveAiTaskAsBlogArticle(project, task);
+
+    setArticles(getBlogArticleDrafts(project));
+    setToast({ id: Date.now(), message: copy.taskList.toast.saved, type: 'success' });
+    setTasks(getAiCreationTasks(project.id));
+    onOpenEditor(nextArticle);
+  }
+
+  function viewSavedArticle(task) {
+    const savedArticleId = getTaskSavedArticleId(task);
+    if (!savedArticleId) {
+      return;
+    }
+
+    const nextArticles = getBlogArticleDrafts(project);
+    const nextTasks = getAiCreationTasks(project.id);
+    const targetArticle = nextArticles.find((article) => article.id === savedArticleId);
+
+    setArticles(nextArticles);
+    setTasks(nextTasks);
+
+    if (!targetArticle) {
+      setToast({ id: Date.now(), message: copy.taskList.toast.articleMissing, type: 'warning' });
+      return;
+    }
+
+    setActiveTab('articles');
+    setArticleSearchQuery('');
+    setArticleStatusFilter('all');
+    setArticleAdvancedFilters({ ...emptyAdvancedFilters });
+    setDraftArticleAdvancedFilters({ ...emptyAdvancedFilters });
+    setArticleFilterOpen(false);
+    setTaskFilterOpen(false);
+    setArticleFocus({ id: savedArticleId, token: Date.now() });
+  }
+
+  function switchTab(tab) {
+    if (tab === 'articles') {
+      setArticles(getBlogArticleDrafts(project));
+    }
+
+    if (tab === 'tasks') {
+      setTasks(getAiCreationTasks(project.id));
+    }
+
+    setActiveTab(tab);
+    setArticleFilterOpen(false);
+    setTaskFilterOpen(false);
+  }
+
+  const activeFilterToolbar =
+    activeTab === 'articles' ? (
+      <FilterToolbar
+        advancedFilters={articleAdvancedFilters}
+        audienceOptions={articleAudienceOptions}
+        copy={copy}
+        draftAdvancedFilters={draftArticleAdvancedFilters}
+        filterOpen={articleFilterOpen}
+        filterRef={articleFilterRef}
+        hasActiveFilters={hasArticleActiveFilters}
+        hasAdvancedFilters={hasArticleAdvancedFilters}
+        onApplyAdvancedFilters={applyArticleAdvancedFilters}
+        onClearAdvancedFilters={clearArticleAdvancedFilters}
+        onClearAllFilters={clearAllArticleFilters}
+        onSearchChange={setArticleSearchQuery}
+        onStatusChange={setArticleStatusFilter}
+        onToggleAdvancedFilter={() => {
+          setDraftArticleAdvancedFilters(articleAdvancedFilters);
+          setArticleFilterOpen((current) => !current);
+        }}
+        onUpdateDraftAdvancedFilter={updateDraftArticleAdvancedFilter}
+        searchPlaceholder={copy.filters.searchPlaceholder}
+        searchQuery={articleSearchQuery}
+        setFilterOpen={setArticleFilterOpen}
+        statusFilter={articleStatusFilter}
+        statusLabel={copy.filters.statusLabel}
+        statusOptions={articleStatusOptionsForSelect}
+        typeOptions={articleTypeOptionsForSelect}
+        updatedByOptions={articleUpdatedByOptions}
+      />
+    ) : (
+      <FilterToolbar
+        advancedFilters={taskAdvancedFilters}
+        audienceOptions={taskAudienceOptions}
+        copy={copy}
+        draftAdvancedFilters={draftTaskAdvancedFilters}
+        filterOpen={taskFilterOpen}
+        filterRef={taskFilterRef}
+        hasActiveFilters={hasTaskActiveFilters}
+        hasAdvancedFilters={hasTaskAdvancedFilters}
+        onApplyAdvancedFilters={applyTaskAdvancedFilters}
+        onClearAdvancedFilters={clearTaskAdvancedFilters}
+        onClearAllFilters={clearAllTaskFilters}
+        onSearchChange={setTaskSearchQuery}
+        onStatusChange={setTaskStatusFilter}
+        onToggleAdvancedFilter={() => {
+          setDraftTaskAdvancedFilters(taskAdvancedFilters);
+          setTaskFilterOpen((current) => !current);
+        }}
+        onUpdateDraftAdvancedFilter={updateDraftTaskAdvancedFilter}
+        searchPlaceholder={copy.filters.searchPlaceholder}
+        searchQuery={taskSearchQuery}
+        setFilterOpen={setTaskFilterOpen}
+        statusFilter={taskStatusFilter}
+        statusLabel={copy.taskList.filters.statusLabel}
+        statusOptions={taskStatusOptionsForSelect}
+        typeOptions={taskTypeOptionsForSelect}
+        updatedByOptions={taskUpdatedByOptions}
+      />
+    );
+
   return (
-    <div className={`mx-auto max-w-[1600px] ${adaptivePageLayout.pageStack}`}>
+    <div className="mx-auto max-w-[1600px]">
       {toast ? <Toast key={toast.id} message={toast.message} testId="blog-article-toast" type={toast.type} /> : null}
 
       {deleteTarget ? (
@@ -428,195 +1178,123 @@ export default function BlogArticlePage({
         />
       ) : null}
 
-      <PageHeader
-        actions={
-          <>
-            <Button icon={FilePlus2} variant="neutral" onClick={createBlankArticle}>
-              {copy.createBlank}
-            </Button>
-            <Button icon={Bot} onClick={openAiCreation}>
-              {copy.aiCreate}
-            </Button>
-          </>
-        }
-        description={copy.description}
-        title={copy.title}
-      />
+      {taskDeleteTarget ? (
+        <ConfirmDialog
+          cancelLabel={copy.cancel}
+          confirmLabel={copy.confirmDelete}
+          danger
+          message={copy.taskList.deleteBody(getTaskTitle(taskDeleteTarget))}
+          onCancel={() => setTaskDeleteTarget(null)}
+          onConfirm={confirmDeleteTask}
+          title={copy.taskList.deleteTitle}
+        />
+      ) : null}
 
-      <div className={adaptivePageLayout.workArea}>
-        <section className={`${adaptivePageLayout.scrollPanel} p-7`}>
-          <div className="mb-5 flex flex-none flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-            <h3 className="text-xl font-bold text-slate-800">{copy.listTitle}</h3>
+      {creationModeOpen ? (
+        <CreationModeDialog
+          copy={copy}
+          onCancel={() => setCreationModeOpen(false)}
+          onSelect={selectCreationMode}
+        />
+      ) : null}
 
-            <div className="flex flex-wrap items-center gap-3">
-              <label className="relative block w-full sm:w-[360px]">
-                <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
-                <input
-                  className="h-11 w-full rounded-md border border-slate-200 bg-white pl-10 pr-3 text-base text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                  onChange={(event) => setSearchQuery(event.target.value)}
-                  placeholder={copy.filters.searchPlaceholder}
-                  type="search"
-                  value={searchQuery}
-                />
-              </label>
+      <div className={adaptivePageLayout.pageStack}>
+        <PageHeader
+          actions={
+            <>
+              <Button icon={FilePlus2} variant="neutral" onClick={createBlankArticle}>
+                {copy.createBlank}
+              </Button>
+              <Button icon={FilePenLine} onClick={openAiCreation}>
+                {copy.aiCreate}
+              </Button>
+            </>
+          }
+          description={copy.description}
+          title={copy.title}
+        />
 
-              <div className="w-[180px]">
-                <SelectControl
-                  label={copy.filters.statusLabel}
-                  onChange={setStatusFilter}
-                  options={statusOptions}
-                  value={statusFilter}
-                />
-              </div>
-
-              <div ref={filterRef} className="relative">
-                <button
-                  type="button"
-                  className={`relative inline-flex h-11 w-11 items-center justify-center rounded-md border text-sm font-semibold transition ${
-                    hasAdvancedFilters || filterOpen
-                      ? 'border-blue-200 bg-blue-50 text-blue-600'
-                      : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-700'
-                  }`}
-                  onClick={toggleAdvancedFilter}
-                  aria-expanded={filterOpen}
-                  aria-label={copy.filters.advancedTitle}
-                >
-                  <SlidersHorizontal className="h-4 w-4" />
-                  {hasAdvancedFilters ? (
-                    <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-blue-600" />
-                  ) : null}
-                </button>
-
-                {filterOpen ? (
-                  <form
-                    className="absolute right-0 top-[calc(100%+8px)] z-40 w-[calc(100vw-64px)] rounded-lg border border-slate-200 bg-white p-4 shadow-menu sm:w-[520px]"
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      applyAdvancedFilters();
-                    }}
+        <div className={adaptivePageLayout.workArea}>
+          <section className={`${adaptivePageLayout.scrollPanel} p-7`}>
+            <div className="mb-5 flex flex-none flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+              <div className="flex flex-wrap items-center gap-3">
+                {[
+                  { id: 'articles', label: copy.listTitle },
+                  { id: 'tasks', label: copy.taskList.title },
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    className={`rounded-lg px-4 py-2 text-xl font-bold transition ${
+                      activeTab === tab.id
+                        ? 'bg-blue-50 text-slate-800'
+                        : 'text-slate-800 hover:bg-slate-50 hover:text-blue-600'
+                    }`}
+                    onClick={() => switchTab(tab.id)}
                   >
-                    <div className="mb-4 flex items-center justify-between">
-                      <h4 className="text-base font-bold text-slate-800">{copy.filters.advancedTitle}</h4>
-                      <button
-                        type="button"
-                        className="rounded-full p-1 text-slate-400 transition hover:bg-slate-50 hover:text-slate-700"
-                        onClick={() => setFilterOpen(false)}
-                        aria-label={copy.filters.close}
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    </div>
-
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <label className="block">
-                        <span className="mb-2 block text-sm font-medium text-slate-500">
-                          {copy.filters.audienceLabel}
-                        </span>
-                        <SelectControl
-                          label={copy.filters.audienceLabel}
-                          onChange={(value) => updateDraftAdvancedFilter('audiencePersonaId', value)}
-                          options={audienceOptions}
-                          value={draftAdvancedFilters.audiencePersonaId}
-                        />
-                      </label>
-                      <label className="block">
-                        <span className="mb-2 block text-sm font-medium text-slate-500">
-                          {copy.filters.typeLabel}
-                        </span>
-                        <SelectControl
-                          label={copy.filters.typeLabel}
-                          onChange={(value) => updateDraftAdvancedFilter('articleType', value)}
-                          options={typeOptions}
-                          value={draftAdvancedFilters.articleType}
-                        />
-                      </label>
-                      <label className="block">
-                        <span className="mb-2 block text-sm font-medium text-slate-500">
-                          {copy.filters.updatedFrom}
-                        </span>
-                        <input
-                          className="h-11 w-full rounded-md border border-slate-200 px-3 text-base text-slate-700 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                          onChange={(event) => updateDraftAdvancedFilter('updatedFrom', event.target.value)}
-                          type="date"
-                          value={draftAdvancedFilters.updatedFrom}
-                        />
-                      </label>
-                      <label className="block">
-                        <span className="mb-2 block text-sm font-medium text-slate-500">
-                          {copy.filters.updatedTo}
-                        </span>
-                        <input
-                          className="h-11 w-full rounded-md border border-slate-200 px-3 text-base text-slate-700 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                          onChange={(event) => updateDraftAdvancedFilter('updatedTo', event.target.value)}
-                          type="date"
-                          value={draftAdvancedFilters.updatedTo}
-                        />
-                      </label>
-                      <label className="block sm:col-span-2">
-                        <span className="mb-2 block text-sm font-medium text-slate-500">
-                          {copy.filters.updatedByLabel}
-                        </span>
-                        <SelectControl
-                          label={copy.filters.updatedByLabel}
-                          onChange={(value) => updateDraftAdvancedFilter('updatedBy', value)}
-                          options={updatedByOptions}
-                          value={draftAdvancedFilters.updatedBy}
-                        />
-                      </label>
-                    </div>
-
-                    <div className="mt-5 flex justify-end gap-3">
-                      <Button variant="neutral" onClick={clearAdvancedFilters}>
-                        {copy.filters.clearAdvanced}
-                      </Button>
-                      <Button type="submit">
-                        {copy.filters.apply}
-                      </Button>
-                    </div>
-                  </form>
-                ) : null}
-              </div>
-
-              {hasActiveFilters ? (
-                <Button variant="neutral" onClick={clearAllFilters}>
-                  {copy.filters.clearAll}
-                </Button>
-              ) : null}
-            </div>
-          </div>
-
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            {filteredArticles.length ? (
-              <div className="space-y-4">
-                {filteredArticles.map((article) => (
-                  <ArticleCard
-                    key={article.id}
-                    article={article}
-                    copy={copy}
-                    onDelete={setDeleteTarget}
-                    onDuplicate={duplicateArticle}
-                    onOpenEditor={onOpenEditor}
-                    onPublishSettings={openPublishSettings}
-                  />
+                    {tab.label}
+                  </button>
                 ))}
               </div>
-            ) : (
-              <div className="grid h-full min-h-[420px] place-items-center rounded-lg border border-dashed border-slate-200 bg-slate-50 px-6 text-center">
-                <div>
-                  <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
-                    <FileText className="h-5 w-5" />
-                  </span>
-                  <h3 className="mt-5 text-xl font-bold text-slate-800">
-                    {articles.length ? copy.empty.filteredTitle : copy.empty.title}
-                  </h3>
-                  <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-slate-500">
-                    {articles.length ? copy.empty.filteredBody : copy.empty.body}
-                  </p>
+
+              {activeFilterToolbar}
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {activeTab === 'articles' ? (
+                filteredArticles.length ? (
+                  <div className="space-y-4">
+                    {filteredArticles.map((article) => (
+                      <ArticleCard
+                        key={article.id}
+                        article={article}
+                        copy={copy}
+                        highlighted={articleFocus.id === article.id}
+                        onDelete={setDeleteTarget}
+                        onDuplicate={duplicateArticle}
+                        onOpenEditor={onOpenEditor}
+                        onPublishSettings={openPublishSettings}
+                        setCardRef={(node) => {
+                          if (node) {
+                            articleCardRefs.current.set(article.id, node);
+                          } else {
+                            articleCardRefs.current.delete(article.id);
+                          }
+                        }}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <EmptyState
+                    title={articles.length ? copy.empty.filteredTitle : copy.empty.title}
+                    body={articles.length ? copy.empty.filteredBody : copy.empty.body}
+                  />
+                )
+              ) : filteredTasks.length ? (
+                <div className="space-y-4">
+                  {filteredTasks.map((task) => (
+                    <TaskCard
+                      key={task.id}
+                      copy={copy}
+                      onDelete={setTaskDeleteTarget}
+                      onOpenProcess={onOpenAiTask}
+                      onRecreate={recreateTask}
+                      onSaveAndEdit={saveTaskAndEdit}
+                      onStop={stopTask}
+                      onViewArticle={viewSavedArticle}
+                      task={task}
+                    />
+                  ))}
                 </div>
-              </div>
-            )}
-          </div>
-        </section>
+              ) : (
+                <EmptyState
+                  title={tasks.length ? copy.taskList.empty.filteredTitle : copy.taskList.empty.title}
+                  body={tasks.length ? copy.taskList.empty.filteredBody : copy.taskList.empty.body}
+                />
+              )}
+            </div>
+          </section>
+        </div>
       </div>
     </div>
   );

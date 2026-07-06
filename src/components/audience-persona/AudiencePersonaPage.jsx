@@ -20,6 +20,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { adaptivePageLayout } from '../layoutClasses.js';
 import Button from '../ui/Button.jsx';
+import ListCard from '../ui/ListCard.jsx';
 import Toast from '../ui/Toast.jsx';
 import {
   contentDepthOptions,
@@ -307,62 +308,52 @@ function FilterSelect({ className = 'w-full sm:w-56', label, onChange, options, 
 
 function PersonaCard({ copy, onDelete, onDuplicate, onEdit, persona }) {
   return (
-    <article className="rounded-lg border border-slate-200 bg-white px-7 py-6 transition hover:border-blue-200 hover:shadow-[0_18px_34px_rgba(15,23,42,0.08)]">
-      <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-        <div className="min-w-0">
-          <div className="flex items-start gap-3">
-            <IconBadge tone="blue">
-              <UsersRound className="h-5 w-5" />
-            </IconBadge>
-            <div className="min-w-0">
-              <h3 className="text-xl font-bold tracking-normal text-slate-800">{persona.name}</h3>
-              <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-base font-medium text-slate-500">
-                <span className="inline-flex items-center gap-2">
-                  <Building2 className="h-4 w-4" />
-                  {persona.organizationType} / {persona.organizationScale}
-                </span>
-                <span className="inline-flex items-center gap-2">
-                  <Layers className="h-4 w-4" />
-                  {persona.industry}
-                </span>
-                <span className="inline-flex items-center gap-2">
-                  <BriefcaseBusiness className="h-4 w-4" />
-                  {persona.jobTitle}
-                </span>
-              </div>
-            </div>
-          </div>
-
-        </div>
-
-        <div className="flex flex-none items-center gap-4">
-          <button
-            type="button"
-            className="inline-flex items-center gap-1.5 text-sm font-semibold text-blue-600 transition hover:text-blue-500"
-            onClick={() => onEdit(persona)}
-          >
-            <Pencil className="h-4 w-4" />
-            {copy.edit}
-          </button>
-          <button
-            type="button"
-            className="inline-flex items-center gap-1.5 text-sm font-semibold text-blue-600 transition hover:text-blue-500"
-            onClick={() => onDuplicate(persona)}
-          >
-            <Copy className="h-4 w-4" />
-            {copy.duplicate}
-          </button>
-          <button
-            type="button"
-            className="inline-flex items-center gap-1.5 text-sm font-semibold text-red-500 transition hover:text-red-400"
-            onClick={() => onDelete(persona)}
-          >
-            <Trash2 className="h-4 w-4" />
-            {copy.delete}
-          </button>
-        </div>
-      </div>
-    </article>
+    <ListCard
+      title={persona.name}
+      leadingIcon={<UsersRound aria-hidden="true" className="h-5 w-5" />}
+      padding="comfortable"
+      metaItems={[
+        {
+          icon: Building2,
+          key: 'organization',
+          label: `${copy.fields.organizationType.label}/${copy.fields.organizationScale.label}`,
+          value: [persona.organizationType, persona.organizationScale].filter(Boolean),
+        },
+        {
+          icon: Layers,
+          key: 'industry',
+          label: copy.fields.industry.label,
+          value: persona.industry,
+        },
+        {
+          icon: BriefcaseBusiness,
+          key: 'jobTitle',
+          label: copy.fields.jobTitle.label,
+          value: persona.jobTitle,
+        },
+      ]}
+      actions={[
+        {
+          icon: Pencil,
+          key: 'edit',
+          label: copy.edit,
+          onClick: () => onEdit(persona),
+        },
+        {
+          icon: Copy,
+          key: 'duplicate',
+          label: copy.duplicate,
+          onClick: () => onDuplicate(persona),
+        },
+        {
+          icon: Trash2,
+          key: 'delete',
+          label: copy.delete,
+          onClick: () => onDelete(persona),
+          tone: 'danger',
+        },
+      ]}
+    />
   );
 }
 
