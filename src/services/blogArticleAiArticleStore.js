@@ -143,8 +143,9 @@ export function getAiTaskArticleContext(project, task) {
 
 export function saveAiTaskAsBlogArticle(project, task, options = {}) {
   const demoData = createContentDemoData(task, project);
-  const finalArticle = demoData.latestFinalArticle;
-  const tdk = demoData.latestTdk;
+  const finalArticle = options.content?.finalArticle ?? demoData.latestFinalArticle;
+  const tdk = options.content?.tdk ?? demoData.latestTdk;
+  const finalEvaluationReport = options.content?.finalEvaluationReport ?? demoData.latestEvaluationReport;
   const existingArticle =
     options.article ?? getBlogArticleDrafts(project).find((article) => article.id === task.articleId);
   const nextArticle = {
@@ -153,7 +154,7 @@ export function saveAiTaskAsBlogArticle(project, task, options = {}) {
     articleType: getTaskArticleType(task) || existingArticle?.articleType || 'Comparison',
     content: finalArticle.content,
     embeddedMediaAssets: finalArticle.images ?? [],
-    evaluationReport: demoData.latestEvaluationReport,
+    evaluationReport: finalEvaluationReport,
     id: existingArticle?.id || task.articleId || createBlogArticleId(),
     keywords: [
       ...new Set([
@@ -178,10 +179,10 @@ export function saveAiTaskAsBlogArticle(project, task, options = {}) {
       ...(task.content ?? {}),
       ...(options.content ?? {}),
       finalArticle,
-      finalEvaluationReport: demoData.latestEvaluationReport,
-      latestEvaluationReportId: demoData.latestEvaluationReportId,
-      latestFinalArticleId: demoData.latestFinalArticleId,
-      latestTdkId: demoData.latestTdkId,
+      finalEvaluationReport,
+      latestEvaluationReportId: options.content?.latestEvaluationReportId ?? demoData.latestEvaluationReportId,
+      latestFinalArticleId: options.content?.latestFinalArticleId ?? demoData.latestFinalArticleId,
+      latestTdkId: options.content?.latestTdkId ?? demoData.latestTdkId,
       savedArticleId: nextArticle.id,
       tdk,
       updatedAt: getTodayString(),

@@ -1313,16 +1313,17 @@ export default function BlogArticleAiAutoCreationPage({
 }) {
   const copy = t.blogArticle.aiCreation;
   const taskListCopy = t.blogArticle.taskList;
-  const [revisionRequests] = useState(() => task?.content?.revisionRequests ?? []);
+  const [localTask, setLocalTask] = useState(() => task);
+  const [revisionRequests, setRevisionRequests] = useState(() => task?.content?.revisionRequests ?? []);
   const [revisionInput, setRevisionInput] = useState('');
   const [localStatus, setLocalStatus] = useState(() => getTaskStatus(task));
   const demoData = useMemo(
-    () => buildAutoDemoData(task, project, revisionRequests),
-    [project, revisionRequests, task],
+    () => buildAutoDemoData(localTask, project, revisionRequests),
+    [localTask, project, revisionRequests],
   );
   const initialState = useMemo(
-    () => getInitialAutoState(demoData.workflow, task, localStatus, demoData.latestFinalArtifactId),
-    [demoData.latestFinalArtifactId, demoData.workflow, localStatus, task],
+    () => getInitialAutoState(demoData.workflow, localTask, localStatus, demoData.latestFinalArtifactId),
+    [demoData.latestFinalArtifactId, demoData.workflow, localStatus, localTask],
   );
   const [currentTaskIndex, setCurrentTaskIndex] = useState(initialState.currentTaskIndex);
   const [visibleThinkingCounts, setVisibleThinkingCounts] = useState(initialState.visibleThinkingCounts);
@@ -1333,7 +1334,7 @@ export default function BlogArticleAiAutoCreationPage({
   const [selectedArtifactId, setSelectedArtifactId] = useState(initialState.selectedArtifactId);
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
   const [toast, setToast] = useState(null);
-  const [stopTaskToast, setStopTaskToast] = useState(null);
+  const [processStatusToast, setProcessStatusToast] = useState(null);
   const workflowRef = useRef(null);
 
   const workflow = demoData.workflow;
@@ -1346,14 +1347,10 @@ export default function BlogArticleAiAutoCreationPage({
   const showRevisionRequestBox = canSaveAndEdit;
 
   useEffect(() => {
-    if (localStatus === 'failed') {
-      setToast({
-        id: Date.now(),
-        message: task?.errorMessage || copy.toast?.autoFailed || '生成失败，可查看已完成内容',
-        type: 'error',
-      });
-    }
-  }, [copy.toast, localStatus, task?.errorMessage]);
+    setLocalTask(task);
+    setRevisionRequests(task?.content?.revisionRequests ?? []);
+    setLocalStatus(getTaskStatus(task));
+  }, [task?.id]);
 
   useEffect(() => {
     if (!toast) return undefined;
@@ -1363,15 +1360,27 @@ export default function BlogArticleAiAutoCreationPage({
   }, [toast]);
 
   useEffect(() => {
-    if (localStatus !== 'stopped') return;
+    if (localStatus !== 'stopped' && localStatus !== 'failed') return;
 
-    setStopTaskToast((current) =>
+    const toastConfig =
+      localStatus === 'failed'
+        ? {
+            message: copy.toast?.autoFailedManual || copy.toast?.autoFailed || '生成失败，请返回上一步重新创建任务',
+            type: 'warning',
+          }
+        : {
+            message: copy.toast?.autoStoppedManual || copy.toast?.autoStopped || copy.actions.stop,
+            type: 'info',
+          };
+
+    setProcessStatusToast((current) =>
       current ?? {
         id: Date.now(),
-        task,
+        task: localTask,
+        ...toastConfig,
       },
     );
-  }, [localStatus, task]);
+  }, [copy.actions.stop, copy.toast, localStatus, localTask]);
 
   useEffect(() => {
     if (isStopped || isComplete || localStatus !== 'generating' || !currentTask) {
@@ -1401,13 +1410,13 @@ export default function BlogArticleAiAutoCreationPage({
       setCompletedTaskIds(nextCompletedTaskIds);
 
       if (currentTaskIndex + 1 >= workflow.length) {
-        const completedStage = inferStageKey(task);
+        const completedStage = inferStageKey(localTask);
         const nextStage = completedStage === 'content' ? 'content-completed' : `${completedStage}-completed`;
         const nextSelectedArtifactId =
           nextStage === 'content-completed' ? demoData.latestFinalArtifactId : selectedArtifactId;
         const nextStagePayload =
-          completedStage === 'content' && isAutoTask(task)
-            ? buildStagePayloadPatch(demoData.visibleStages, demoData, task, {
+          completedStage === 'content' && isAutoTask(localTask)
+            ? buildStagePayloadPatch(demoData.visibleStages, demoData, localTask, {
                 completedTaskIds: nextCompletedTaskIds,
                 isStopped: false,
                 selectedArtifactId: nextSelectedArtifactId,
@@ -1415,7 +1424,7 @@ export default function BlogArticleAiAutoCreationPage({
                 workflow,
               })
             : {
-                [completedStage]: buildStagePayload(completedStage, demoData, task, {
+                [completedStage]: buildStagePayload(completedStage, demoData, localTask, {
                   completedTaskIds: getCompletedTaskIdsForStage(nextCompletedTaskIds, workflow, completedStage),
                   currentArtifactId: getSelectedArtifactIdForStage(nextSelectedArtifactId, completedStage),
                   isStopped: false,
@@ -1428,10 +1437,15 @@ export default function BlogArticleAiAutoCreationPage({
         if (nextStage === 'content-completed') {
           setSelectedArtifactId(nextSelectedArtifactId);
         }
-        updateAiCreationTask(project.id, task.id, {
+        updateAiCreationTask(project.id, localTask.id, {
           stage: nextStage,
           ...nextStagePayload,
         });
+        setLocalTask((current) => ({
+          ...current,
+          stage: nextStage,
+          ...nextStagePayload,
+        }));
         return;
       }
 
@@ -1447,6 +1461,7 @@ export default function BlogArticleAiAutoCreationPage({
     isComplete,
     isStopped,
     localStatus,
+    localTask,
     project.id,
     selectedArtifactId,
     task,
@@ -1478,10 +1493,10 @@ export default function BlogArticleAiAutoCreationPage({
   function handleStopTask() {
     if (!canStop) return;
 
-    const flowStage = inferStageKey(task);
-    const nextStage = isAutoTask(task) ? 'auto-stopped' : `${flowStage}-stopped`;
-    const stoppedPayload = isAutoTask(task)
-      ? buildStagePayloadPatch(demoData.visibleStages, demoData, task, {
+    const flowStage = inferStageKey(localTask);
+    const nextStage = isAutoTask(localTask) ? 'auto-stopped' : `${flowStage}-stopped`;
+    const stoppedPayload = isAutoTask(localTask)
+      ? buildStagePayloadPatch(demoData.visibleStages, demoData, localTask, {
           completedTaskIds,
           isStopped: true,
           selectedArtifactId,
@@ -1489,7 +1504,7 @@ export default function BlogArticleAiAutoCreationPage({
           workflow,
         })
       : {
-          [flowStage]: buildStagePayload(flowStage, demoData, task, {
+          [flowStage]: buildStagePayload(flowStage, demoData, localTask, {
             completedTaskIds: getCompletedTaskIdsForStage(completedTaskIds, workflow, flowStage),
             currentArtifactId: getSelectedArtifactIdForStage(selectedArtifactId, flowStage),
             isStopped: true,
@@ -1499,26 +1514,30 @@ export default function BlogArticleAiAutoCreationPage({
 
     setIsStopped(true);
     setLocalStatus('stopped');
-    const nextTask = updateAiCreationTask(project.id, task.id, {
+    const nextTask = updateAiCreationTask(project.id, localTask.id, {
       stage: nextStage,
       ...stoppedPayload,
     });
-    setStopTaskToast({
+    const fallbackTask = {
+      ...localTask,
+      stage: nextStage,
+      ...stoppedPayload,
+    };
+    setLocalTask(nextTask ?? fallbackTask);
+    setProcessStatusToast({
       id: Date.now(),
-      task: nextTask ?? {
-        ...task,
-        stage: nextStage,
-        ...stoppedPayload,
-      },
+      message: copy.toast?.autoStoppedManual || copy.toast?.autoStopped || copy.actions.stop,
+      task: nextTask ?? fallbackTask,
+      type: 'info',
     });
   }
 
   function handleSaveAndEdit() {
     if (!canSaveAndEdit) return;
 
-    const { article: nextArticle } = saveAiTaskAsBlogArticle(project, task, {
+    const { article: nextArticle, task: nextTask } = saveAiTaskAsBlogArticle(project, localTask, {
       article,
-      content: buildStagePayload('content', demoData, task, {
+      content: buildStagePayload('content', demoData, localTask, {
         completedTaskIds: getCompletedTaskIdsForStage(workflow.map((item) => item.id), workflow, 'content'),
         currentArtifactId: getSelectedArtifactIdForStage(demoData.latestFinalArtifactId, 'content'),
         isStopped: false,
@@ -1526,6 +1545,9 @@ export default function BlogArticleAiAutoCreationPage({
       }),
     });
 
+    if (nextTask) {
+      setLocalTask(nextTask);
+    }
     onSaveAndEdit(nextArticle);
   }
 
@@ -1550,14 +1572,66 @@ export default function BlogArticleAiAutoCreationPage({
     openAppViewInNewTab({
       projectId: project.id,
       sourceId: block.sourceId || block.id,
-      taskId: task.id,
+      taskId: localTask.id,
       view: 'knowledge-source-preview',
     });
   }
 
   function handleSaveRevisionNote() {
-    if (!revisionInput.trim()) return;
+    const requestText = revisionInput.trim();
+    if (!requestText) return;
 
+    const nextVersion = Math.max(1, ...revisionRequests.map((request) => Number(request.version) || 1)) + 1;
+    const nextRevisionRequests = [
+      ...revisionRequests,
+      {
+        createdAt: getTodayString(),
+        id: `revision-request-v${nextVersion}`,
+        status: 'submitted',
+        text: requestText,
+        version: nextVersion,
+      },
+    ];
+    const nextTaskBase = {
+      ...localTask,
+      content: {
+        ...(localTask.content ?? {}),
+        revisionRequests: nextRevisionRequests,
+      },
+    };
+    const nextDemoData = buildAutoDemoData(nextTaskBase, project, nextRevisionRequests);
+    const nextWorkflow = nextDemoData.workflow;
+    const nextCompletedTaskIds = nextWorkflow.map((item) => item.id);
+    const nextVisibleArtifactIds = getWorkflowArtifactIds(nextWorkflow);
+    const nextSelectedArtifactId = nextDemoData.latestFinalArtifactId;
+    const nextContent = buildStagePayload('content', nextDemoData, nextTaskBase, {
+      completedTaskIds: getCompletedTaskIdsForStage(nextCompletedTaskIds, nextWorkflow, 'content'),
+      currentArtifactId: getSelectedArtifactIdForStage(nextSelectedArtifactId, 'content'),
+      isStopped: false,
+      visibleArtifactIds: getVisibleArtifactIdsForStage(nextVisibleArtifactIds, 'content'),
+    });
+    const nextTask = updateAiCreationTask(project.id, localTask.id, {
+      content: nextContent,
+      stage: 'content-completed',
+    });
+
+    setLocalTask(
+      nextTask ?? {
+        ...nextTaskBase,
+        content: nextContent,
+        stage: 'content-completed',
+      },
+    );
+    setRevisionRequests(nextRevisionRequests);
+    setCompletedTaskIds(nextCompletedTaskIds);
+    setVisibleThinkingCounts(getWorkflowThinkingCounts(nextWorkflow));
+    setVisibleArtifactIds(nextVisibleArtifactIds);
+    setCurrentTaskIndex(nextWorkflow.length);
+    setIsComplete(true);
+    setIsStopped(false);
+    setLocalStatus('success');
+    setSelectedArtifactId(nextSelectedArtifactId);
+    setAutoScrollEnabled(true);
     setRevisionInput('');
     setToast({
       id: Date.now(),
@@ -1587,7 +1661,7 @@ export default function BlogArticleAiAutoCreationPage({
             <ArrowLeft className="h-5 w-5" />
           </button>
           <h1 className="text-[18px] font-bold leading-[28px] text-[#232E45]">
-            {copy.titles.auto}
+            {copy.titles.autoProcess ?? copy.titles.auto}
           </h1>
         </div>
       </header>
@@ -1672,19 +1746,19 @@ export default function BlogArticleAiAutoCreationPage({
         />
       ) : null}
 
-      {stopTaskToast ? (
+      {processStatusToast ? (
         <Toast
-          key={stopTaskToast.id}
+          key={processStatusToast.id}
           actionLabel={taskListCopy.actions.recreate}
-          message={copy.toast?.autoStoppedManual || copy.toast?.autoStopped || copy.actions.stop}
+          message={processStatusToast.message}
           onAction={() => {
-            const recreateTask = stopTaskToast.task;
-            setStopTaskToast(null);
+            const recreateTask = processStatusToast.task;
+            setProcessStatusToast(null);
             onRecreateTask?.(recreateTask);
           }}
-          onClose={() => setStopTaskToast(null)}
-          testId="blog-article-auto-stop-toast"
-          type="info"
+          onClose={() => setProcessStatusToast(null)}
+          testId="blog-article-auto-status-toast"
+          type={processStatusToast.type}
         />
       ) : null}
     </div>

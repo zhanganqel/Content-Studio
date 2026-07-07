@@ -1,15 +1,13 @@
 import mammoth from 'mammoth';
-import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url';
 import * as XLSX from 'xlsx';
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
 const storageVersion = 1;
 const storagePrefix = 'content-studio-file-library';
 const maxFileSize = 20 * 1024 * 1024;
 const allowedExtensions = new Set(['docx', 'xlsx', 'xls', 'pdf', 'txt', 'md']);
 const uploadedBlobStore = new Map();
+let pdfjsLibPromise = null;
 
 export const fileProcessingStatuses = {
   pending: 'pending',
@@ -283,6 +281,17 @@ export function saveChunks(projectOrId, fileId, chunks) {
   return state.chunks[fileId];
 }
 
+async function getPdfjsLib() {
+  if (!pdfjsLibPromise) {
+    pdfjsLibPromise = import('pdfjs-dist').then((module) => {
+      module.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+      return module;
+    });
+  }
+
+  return pdfjsLibPromise;
+}
+
 async function extractTextFromFile(file) {
   const blob = await loadBlob(file);
   const arrayBuffer = await blob.arrayBuffer();
@@ -311,6 +320,7 @@ async function extractTextFromFile(file) {
   }
 
   if (fileType === 'pdf') {
+    const pdfjsLib = await getPdfjsLib();
     const document = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
     const pageTexts = [];
     for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {

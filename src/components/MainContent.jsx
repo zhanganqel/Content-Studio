@@ -16,11 +16,14 @@ export default function MainContent({
   onOpenBlogAiRecreateTask,
   onOpenBlogArticleEditor,
   onOpenVideoGeneration,
+  sidebarWidth,
   t,
 }) {
+  const mainOffsetStyle = { marginLeft: sidebarWidth };
+
   if (activeItem?.id === 'brand-profile') {
     return (
-      <main className="ml-[300px] h-screen overflow-hidden bg-white pt-[72px]">
+      <main className="h-screen overflow-hidden bg-white pt-[72px] transition-[margin-left] duration-200" style={mainOffsetStyle}>
         <div className="h-[calc(100vh-72px)] min-h-0 p-8">
           <BrandProfilePage project={activeProject} t={t} />
         </div>
@@ -30,9 +33,9 @@ export default function MainContent({
 
   if (activeItem?.id === 'audience-persona') {
     return (
-      <main className="ml-[300px] h-screen overflow-y-auto bg-white pt-[72px]">
+      <main className="h-screen overflow-y-auto bg-white pt-[72px] transition-[margin-left] duration-200" style={mainOffsetStyle}>
         <div className="min-h-[calc(100vh-72px)] p-8">
-          <AudiencePersonaPage project={activeProject} t={t} />
+          <AudiencePersonaPage project={activeProject} sidebarWidth={sidebarWidth} t={t} />
         </div>
       </main>
     );
@@ -40,9 +43,14 @@ export default function MainContent({
 
   if (activeItem?.id === 'knowledge-items') {
     return (
-      <main className="ml-[300px] h-screen overflow-y-auto bg-white pt-[72px]">
+      <main className="h-screen overflow-y-auto bg-white pt-[72px] transition-[margin-left] duration-200" style={mainOffsetStyle}>
         <div className="min-h-[calc(100vh-72px)] p-8">
-          <KnowledgeItemsPage focusItemId={knowledgeItemFocusId} project={activeProject} t={t} />
+          <KnowledgeItemsPage
+            focusItemId={knowledgeItemFocusId}
+            project={activeProject}
+            sidebarWidth={sidebarWidth}
+            t={t}
+          />
         </div>
       </main>
     );
@@ -50,7 +58,7 @@ export default function MainContent({
 
   if (activeItem?.id === 'knowledge-assets') {
     return (
-      <main className="ml-[300px] h-screen overflow-hidden bg-white pt-[72px]">
+      <main className="h-screen overflow-hidden bg-white pt-[72px] transition-[margin-left] duration-200" style={mainOffsetStyle}>
         <div className="h-[calc(100vh-72px)] min-h-0 p-8">
           <KnowledgeAssetsPage project={activeProject} t={t} />
         </div>
@@ -60,7 +68,7 @@ export default function MainContent({
 
   if (activeItem?.id === 'blog-article') {
     return (
-      <main className="ml-[300px] h-screen overflow-y-auto bg-white pt-[72px]">
+      <main className="h-screen overflow-y-auto bg-white pt-[72px] transition-[margin-left] duration-200" style={mainOffsetStyle}>
         <div className="min-h-[calc(100vh-72px)] p-8">
           <BlogArticlePage
             creationNotice={blogArticleNotice}
@@ -79,7 +87,7 @@ export default function MainContent({
 
   if (activeItem?.id === 'video-ad') {
     return (
-      <main className="ml-[300px] h-screen overflow-y-auto bg-white pt-[72px]">
+      <main className="h-screen overflow-y-auto bg-white pt-[72px] transition-[margin-left] duration-200" style={mainOffsetStyle}>
         <div className="min-h-[calc(100vh-72px)] p-8">
           <VideoAdPage onOpenVideoGeneration={onOpenVideoGeneration} t={t} />
         </div>
@@ -88,7 +96,7 @@ export default function MainContent({
   }
 
   return (
-    <main className="ml-[300px] h-screen overflow-y-auto pt-[72px]">
+    <main className="h-screen overflow-y-auto pt-[72px] transition-[margin-left] duration-200" style={mainOffsetStyle}>
       <div className="min-h-[calc(100vh-72px)] bg-white p-10">
         <div className="max-w-3xl">
           <p className="text-sm font-medium text-slate-400">{activeProject.name}</p>

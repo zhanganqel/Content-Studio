@@ -416,11 +416,15 @@ function PersonaDrawer({
   onCancel,
   onChange,
   onSave,
+  sidebarWidth,
 }) {
   const title = mode === 'edit' ? copy.drawer.editTitle : copy.drawer.createTitle;
 
   return (
-    <div className="fixed bottom-0 left-[300px] right-0 top-0 z-40 bg-slate-950/40">
+    <div
+      className="fixed bottom-0 right-0 top-0 z-40 bg-slate-950/40 transition-[left] duration-200"
+      style={{ left: sidebarWidth }}
+    >
       <form
         className="absolute bottom-0 right-0 top-0 flex w-full max-w-[860px] flex-col bg-white shadow-menu"
         onSubmit={(event) => {
@@ -637,7 +641,7 @@ function ConfirmDialog({ cancelLabel, confirmLabel, danger = false, message, onC
   );
 }
 
-export default function AudiencePersonaPage({ project, t }) {
+export default function AudiencePersonaPage({ project, sidebarWidth = 300, t }) {
   const [personas, setPersonas] = useState(() => getAudiencePersonaDrafts(project));
   const [searchQuery, setSearchQuery] = useState('');
   const [depthFilter, setDepthFilter] = useState('all');
@@ -867,6 +871,7 @@ export default function AudiencePersonaPage({ project, t }) {
           onCancel={closeDrawer}
           onChange={updateDrawerField}
           onSave={saveDrawer}
+          sidebarWidth={sidebarWidth}
         />
       ) : null}
 

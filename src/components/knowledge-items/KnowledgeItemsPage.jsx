@@ -641,9 +641,13 @@ function KnowledgeTypeDrawer({
   onDeleteField,
   onFieldChange,
   onSave,
+  sidebarWidth,
 }) {
   return (
-    <div className="fixed bottom-0 left-[300px] right-0 top-0 z-40 bg-slate-950/40">
+    <div
+      className="fixed bottom-0 right-0 top-0 z-40 bg-slate-950/40 transition-[left] duration-200"
+      style={{ left: sidebarWidth }}
+    >
       <form
         className="absolute bottom-0 right-0 top-0 flex w-full max-w-[860px] flex-col bg-white shadow-menu"
         onSubmit={(event) => {
@@ -901,7 +905,7 @@ function validateFieldList(fields, copy) {
   return errors;
 }
 
-export default function KnowledgeItemsPage({ focusItemId = '', project, t }) {
+export default function KnowledgeItemsPage({ focusItemId = '', project, sidebarWidth = 300, t }) {
   const [draft, setDraft] = useState(() => getKnowledgeItemDraft(project));
   const [activeTypeId, setActiveTypeId] = useState(() => getKnowledgeItemDraft(project).types[0]?.id);
   const [editing, setEditing] = useState(false);
@@ -1357,6 +1361,7 @@ export default function KnowledgeItemsPage({ focusItemId = '', project, t }) {
           onDeleteField={deleteDrawerField}
           onFieldChange={updateDrawerConfigField}
           onSave={saveCustomType}
+          sidebarWidth={sidebarWidth}
         />
       ) : null}
 

@@ -1,5 +1,13 @@
-import { ChevronDown, LogOut, Search, Settings, UserRound, UsersRound } from 'lucide-react';
+import {
+  ChevronDown,
+  LogOut,
+  Search,
+  Settings,
+  UserRound,
+  UsersRound,
+} from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { SolidSparklesIcon } from './ui/SolidIcons.jsx';
 
 const menuIcons = {
   switchAccount: UsersRound,
@@ -12,8 +20,10 @@ export default function Topbar({
   searchQuery,
   searchScope,
   searchScopes,
+  sidebarWidth,
   t,
   userMenuItems,
+  onOpenCopilot,
   onSearchQueryChange,
   onSearchScopeChange,
 }) {
@@ -45,8 +55,11 @@ export default function Topbar({
   const activeSearchScope = searchScopes.find((scope) => scope.id === searchScope) ?? searchScopes[0];
 
   return (
-    <header className="fixed left-[300px] right-0 top-0 z-20 flex h-[72px] items-center justify-end border-b border-slate-100 bg-slate-50 px-7">
-      <div className="flex w-full items-center justify-end gap-8">
+    <header
+      className="fixed right-0 top-0 z-20 flex h-[64px] items-center justify-end border-b border-slate-100 bg-slate-50 px-7 transition-[left] duration-200"
+      style={{ left: sidebarWidth }}
+    >
+      <div className="flex w-full items-center justify-end gap-5">
         <div className="flex w-full max-w-[520px] items-center rounded-full border border-slate-200 bg-white shadow-sm">
           <div ref={scopeRef} className="relative">
             <button
@@ -94,6 +107,17 @@ export default function Topbar({
           </div>
         </div>
 
+        <button
+          data-testid="copilot-entry-button"
+          type="button"
+          className="inline-flex h-11 w-[96px] flex-none items-center justify-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-4 text-sm font-bold text-blue-600 transition hover:border-blue-300 hover:bg-blue-100"
+          onClick={onOpenCopilot}
+          aria-label={t.topbar.copilot}
+        >
+          <SolidSparklesIcon className="h-4 w-4" />
+          {t.topbar.copilot}
+        </button>
+
         <div ref={userRef} className="relative">
           <button
             data-testid="user-menu-button"
@@ -106,11 +130,10 @@ export default function Topbar({
               A
             </span>
             <span className="text-[15px] font-bold text-slate-800">Angel</span>
-            <ChevronDown className="h-4 w-4 text-slate-500" />
           </button>
 
           {userMenuOpen ? (
-            <div className="absolute right-0 top-[54px] z-40 w-[180px] overflow-hidden rounded-lg border border-slate-200 bg-white py-2 shadow-menu">
+            <div className="absolute right-0 top-[50px] z-40 w-[180px] overflow-hidden rounded-lg border border-slate-200 bg-white py-2 shadow-menu">
               {userMenuItems.map((item) => {
                 const Icon = menuIcons[item.id] ?? UserRound;
 

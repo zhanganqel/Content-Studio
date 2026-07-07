@@ -6,6 +6,7 @@ import BlogArticleAiContentPage from './components/blog-article/BlogArticleAiCon
 import BlogArticleAiOutlinePage from './components/blog-article/BlogArticleAiOutlinePage.jsx';
 import BlogArticleAiPlanningPage from './components/blog-article/BlogArticleAiPlanningPage.jsx';
 import BlogArticleEditor from './components/blog-article/BlogArticleEditor.jsx';
+import CopilotWorkbenchPage from './components/copilot/CopilotWorkbenchPage.jsx';
 import KnowledgeFilePreviewPage from './components/knowledge-assets/KnowledgeFilePreviewPage.jsx';
 import KnowledgeSourcePreviewPage from './components/knowledge-assets/KnowledgeSourcePreviewPage.jsx';
 import VideoGenerationPage from './components/video-ad/VideoGenerationPage.jsx';
@@ -16,6 +17,12 @@ import {
   getAiTaskArticleContext,
   migrateAiTaskArticleRuleStorage,
 } from './services/blogArticleAiArticleStore.js';
+import {
+  collapsedSidebarWidth,
+  expandedSidebarWidth,
+  getSidebarCollapsedPreference,
+  saveSidebarCollapsedPreference,
+} from './services/sidebarPreferenceStore.js';
 
 const localeStorageKey = 'content-studio-locale';
 const aiPlanningSessionStorageKey = 'content-studio-active-ai-planning-session';
@@ -98,6 +105,7 @@ export default function App() {
   );
   const [searchScope, setSearchScope] = useState(searchScopes[0]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(getSidebarCollapsedPreference);
   const [blogAiCreateOpen, setBlogAiCreateOpen] = useState(false);
   const [blogAiCreateMode, setBlogAiCreateMode] = useState('collaborative');
   const [blogAiRecreateContext, setBlogAiRecreateContext] = useState(null);
@@ -107,6 +115,7 @@ export default function App() {
   const [blogAiContentContext, setBlogAiContentContext] = useState(null);
   const [blogArticleNotice, setBlogArticleNotice] = useState(null);
   const [blogEditorArticle, setBlogEditorArticle] = useState(null);
+  const [copilotOpen, setCopilotOpen] = useState(false);
   const [videoGenerationOpen, setVideoGenerationOpen] = useState(false);
   const t = messages[locale] ?? messages[defaultLocale];
 
@@ -114,10 +123,15 @@ export default function App() {
     window.localStorage.setItem(localeStorageKey, locale);
   }, [locale]);
 
+  useEffect(() => {
+    saveSidebarCollapsedPreference(sidebarCollapsed);
+  }, [sidebarCollapsed]);
+
   const activeProject = useMemo(
     () => projects.find((project) => project.id === activeProjectId) ?? projects[0],
     [activeProjectId],
   );
+  const sidebarWidth = sidebarCollapsed ? collapsedSidebarWidth : expandedSidebarWidth;
 
   migrateAiTaskArticleRuleStorage(activeProject);
 
@@ -226,6 +240,14 @@ export default function App() {
   const openVideoGeneration = useCallback(() => {
     setActiveItemId('video-ad');
     setVideoGenerationOpen(true);
+  }, []);
+
+  const toggleSidebarCollapsed = useCallback(() => {
+    setSidebarCollapsed((collapsed) => !collapsed);
+  }, []);
+
+  const openCopilot = useCallback(() => {
+    setCopilotOpen(true);
   }, []);
 
   const openBlogAiCreate = useCallback((mode = 'collaborative') => {
@@ -519,6 +541,19 @@ export default function App() {
     );
   }
 
+  if (copilotOpen) {
+    return (
+      <CopilotWorkbenchPage
+        activeProject={activeProject}
+        projects={projects}
+        t={t}
+        userMenuItems={localizedUserMenuItems}
+        onClose={() => setCopilotOpen(false)}
+        onProjectChange={setActiveProjectId}
+      />
+    );
+  }
+
   return (
     <AppShell
       activeItem={activeItem}
@@ -531,6 +566,8 @@ export default function App() {
       searchQuery={searchQuery}
       searchScope={searchScope}
       searchScopes={localizedSearchScopes}
+      sidebarCollapsed={sidebarCollapsed}
+      sidebarWidth={sidebarWidth}
       t={t}
       userMenuItems={localizedUserMenuItems}
       blogArticleNotice={blogArticleNotice}
@@ -541,12 +578,14 @@ export default function App() {
       onOpenBlogAiTask={openBlogAiTask}
       onOpenBlogAiRecreateTask={openBlogAiRecreateTask}
       onOpenBlogArticleEditor={setBlogEditorArticle}
+      onOpenCopilot={openCopilot}
       onOpenVideoGeneration={openVideoGeneration}
       onProjectChange={setActiveProjectId}
       onSearchQueryChange={setSearchQuery}
       onSearchScopeChange={setSearchScope}
       onSectionToggle={toggleSection}
       onSelectItem={setActiveItemId}
+      onSidebarCollapsedToggle={toggleSidebarCollapsed}
     />
   );
 }

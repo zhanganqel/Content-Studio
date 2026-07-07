@@ -13,6 +13,8 @@ export default function AppShell({
   searchQuery,
   searchScope,
   searchScopes,
+  sidebarCollapsed,
+  sidebarWidth,
   t,
   userMenuItems,
   blogArticleNotice,
@@ -23,12 +25,14 @@ export default function AppShell({
   onOpenBlogAiTask,
   onOpenBlogAiRecreateTask,
   onOpenBlogArticleEditor,
+  onOpenCopilot,
   onOpenVideoGeneration,
   onProjectChange,
   onSearchQueryChange,
   onSearchScopeChange,
   onSectionToggle,
   onSelectItem,
+  onSidebarCollapsedToggle,
 }) {
   return (
     <div className="min-h-screen bg-white text-slate-900">
@@ -39,18 +43,23 @@ export default function AppShell({
         locale={locale}
         navSections={navSections}
         projects={projects}
+        sidebarCollapsed={sidebarCollapsed}
+        sidebarWidth={sidebarWidth}
         t={t}
         onLocaleChange={onLocaleChange}
         onProjectChange={onProjectChange}
         onSectionToggle={onSectionToggle}
         onSelectItem={onSelectItem}
+        onSidebarCollapsedToggle={onSidebarCollapsedToggle}
       />
       <Topbar
         searchQuery={searchQuery}
         searchScope={searchScope}
         searchScopes={searchScopes}
+        sidebarWidth={sidebarWidth}
         t={t}
         userMenuItems={userMenuItems}
+        onOpenCopilot={onOpenCopilot}
         onSearchQueryChange={onSearchQueryChange}
         onSearchScopeChange={onSearchScopeChange}
       />
@@ -65,6 +74,7 @@ export default function AppShell({
         onOpenBlogAiRecreateTask={onOpenBlogAiRecreateTask}
         onOpenBlogArticleEditor={onOpenBlogArticleEditor}
         onOpenVideoGeneration={onOpenVideoGeneration}
+        sidebarWidth={sidebarWidth}
         t={t}
       />
     </div>
