@@ -1,4 +1,4 @@
-import { createBackendUrl, getBackendConversationId } from './backendApi.js';
+import { createBackendUrl } from './backendApi.js';
 
 const maxResponseSampleLength = 800;
 
@@ -53,6 +53,21 @@ async function readErrorResponse(response) {
   }
 }
 
+function dispatchSseText(text, onEvent) {
+  let eventCount = 0;
+  const rawEvents = String(text ?? '').split(/\r?\n\r?\n/);
+
+  for (const rawEvent of rawEvents) {
+    const parsed = parseSseEvent(rawEvent);
+    if (parsed) {
+      eventCount += 1;
+      onEvent?.(parsed);
+    }
+  }
+
+  return eventCount;
+}
+
 export async function streamCopilotChat({
   body,
   conversationId,
@@ -63,7 +78,6 @@ export async function streamCopilotChat({
     body: JSON.stringify(body),
     headers: {
       'Content-Type': 'application/json',
-      'makers-conversation-id': conversationId || getBackendConversationId(),
     },
     method: 'POST',
     signal,
@@ -75,6 +89,15 @@ export async function streamCopilotChat({
 
   if (!response.body) {
     throw new Error('Streaming response is not available');
+  }
+
+  if (typeof response.body.getReader !== 'function') {
+    const text = await response.text();
+    const eventCount = dispatchSseText(text, onEvent);
+    if (!eventCount) {
+      throw createStreamingFormatError(response, text);
+    }
+    return;
   }
 
   const decoder = new TextDecoder();

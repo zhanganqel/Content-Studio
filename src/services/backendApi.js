@@ -49,9 +49,11 @@ export async function postBackendJson(path, body) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'makers-conversation-id': getBackendConversationId(),
     },
-    body: JSON.stringify(body),
+    body: JSON.stringify({
+      conversationId: getBackendConversationId(),
+      ...body,
+    }),
   });
 
   const data = await readResponseBody(response);
