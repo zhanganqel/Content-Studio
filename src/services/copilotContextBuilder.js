@@ -70,6 +70,23 @@ function getKnowledgeTypeTitle(types = [], typeId) {
   return type?.name ?? type?.title ?? typeId ?? 'Knowledge';
 }
 
+function getKnowledgeRows(rows) {
+  if (Array.isArray(rows)) {
+    return rows;
+  }
+
+  if (!rows || typeof rows !== 'object') {
+    return [];
+  }
+
+  return Object.entries(rows).flatMap(([typeId, typeRows]) =>
+    (Array.isArray(typeRows) ? typeRows : []).map((row) => ({
+      ...row,
+      typeId: row.typeId ?? typeId,
+    })),
+  );
+}
+
 function buildPromptContext(items) {
   return items
     .map((item) => {
@@ -151,7 +168,7 @@ export function buildCopilotProjectContext(project, options = {}) {
     });
 
   const knowledgeDraft = getKnowledgeItemDraft(project);
-  const knowledgeRows = knowledgeDraft.rows ?? [];
+  const knowledgeRows = getKnowledgeRows(knowledgeDraft.rows);
   knowledgeRows.slice(0, 24).forEach((row) => {
     const rawTitle =
       row.cells?.title ||
