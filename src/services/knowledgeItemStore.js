@@ -188,13 +188,13 @@ function createRowsForProject(project) {
 
     const type = presetTypes.find((candidate) => candidate.id === typeId);
     const index = rows[typeId].length;
-    const tags = inferTags(item);
+    const tags = item.tags?.length ? compactTags(item.tags) : inferTags(item);
 
     if (typeId === 'products') {
       rows[typeId].push(
         createRow(type, index, {
           productName: item.title,
-          productAlias: getAlias(item.title),
+          productAlias: item.alias ?? getAlias(item.title),
           productUrl: item.sourceUrl,
           tags,
           description: item.summary,
@@ -219,9 +219,9 @@ function createRowsForProject(project) {
       rows[typeId].push(
         createRow(type, index, {
           solutionName: item.title,
-          targetScenario: inferSolutionScenario(item.title),
+          targetScenario: item.targetScenario ?? inferSolutionScenario(item.title),
           solutionContent: item.summary,
-          relatedService: inferRelatedService(item.title),
+          relatedService: item.relatedService ?? inferRelatedService(item.title),
           tags,
         }),
       );
@@ -232,7 +232,7 @@ function createRowsForProject(project) {
       rows[typeId].push(
         createRow(type, index, {
           caseName: item.title,
-          industry: inferCaseIndustry(item.title),
+          industry: item.industry ?? inferCaseIndustry(item.title),
           caseUrl: item.sourceUrl,
           tags,
           summary: item.summary,
@@ -245,7 +245,7 @@ function createRowsForProject(project) {
       rows[typeId].push(
         createRow(type, index, {
           question: item.title,
-          answer: item.summary,
+          answer: item.answer ?? item.summary,
           faqUrl: item.sourceUrl,
           tags,
         }),

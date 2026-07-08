@@ -2,6 +2,16 @@
 
 本文件是 AI Agent 在 Content Studio 仓库内工作的入口规则。目标是让人和 AI 都能快速理解项目边界，并且不破坏当前可运行状态。
 
+## 仓库边界声明
+
+- `studio` 是前端仓库：`/Users/zhangqiqi/Desktop/Content Studio`，GitHub 远端为 `zhanganqel/Content-Studio`。
+- `copilot` 是后端仓库：`/Users/zhangqiqi/Desktop/content-studio-copilot`，GitHub 远端为 `zhanganqel/content-studio-copilot`。
+- 用户说“前端仓库”时，默认指 `studio`；用户说“后端仓库”时，默认指 `copilot`。
+- 前端 UI、GitHub Pages、Figma 对齐、本地 service/mock、浏览器可见性验证默认在 `studio` 中处理。
+- 后端 agents、cloud-functions、EdgeOne Makers、AI API、环境变量、后端部署默认在 `copilot` 中处理。
+- 跨前后端联调时，先说明会涉及 `studio` 和 `copilot` 两个仓库，再分别在对应目录执行命令。
+- `studio/content-studio-copilot-main/` 视为历史/误放目录，不作为后端开发入口，除非用户明确要求处理。
+
 ## 先读顺序
 
 1. `README.md`：确认项目定位、运行命令和目录职责。

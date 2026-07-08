@@ -8,6 +8,7 @@ import {
   History,
   List,
   ListCollapse,
+  Loader2,
   LogOut,
   MoreHorizontal,
   PanelLeftClose,
@@ -19,6 +20,7 @@ import {
   PinOff,
   Plus,
   Search,
+  Send,
   Settings,
   Sparkles,
   Trash2,
@@ -35,12 +37,23 @@ import {
   expandedSidebarWidth,
 } from '../../services/sidebarPreferenceStore.js';
 import {
-  createCopilotConversation,
-  getCopilotConversations,
   getCopilotSidebarCollapsedPreference,
-  saveCopilotConversations,
   saveCopilotSidebarCollapsedPreference,
 } from '../../services/copilotWorkbenchStore.js';
+import { streamCopilotChat } from '../../services/copilotChatApi.js';
+import {
+  createCopilotArtifact,
+  createCopilotConversation,
+  createCopilotMessage,
+  createCopilotRun,
+  createCopilotSource,
+  deriveConversationTitle,
+  getConversationArtifacts,
+  getConversationMessages,
+  getCopilotConversationState,
+  saveCopilotConversationState,
+} from '../../services/copilotConversationStore.js';
+import { buildCopilotProjectContext } from '../../services/copilotContextBuilder.js';
 import SquareIconButton from '../ui/SquareIconButton.jsx';
 import { SolidDashboardIcon } from '../ui/SolidIcons.jsx';
 
@@ -311,16 +324,21 @@ export default function CopilotWorkbenchPage({
     [t],
   );
   const defaultConversations = useMemo(() => getDefaultConversations(copy), [copy]);
+  const initialConversationStateRef = useRef(null);
+  if (!initialConversationStateRef.current) {
+    initialConversationStateRef.current = getCopilotConversationState(activeProject.id, defaultConversations);
+  }
   const [sidebarCollapsed, setSidebarCollapsed] = useState(getCopilotSidebarCollapsedPreference);
   const [brandSectionOpen, setBrandSectionOpen] = useState(true);
   const [pinnedSectionOpen, setPinnedSectionOpen] = useState(true);
   const [historySectionOpen, setHistorySectionOpen] = useState(true);
   const [workspaceMode, setWorkspaceMode] = useState('chat');
   const [conversationSearchQuery, setConversationSearchQuery] = useState('');
-  const [conversations, setConversations] = useState(() =>
-    getCopilotConversations(activeProject.id, defaultConversations),
+  const [conversationState, setConversationState] = useState(initialConversationStateRef.current);
+  const conversationStateRef = useRef(conversationState);
+  const [activeConversationId, setActiveConversationId] = useState(
+    () => conversationState.conversations[0]?.id ?? '',
   );
-  const [activeConversationId, setActiveConversationId] = useState(() => conversations[0]?.id ?? '');
   const [editingConversationId, setEditingConversationId] = useState('');
   const [editingConversationTitle, setEditingConversationTitle] = useState('');
   const [activePopover, setActivePopover] = useState('');
@@ -329,15 +347,31 @@ export default function CopilotWorkbenchPage({
   const [artifactPanelOpen, setArtifactPanelOpen] = useState(true);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewWidthPercent, setPreviewWidthPercent] = useState(50);
+  const [chatInput, setChatInput] = useState('');
+  const [chatError, setChatError] = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
+  const [selectedArtifactId, setSelectedArtifactId] = useState('');
   const projectMenuRef = useRef(null);
   const userMenuRef = useRef(null);
   const conversationActionMenuRef = useRef(null);
   const mainWorkspaceRef = useRef(null);
   const popoverCloseTimerRef = useRef(null);
+  const activeChatAbortRef = useRef(null);
 
   const sidebarWidth = sidebarCollapsed ? collapsedSidebarWidth : expandedSidebarWidth;
+  const conversations = conversationState.conversations;
   const activeConversation =
     conversations.find((conversation) => conversation.id === activeConversationId) ?? conversations[0];
+  const activeMessages = useMemo(
+    () => getConversationMessages(conversationState, activeConversation?.id),
+    [activeConversation?.id, conversationState],
+  );
+  const activeArtifacts = useMemo(
+    () => getConversationArtifacts(conversationState, activeConversation?.id),
+    [activeConversation?.id, conversationState],
+  );
+  const selectedArtifact =
+    activeArtifacts.find((artifact) => artifact.id === selectedArtifactId) ?? activeArtifacts[0] ?? null;
   const activeBrandItem = brandItems.find((item) => item.id === workspaceMode);
   const pageTitle = workspaceMode === 'chat' ? activeConversation?.title ?? copy.untitled : activeBrandItem?.title;
   const query = conversationSearchQuery.trim().toLowerCase();
@@ -360,15 +394,41 @@ export default function CopilotWorkbenchPage({
   }, [sidebarCollapsed]);
 
   useEffect(() => {
-    const nextConversations = getCopilotConversations(activeProject.id, defaultConversations);
-    setConversations(nextConversations);
-    setActiveConversationId(nextConversations[0]?.id ?? '');
+    conversationStateRef.current = conversationState;
+  }, [conversationState]);
+
+  useEffect(() => {
+    const nextConversationState = getCopilotConversationState(activeProject.id, defaultConversations);
+    conversationStateRef.current = nextConversationState;
+    setConversationState(nextConversationState);
+    setActiveConversationId(nextConversationState.conversations[0]?.id ?? '');
     setConversationSearchQuery('');
     setActivePopover('');
     setConversationActionMenuOpen(false);
     setEditingConversationId('');
     setEditingConversationTitle('');
+    setChatError('');
+    setChatInput('');
+    setSelectedArtifactId('');
   }, [activeProject.id, defaultConversations]);
+
+  useEffect(
+    () => () => {
+      activeChatAbortRef.current?.abort();
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!activeArtifacts.length) {
+      if (selectedArtifactId) setSelectedArtifactId('');
+      return;
+    }
+
+    if (!activeArtifacts.some((artifact) => artifact.id === selectedArtifactId)) {
+      setSelectedArtifactId(activeArtifacts[0].id);
+    }
+  }, [activeArtifacts, selectedArtifactId]);
 
   useEffect(() => {
     function handleClickOutside(event) {
@@ -401,15 +461,27 @@ export default function CopilotWorkbenchPage({
     [],
   );
 
-  function persistConversations(nextConversations, nextActiveConversationId = activeConversationId) {
-    setConversations(nextConversations);
-    saveCopilotConversations(activeProject.id, nextConversations);
-    setActiveConversationId(nextActiveConversationId);
+  function persistConversationState(nextState, nextActiveConversationId) {
+    const savedState = saveCopilotConversationState(activeProject.id, nextState);
+    conversationStateRef.current = savedState;
+    setConversationState(savedState);
+    if (nextActiveConversationId !== undefined) {
+      setActiveConversationId(nextActiveConversationId);
+    }
   }
 
   function createNewConversation() {
-    const conversation = createCopilotConversation(copy.newConversationTitle(conversations.length + 1));
-    persistConversations([conversation, ...conversations], conversation.id);
+    const conversation = createCopilotConversation(
+      activeProject.id,
+      copy.newConversationTitle(conversations.length + 1),
+    );
+    persistConversationState(
+      {
+        ...conversationStateRef.current,
+        conversations: [conversation, ...conversationStateRef.current.conversations],
+      },
+      conversation.id,
+    );
     setWorkspaceMode('chat');
     setActivePopover('');
     setConversationSearchQuery('');
@@ -447,39 +519,61 @@ export default function CopilotWorkbenchPage({
       return;
     }
 
-    persistConversations(
-      conversations.map((conversation) =>
-        conversation.id === conversationId
-          ? { ...conversation, title: nextTitle, updatedAt: new Date().toISOString() }
-          : conversation,
-      ),
+    persistConversationState(
+      {
+        ...conversationStateRef.current,
+        conversations: conversationStateRef.current.conversations.map((conversation) =>
+          conversation.id === conversationId
+            ? { ...conversation, title: nextTitle, updatedAt: new Date().toISOString() }
+            : conversation,
+        ),
+      },
     );
     cancelInlineRename();
   }
 
   function toggleConversationPin(conversationId) {
-    persistConversations(
-      conversations.map((conversation) =>
-        conversation.id === conversationId
-          ? { ...conversation, pinned: !conversation.pinned, updatedAt: new Date().toISOString() }
-          : conversation,
-      ),
+    persistConversationState(
+      {
+        ...conversationStateRef.current,
+        conversations: conversationStateRef.current.conversations.map((conversation) =>
+          conversation.id === conversationId
+            ? { ...conversation, pinned: !conversation.pinned, updatedAt: new Date().toISOString() }
+            : conversation,
+        ),
+      },
     );
   }
 
   function deleteConversation(conversationId) {
-    const nextConversations = conversations.filter((conversation) => conversation.id !== conversationId);
+    const currentState = conversationStateRef.current;
+    const nextConversations = currentState.conversations.filter((conversation) => conversation.id !== conversationId);
+    const nextState = {
+      ...currentState,
+      artifacts: currentState.artifacts.filter((artifact) => artifact.conversationId !== conversationId),
+      conversations: nextConversations,
+      messages: currentState.messages.filter((message) => message.conversationId !== conversationId),
+      runs: currentState.runs.filter((run) => run.conversationId !== conversationId),
+      sources: currentState.sources.filter((source) => source.conversationId !== conversationId),
+    };
+
     if (editingConversationId === conversationId) {
       cancelInlineRename();
     }
 
     if (nextConversations.length) {
-      persistConversations(nextConversations, nextConversations[0].id);
+      persistConversationState(nextState, nextConversations[0].id);
       return;
     }
 
-    const replacement = createCopilotConversation(copy.newConversationTitle(1));
-    persistConversations([replacement], replacement.id);
+    const replacement = createCopilotConversation(activeProject.id, copy.newConversationTitle(1));
+    persistConversationState(
+      {
+        ...nextState,
+        conversations: [replacement],
+      },
+      replacement.id,
+    );
   }
 
   function selectProject(projectId) {
@@ -555,6 +649,248 @@ export default function CopilotWorkbenchPage({
     setPreviewOpen(true);
     setArtifactPanelOpen(false);
     setPreviewWidthPercent(50);
+  }
+
+  function patchConversationState(updater) {
+    const currentState = conversationStateRef.current;
+    const nextState = typeof updater === 'function' ? updater(currentState) : updater;
+    persistConversationState(nextState);
+    return nextState;
+  }
+
+  function updateAssistantMessage(messageId, patch) {
+    const { artifactId, contentDelta, sourceId, ...messagePatch } = patch;
+
+    patchConversationState((currentState) => ({
+      ...currentState,
+      messages: currentState.messages.map((message) =>
+        message.id === messageId
+          ? {
+              ...message,
+              ...messagePatch,
+              content:
+                typeof contentDelta === 'string'
+                  ? `${message.content}${contentDelta}`
+                  : messagePatch.content ?? message.content,
+              sourceIds: sourceId
+                ? [...new Set([...(message.sourceIds ?? []), sourceId])]
+                : message.sourceIds,
+              artifactIds: artifactId
+                ? [...new Set([...(message.artifactIds ?? []), artifactId])]
+                : message.artifactIds,
+              updatedAt: new Date().toISOString(),
+            }
+          : message,
+      ),
+    }));
+  }
+
+  function upsertConversationArtifact(conversationId, messageId, rawArtifact) {
+    const artifact = createCopilotArtifact({
+      content: rawArtifact.content,
+      conversationId,
+      sourceIds: rawArtifact.sourceIds ?? [],
+      sourceMessageId: messageId,
+      status: rawArtifact.status ?? 'ready',
+      summary: rawArtifact.summary,
+      title: rawArtifact.title,
+      type: rawArtifact.type ?? 'reply',
+    });
+
+    patchConversationState((currentState) => ({
+      ...currentState,
+      artifacts: [artifact, ...currentState.artifacts],
+      conversations: currentState.conversations.map((conversation) =>
+        conversation.id === conversationId
+          ? {
+              ...conversation,
+              artifactIds: [...new Set([artifact.id, ...(conversation.artifactIds ?? [])])],
+              updatedAt: new Date().toISOString(),
+            }
+          : conversation,
+      ),
+      messages: currentState.messages.map((message) =>
+        message.id === messageId
+          ? {
+              ...message,
+              artifactIds: [...new Set([...(message.artifactIds ?? []), artifact.id])],
+              updatedAt: new Date().toISOString(),
+            }
+          : message,
+      ),
+    }));
+    setSelectedArtifactId(artifact.id);
+  }
+
+  function upsertConversationSource(conversationId, messageId, rawSource) {
+    const source = createCopilotSource({
+      conversationId,
+      metadata: rawSource.metadata ?? {},
+      originId: rawSource.originId ?? rawSource.id ?? '',
+      snippet: rawSource.snippet,
+      title: rawSource.title,
+      type: rawSource.type,
+      url: rawSource.url,
+    });
+
+    patchConversationState((currentState) => ({
+      ...currentState,
+      messages: currentState.messages.map((message) =>
+        message.id === messageId
+          ? {
+              ...message,
+              sourceIds: [...new Set([...(message.sourceIds ?? []), source.id])],
+              updatedAt: new Date().toISOString(),
+            }
+          : message,
+      ),
+      sources: [source, ...currentState.sources],
+    }));
+  }
+
+  async function submitChat(event) {
+    event.preventDefault();
+
+    const content = chatInput.trim();
+    if (!content || chatLoading) return;
+
+    const currentConversation =
+      conversationStateRef.current.conversations.find((conversation) => conversation.id === activeConversationId) ??
+      conversationStateRef.current.conversations[0];
+    if (!currentConversation) return;
+
+    const userMessage = createCopilotMessage({
+      content,
+      conversationId: currentConversation.id,
+      role: 'user',
+    });
+    const assistantMessage = createCopilotMessage({
+      agentId: 'copilot',
+      content: '',
+      conversationId: currentConversation.id,
+      role: 'assistant',
+      status: 'streaming',
+      statusText: copy.taskRunning,
+    });
+    const run = createCopilotRun({
+      conversationId: currentConversation.id,
+      status: 'running',
+    });
+    const nextTitle = currentConversation.messageIds?.length
+      ? currentConversation.title
+      : deriveConversationTitle(content, currentConversation.title);
+    const nextState = {
+      ...conversationStateRef.current,
+      conversations: conversationStateRef.current.conversations.map((conversation) =>
+        conversation.id === currentConversation.id
+          ? {
+              ...conversation,
+              messageIds: [...(conversation.messageIds ?? []), userMessage.id, assistantMessage.id],
+              title: nextTitle,
+              updatedAt: new Date().toISOString(),
+            }
+          : conversation,
+      ),
+      messages: [...conversationStateRef.current.messages, userMessage, assistantMessage],
+      runs: [run, ...conversationStateRef.current.runs],
+    };
+
+    persistConversationState(nextState, currentConversation.id);
+    setChatInput('');
+    setChatError('');
+    setChatLoading(true);
+
+    const controller = new AbortController();
+    activeChatAbortRef.current?.abort();
+    activeChatAbortRef.current = controller;
+
+    const projectContext = buildCopilotProjectContext(activeProject, {
+      conversationId: currentConversation.id,
+      conversationState: nextState,
+    });
+    const history = getConversationMessages(nextState, currentConversation.id)
+      .filter((message) => message.id !== assistantMessage.id)
+      .map((message) => ({
+        content: message.content,
+        role: message.role,
+      }));
+
+    try {
+      await streamCopilotChat({
+        body: {
+          conversationId: currentConversation.id,
+          history,
+          message: content,
+          projectContext,
+          projectId: activeProject.id,
+        },
+        conversationId: currentConversation.id,
+        signal: controller.signal,
+        onEvent: (eventData) => {
+          if (eventData.type === 'ping') return;
+
+          if (eventData.type === 'task_status') {
+            updateAssistantMessage(assistantMessage.id, {
+              statusText: eventData.label || eventData.status || copy.taskRunning,
+            });
+            return;
+          }
+
+          if (eventData.type === 'message_delta') {
+            updateAssistantMessage(assistantMessage.id, {
+              contentDelta: eventData.content ?? eventData.delta ?? '',
+            });
+            return;
+          }
+
+          if (eventData.type === 'source' && eventData.source) {
+            upsertConversationSource(currentConversation.id, assistantMessage.id, eventData.source);
+            return;
+          }
+
+          if (eventData.type === 'artifact' && eventData.artifact) {
+            upsertConversationArtifact(currentConversation.id, assistantMessage.id, eventData.artifact);
+            return;
+          }
+
+          if (eventData.type === 'error_message') {
+            throw new Error(eventData.content || copy.chatFallbackError);
+          }
+        },
+      });
+
+      updateAssistantMessage(assistantMessage.id, { status: 'done', statusText: '' });
+      patchConversationState((currentState) => ({
+        ...currentState,
+        runs: currentState.runs.map((item) =>
+          item.id === run.id ? { ...item, endedAt: new Date().toISOString(), status: 'done' } : item,
+        ),
+      }));
+    } catch (error) {
+      if (error && typeof error === 'object' && error.name === 'AbortError') return;
+
+      const message = getChatErrorMessage(error);
+      setChatError(message);
+      updateAssistantMessage(assistantMessage.id, {
+        content: message,
+        error: message,
+        status: 'error',
+        statusText: '',
+      });
+      patchConversationState((currentState) => ({
+        ...currentState,
+        runs: currentState.runs.map((item) =>
+          item.id === run.id
+            ? { ...item, endedAt: new Date().toISOString(), error: message, status: 'error' }
+            : item,
+        ),
+      }));
+    } finally {
+      if (activeChatAbortRef.current === controller) {
+        activeChatAbortRef.current = null;
+      }
+      setChatLoading(false);
+    }
   }
 
   function startPreviewResize(event) {
@@ -697,6 +1033,152 @@ export default function CopilotWorkbenchPage({
     return (
       <div className="absolute left-[calc(100%+10px)] top-0 z-50 w-[320px] rounded-xl border border-slate-200 bg-white p-3 shadow-menu">
         {renderConversationGroups()}
+      </div>
+    );
+  }
+
+  function renderMessageSources(message) {
+    const sources = conversationState.sources.filter((source) => message.sourceIds?.includes(source.id));
+    if (!sources.length) return null;
+
+    return (
+      <div className="mt-3 rounded-lg border border-slate-100 bg-slate-50 p-3">
+        <p className="text-xs font-bold text-slate-400">{copy.sources}</p>
+        <div className="mt-2 space-y-2">
+          {sources.map((source) => (
+            <div key={source.id} className="text-xs leading-5 text-slate-500">
+              <span className="font-bold text-slate-700">{source.title}</span>
+              {source.snippet ? <span> - {source.snippet}</span> : null}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  function renderInlineArtifactCard(artifact) {
+    return (
+      <button
+        key={artifact.id}
+        type="button"
+        className="mt-3 flex w-full items-center justify-between gap-3 rounded-lg border border-blue-100 bg-blue-50/60 p-3 text-left transition hover:border-blue-200 hover:bg-blue-50"
+        onClick={() => {
+          setSelectedArtifactId(artifact.id);
+          setArtifactPanelOpen(true);
+          setPreviewOpen(false);
+        }}
+      >
+        <span className="flex min-w-0 items-center gap-3">
+          <span className="grid h-9 w-9 flex-none place-items-center rounded-lg bg-white text-blue-600">
+            <FileText className="h-4 w-4" />
+          </span>
+          <span className="min-w-0">
+            <span className="block truncate text-sm font-bold text-slate-900">{artifact.title}</span>
+            <span className="mt-0.5 block truncate text-xs font-medium text-slate-500">
+              {artifact.summary || copy.generatedArtifact}
+            </span>
+          </span>
+        </span>
+        <ChevronRight className="h-4 w-4 flex-none text-slate-400" />
+      </button>
+    );
+  }
+
+  function renderMessageArtifacts(message) {
+    const artifacts = conversationState.artifacts.filter((artifact) => message.artifactIds?.includes(artifact.id));
+    if (!artifacts.length) return null;
+
+    return <div>{artifacts.map(renderInlineArtifactCard)}</div>;
+  }
+
+  function getChatErrorMessage(error) {
+    const message = error instanceof Error ? error.message : String(error || '');
+    if (
+      error instanceof TypeError ||
+      /Failed to fetch|EdgeOne backend access is restricted|eo_time missing|Access Restricted|Authentication Expired|No SSE events/i.test(
+        message,
+      )
+    ) {
+      return copy.chatConnectionError;
+    }
+
+    return message || copy.chatFallbackError;
+  }
+
+  function renderChatMessage(message) {
+    const isUser = message.role === 'user';
+    const isError = message.status === 'error';
+    const isStreaming = message.status === 'streaming';
+
+    return (
+      <article
+        key={message.id}
+        className={`flex w-full gap-3 ${isUser ? 'justify-end' : 'justify-start'}`}
+      >
+        {!isUser ? (
+          <span className="grid h-9 w-9 flex-none place-items-center rounded-full bg-blue-50 text-blue-600">
+            <Bot className="h-4 w-4" />
+          </span>
+        ) : null}
+        <div className={`max-w-[76%] ${isUser ? 'items-end' : 'items-start'}`}>
+          <div className={`mb-1 flex items-center gap-2 ${isUser ? 'justify-end' : 'justify-start'}`}>
+            <span className="text-xs font-bold text-slate-400">
+              {isUser ? copy.userName : copy.assistantName}
+            </span>
+            {message.statusText ? (
+              <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-bold text-blue-600">
+                {message.statusText}
+              </span>
+            ) : null}
+          </div>
+          <div
+            className={`rounded-2xl px-4 py-3 text-sm leading-6 shadow-sm ${
+              isUser
+                ? 'rounded-tr-md bg-slate-900 text-white'
+                : isError
+                  ? 'rounded-tl-md border border-red-100 bg-red-50 text-red-600'
+                  : 'rounded-tl-md border border-slate-200 bg-white text-slate-700'
+            }`}
+          >
+            {message.content ? (
+              <p className="whitespace-pre-wrap">{message.content}</p>
+            ) : isStreaming ? (
+              <span className="inline-flex items-center gap-2 text-slate-400">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                {copy.chatThinking}
+              </span>
+            ) : (
+              <span className="text-slate-400">{copy.chatEmptyResponse}</span>
+            )}
+            {!isUser ? renderMessageSources(message) : null}
+            {!isUser ? renderMessageArtifacts(message) : null}
+          </div>
+        </div>
+      </article>
+    );
+  }
+
+  function renderArtifactPreviewBody(artifact) {
+    if (!artifact) {
+      return (
+        <div className="flex min-h-0 flex-1 items-center justify-center rounded-lg border border-dashed border-slate-200 bg-slate-50 p-6 text-center">
+          <div>
+            <FileText className="mx-auto h-7 w-7 text-slate-300" />
+            <p className="mt-3 text-sm font-bold text-slate-700">{copy.artifactPlaceholderTitle}</p>
+            <p className="mt-2 text-xs leading-5 text-slate-400">{copy.artifactPlaceholderBody}</p>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-slate-100 bg-slate-50 p-4">
+        <p className="text-xs font-bold uppercase tracking-[0.08em] text-blue-500">{artifact.type}</p>
+        <h3 className="mt-2 text-sm font-bold leading-6 text-slate-900">{artifact.title}</h3>
+        {artifact.summary ? <p className="mt-2 text-xs leading-5 text-slate-500">{artifact.summary}</p> : null}
+        <pre className="mt-4 whitespace-pre-wrap font-sans text-xs leading-5 text-slate-600">
+          {artifact.content || copy.previewPlaceholderBody}
+        </pre>
       </div>
     );
   }
@@ -1071,16 +1553,66 @@ export default function CopilotWorkbenchPage({
       >
         <section className="min-h-0 min-w-0 overflow-hidden">
           {workspaceMode === 'chat' ? (
-            <div className="flex h-full min-h-0 items-center justify-center p-8">
-              <div className="w-full max-w-2xl rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm">
-                <span className="mx-auto grid h-12 w-12 place-items-center rounded-xl bg-blue-50 text-blue-600">
-                  <Bot className="h-6 w-6" />
-                </span>
-                <h2 className="mt-5 text-xl font-bold tracking-normal text-slate-900">
-                  {copy.chatPlaceholderTitle}
-                </h2>
-                <p className="mt-3 text-sm leading-6 text-slate-500">{copy.chatPlaceholderBody}</p>
+            <div className="flex h-full min-h-0 flex-col bg-white">
+              <div className="min-h-0 flex-1 overflow-y-auto px-8 py-8">
+                <div
+                  className={`mx-auto flex min-h-full w-full max-w-4xl flex-col gap-5 ${
+                    activeMessages.length ? '' : 'justify-center'
+                  }`}
+                >
+                  {activeMessages.length ? (
+                    <div className="flex flex-col gap-5 py-4">
+                      {activeMessages.map(renderChatMessage)}
+                    </div>
+                  ) : (
+                    <div className="mx-auto w-full max-w-3xl rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+                      <span className="mx-auto grid h-12 w-12 place-items-center rounded-xl bg-blue-50 text-blue-600">
+                        <Bot className="h-5 w-5" />
+                      </span>
+                      <h2 className="mt-4 text-xl font-bold tracking-normal text-slate-900">
+                        {copy.chatPlaceholderTitle}
+                      </h2>
+                      <p className="mt-2 text-sm leading-6 text-slate-500">{copy.chatPlaceholderBody}</p>
+                    </div>
+                  )}
+                </div>
               </div>
+
+              {chatError ? (
+                <div className="border-t border-red-100 bg-red-50 px-8 py-3 text-sm font-semibold text-red-600">
+                  <div className="mx-auto max-w-4xl">
+                    <span className="font-bold">{copy.chatErrorTitle}: </span>
+                    {chatError}
+                  </div>
+                </div>
+              ) : null}
+
+              <form className="border-t border-slate-200 bg-white px-8 py-5" onSubmit={submitChat}>
+                <div className="mx-auto flex w-full max-w-4xl items-end gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm focus-within:border-blue-300 focus-within:ring-4 focus-within:ring-blue-50">
+                  <textarea
+                    data-testid="copilot-chat-input"
+                    className="max-h-32 min-h-[48px] min-w-0 flex-1 resize-none border-none bg-transparent px-1 py-1 text-sm font-medium leading-6 text-slate-800 outline-none placeholder:text-slate-400"
+                    value={chatInput}
+                    onChange={(event) => setChatInput(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' && !event.shiftKey) {
+                        event.preventDefault();
+                        event.currentTarget.form?.requestSubmit();
+                      }
+                    }}
+                    placeholder={copy.chatInputPlaceholder}
+                  />
+                  <button
+                    data-testid="copilot-chat-submit"
+                    type="submit"
+                    disabled={chatLoading || !chatInput.trim()}
+                    className="inline-flex h-10 shrink-0 items-center gap-2 rounded-lg bg-blue-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
+                  >
+                    {chatLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                    {chatLoading ? copy.chatSending : copy.chatSend}
+                  </button>
+                </div>
+              </form>
             </div>
           ) : (
             <div className="h-full min-h-0 overflow-hidden p-6">{renderBrandModule()}</div>
@@ -1110,13 +1642,7 @@ export default function CopilotWorkbenchPage({
                   className="flex min-h-0 flex-1 flex-col rounded-xl border border-slate-200 bg-white p-5 shadow-[0_18px_44px_rgba(15,23,42,0.10)]"
                 >
                   <h2 className="text-base font-bold tracking-normal text-slate-900">{copy.previewPage}</h2>
-                  <div className="mt-6 flex min-h-0 flex-1 items-center justify-center rounded-lg border border-dashed border-slate-200 bg-slate-50 p-6 text-center">
-                    <div>
-                      <FileText className="mx-auto h-7 w-7 text-slate-300" />
-                      <p className="mt-3 text-sm font-bold text-slate-700">{copy.previewPlaceholderTitle}</p>
-                      <p className="mt-2 text-xs leading-5 text-slate-400">{copy.previewPlaceholderBody}</p>
-                    </div>
-                  </div>
+                  <div className="mt-6 flex min-h-0 flex-1">{renderArtifactPreviewBody(selectedArtifact)}</div>
                 </div>
               </div>
             </aside>
@@ -1132,12 +1658,30 @@ export default function CopilotWorkbenchPage({
                   <h2 className="text-base font-bold tracking-normal text-slate-900">{copy.artifacts}</h2>
                   <SquareIconButton icon={Plus} size="xs" variant="ghost" aria-label={copy.newArtifact} />
                 </div>
-                <div className="mt-6 flex min-h-0 flex-1 items-center justify-center rounded-lg border border-dashed border-slate-200 bg-slate-50 p-6 text-center">
-                  <div>
-                    <FileText className="mx-auto h-7 w-7 text-slate-300" />
-                    <p className="mt-3 text-sm font-bold text-slate-700">{copy.artifactPlaceholderTitle}</p>
-                    <p className="mt-2 text-xs leading-5 text-slate-400">{copy.artifactPlaceholderBody}</p>
-                  </div>
+                <div className="mt-5 min-h-0 flex-1 overflow-y-auto">
+                  {activeArtifacts.length ? (
+                    <div className="space-y-3">
+                      {activeArtifacts.map((artifact) => (
+                        <button
+                          key={artifact.id}
+                          type="button"
+                          className={`w-full rounded-lg border p-3 text-left transition ${
+                            selectedArtifact?.id === artifact.id
+                              ? 'border-blue-200 bg-blue-50'
+                              : 'border-slate-100 bg-slate-50 hover:border-slate-200 hover:bg-white'
+                          }`}
+                          onClick={() => setSelectedArtifactId(artifact.id)}
+                        >
+                          <span className="block truncate text-sm font-bold text-slate-900">{artifact.title}</span>
+                          <span className="mt-1 block text-xs leading-5 text-slate-500">
+                            {artifact.summary || copy.generatedArtifact}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    renderArtifactPreviewBody(null)
+                  )}
                 </div>
               </div>
             </div>

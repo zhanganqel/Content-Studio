@@ -55,34 +55,46 @@ function getSourceUrls(project, ids) {
     .filter(Boolean);
 }
 
+function getDefaultBrandName(project, demoProject) {
+  return (
+    demoProject?.brandName ??
+    demoProject?.name?.replace(/\s+Demo Project$/i, '') ??
+    project?.name?.replace(/\s+Demo Project$/i, '') ??
+    ''
+  );
+}
+
 export function createDefaultBrandProfile(project) {
   const demoProject = project?.demoProject;
   const brandProfile = demoProject?.brandProfile ?? {};
+  const defaultCoreCategories = [
+    'Precision CNC machining',
+    'Custom metal parts',
+    'Sheet metal fabrication',
+    'Surface finishing',
+  ];
+  const defaultCompanySourceIds = ['home', 'about', 'service', 'contact'];
+  const defaultAuthoritySourceIds = [
+    'source-five-axis-cnc-machining',
+    'source-dfm-support',
+    'source-automotive-connector-case',
+    'source-audio-enclosure-case',
+    'source-machining-accuracy',
+    'source-design-and-prototyping-support',
+  ];
 
   return {
     companyName: demoProject?.name ?? project?.name ?? '',
-    brandName: 'Rejin CNC',
+    brandName: getDefaultBrandName(project, demoProject),
     website: demoProject?.website ?? '',
     industry: demoProject?.industry ?? '',
-    coreMarkets: ['Global'],
-    coreCategories: [
-      'Precision CNC machining',
-      'Custom metal parts',
-      'Sheet metal fabrication',
-      'Surface finishing',
-    ],
+    coreMarkets: demoProject?.coreMarkets ?? ['Global'],
+    coreCategories: demoProject?.coreCategories ?? defaultCoreCategories,
     companyIntroduction: brandProfile.summary ?? '',
     certifications: safeJoin(brandProfile.certifications),
     coreAdvantages: safeJoin(brandProfile.capabilities),
-    companyLinks: getSourceUrls(project, ['home', 'about', 'service', 'contact']),
-    authorityLinks: getSourceUrls(project, [
-      'source-five-axis-cnc-machining',
-      'source-dfm-support',
-      'source-automotive-connector-case',
-      'source-audio-enclosure-case',
-      'source-machining-accuracy',
-      'source-design-and-prototyping-support',
-    ]),
+    companyLinks: getSourceUrls(project, demoProject?.companySourceIds ?? defaultCompanySourceIds),
+    authorityLinks: getSourceUrls(project, demoProject?.authoritySourceIds ?? defaultAuthoritySourceIds),
     brandPositioning: brandProfile.positioning ?? '',
     brandRequirements: safeJoin(brandProfile.brandStyle?.messagingPrinciples),
   };

@@ -27,6 +27,9 @@ export const jobTitleOptions = [
   'Mechanical Engineer',
   'Supply Chain Lead',
   'Marketing Manager',
+  'Project Manager',
+  'Engineering Manager',
+  'EPC Director',
 ];
 
 export const contentTypeOptions = [
@@ -190,6 +193,90 @@ function getDemoPersonas(project) {
         'Supplier consolidation, repeatability, quality systems, delivery planning, export communication, and industry-specific application proof.',
       updatedAt: '2026-06-29',
     },
+    'international-contractor-procurement-manager': {
+      name: 'International Contractor Procurement Manager',
+      organizationType: 'Engineering Contractor',
+      organizationScale: '1000+ employees',
+      industry: 'International building and infrastructure construction',
+      jobTitle: 'Procurement Manager',
+      businessDescription:
+        'Sources formwork, scaffolding, steel structure, and bridge or tunnel equipment for overseas projects where supplier reliability affects schedule, safety, and compliance risk.',
+      painPoints:
+        'Needs credible certification, predictable delivery, complete product categories, regional support, and supplier evidence that can be shared with engineering and project teams.',
+      searchGoal:
+        'Compare formwork and scaffolding suppliers with integrated design, production, rental, construction guidance, project proof, and overseas service coverage.',
+      commonQuestions:
+        'Can this supplier support both formwork and scaffolding? What certifications are available? Can the team provide design drawings, delivery support, and on-site guidance?',
+      preferredContentTypes: ['Comparison', 'FAQS', 'Industry Insights'],
+      preferredContentDepth: 'Understanding',
+      preferredExpressionStyles: ['professional', 'objective', 'confident'],
+      audienceFocus:
+        'Supplier capability, certification, delivery dependability, engineering support, localized service, and project-risk reduction.',
+      updatedAt: '2026-07-08',
+    },
+    'formwork-scaffolding-distributor': {
+      name: 'Formwork and Scaffolding Distributor',
+      organizationType: 'Distributor',
+      organizationScale: '50-199 employees',
+      industry: 'Construction equipment distribution',
+      jobTitle: 'Business Owner',
+      businessDescription:
+        'Builds a regional catalog of scaffolding, formwork, props, beams, couplers, and protection systems for contractors and project buyers.',
+      painPoints:
+        'Needs dependable product breadth, wholesale supply, documentation, certification signals, repeatable quality, and marketing content that explains technical categories clearly.',
+      searchGoal:
+        'Identify a manufacturer partner with broad formwork and scaffolding coverage, wholesale-ready product information, quality proof, and localized export service.',
+      commonQuestions:
+        'Which product categories can we distribute? Is rental or purchase supported? What documents and certifications help us sell to contractors?',
+      preferredContentTypes: ['Product Reviews', 'Listicles', 'FAQS'],
+      preferredContentDepth: 'Understanding',
+      preferredExpressionStyles: ['straightforward', 'professional', 'persuasive'],
+      audienceFocus:
+        'Catalog breadth, wholesale supply, certification proof, product explainability, service responsiveness, and regional partner fit.',
+      updatedAt: '2026-07-08',
+    },
+    'project-engineering-manager': {
+      name: 'Project and Structural Engineering Manager',
+      organizationType: 'Engineering Contractor',
+      organizationScale: '200-500 employees',
+      industry: 'Temporary works and structural engineering',
+      jobTitle: 'Engineering Manager',
+      businessDescription:
+        'Reviews formwork, scaffolding, climbing platform, and bridge construction systems for constructability, technical drawings, load path clarity, and project-stage execution.',
+      painPoints:
+        'Needs practical system details, application scenarios, drawing support, compatibility with complex structures, and confidence that technical guidance is available after purchase.',
+      searchGoal:
+        'Understand which GOWE systems fit high-rise, bridge, tunnel, industrial, and public building scenarios, and what engineering support is available.',
+      commonQuestions:
+        'Which formwork system fits this structure? Can the supplier provide material calculations and drawings? How does technical guidance work during construction?',
+      preferredContentTypes: ['How-to Guides', 'Problem-Solving', 'Ultimate Guides'],
+      preferredContentDepth: 'Expert',
+      preferredExpressionStyles: ['educational', 'objective', 'concise'],
+      audienceFocus:
+        'Technical fit, drawing support, system selection, construction guidance, safety, reuse, and engineering constraints.',
+      updatedAt: '2026-07-08',
+    },
+    'infrastructure-developer-epc-lead': {
+      name: 'Infrastructure Developer or EPC Lead',
+      organizationType: 'Engineering Contractor',
+      organizationScale: '1000+ employees',
+      industry: 'Infrastructure development and EPC delivery',
+      jobTitle: 'EPC Director',
+      businessDescription:
+        'Leads supplier evaluation for bridge, tunnel, railway, airport, industrial, and large steel structure projects that need coordinated product, engineering, and service capability.',
+      painPoints:
+        'Needs project proof, lifecycle service coverage, procurement flexibility, localized support, and confidence that systems scale beyond single-building applications.',
+      searchGoal:
+        'Validate whether GOWE can support infrastructure-scale formwork, scaffolding, bridge and tunnel equipment, steel structures, and regional project delivery.',
+      commonQuestions:
+        'Has the supplier supported comparable infrastructure projects? Can one partner cover design, production, construction guidance, and operation support? What overseas service exists?',
+      preferredContentTypes: ['Industry Insights', 'Comparison', 'Problem-Solving'],
+      preferredContentDepth: 'Expert',
+      preferredExpressionStyles: ['professional', 'objective', 'confident'],
+      audienceFocus:
+        'Project proof, lifecycle capability, regional service, infrastructure fit, construction risk, and multi-category supplier consolidation.',
+      updatedAt: '2026-07-08',
+    },
   };
 
   const mapped = demoPersonas.map((persona, index) => ({
@@ -203,6 +290,10 @@ function getDemoPersonas(project) {
     'hardware-startup-founder',
     'mechanical-engineer',
     'supply-chain-lead',
+    'international-contractor-procurement-manager',
+    'formwork-scaffolding-distributor',
+    'project-engineering-manager',
+    'infrastructure-developer-epc-lead',
   ];
   const selectedPersonas = preferredOrder
     .map((id) => mapped.find((persona) => persona.id === id))

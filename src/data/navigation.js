@@ -1,23 +1,6 @@
-import { rejinCncProject } from './demo/rejinCncProject.js';
+import { projectRegistryProjects } from './demo/projectRegistry.js';
 
-export const projects = [
-  {
-    id: rejinCncProject.id,
-    name: rejinCncProject.name,
-    description: rejinCncProject.description,
-    demoProject: rejinCncProject,
-  },
-  {
-    id: 'aero-parts',
-    name: 'Aero Precision Parts',
-    description: 'Demo project placeholder for aerospace machining solutions.',
-  },
-  {
-    id: 'nova-tools',
-    name: 'Nova Tools Export',
-    description: 'Demo project placeholder for overseas tool brand marketing.',
-  },
-];
+export const projects = projectRegistryProjects;
 
 export const navSections = [
   {

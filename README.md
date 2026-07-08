@@ -2,7 +2,7 @@
 
 Content Studio 是一个面向外贸企业的营销内容生产工具前端原型。当前默认演示项目是 `Rejin CNC Technology Co.,Ltd`，用于验证品牌知识、受众画像、知识资料、博客 AI 创作和后续 SEO 内容生产流程。
 
-本仓库当前是前端原型，不接入后端。业务演示数据使用英文，系统界面支持中文和英文切换。
+本仓库是前端仓库 `studio`，当前以本地 demo/mock 为主，已开始通过 service 层对接后端仓库 `copilot`。业务演示数据使用英文，系统界面支持中文和英文切换。
 
 ## 快速运行
 
@@ -16,6 +16,15 @@ pnpm preview
 - `pnpm dev`：启动本地开发服务，默认使用 Vite。
 - `pnpm build`：生成生产构建，用于验证部署前状态。
 - `pnpm preview`：预览 `pnpm build` 生成的构建结果。
+
+## 关联仓库
+
+| 名称 | 本地路径 | GitHub 远端 | 职责 |
+| --- | --- | --- | --- |
+| `studio` | `/Users/zhangqiqi/Desktop/Content Studio` | `zhanganqel/Content-Studio` | React/Vite 前端、GitHub Pages、UI、Figma 对齐、本地 demo/mock 和前端 service。 |
+| `copilot` | `/Users/zhangqiqi/Desktop/content-studio-copilot` | `zhanganqel/content-studio-copilot` | EdgeOne Makers / Deep Agents 后端、agents、cloud-functions、AI API 和后端部署配置。 |
+
+当前前端联调后端的默认 API 配置入口是 `src/services/backendApi.js`，可通过 `VITE_API_BASE` 覆盖后端地址。后端代码不要放入本仓库；`content-studio-copilot-main/` 视为历史或误放目录，不作为后端开发入口，除非明确要求处理。
 
 ## 项目地图
 
