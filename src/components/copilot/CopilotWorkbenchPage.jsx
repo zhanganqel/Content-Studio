@@ -651,6 +651,15 @@ export default function CopilotWorkbenchPage({
     setPreviewWidthPercent(50);
   }
 
+  function openArtifactPreview(artifactId) {
+    setSelectedArtifactId(artifactId);
+    setArtifactPanelOpen(false);
+    if (!previewOpen) {
+      setPreviewWidthPercent(50);
+    }
+    setPreviewOpen(true);
+  }
+
   function patchConversationState(updater) {
     const currentState = conversationStateRef.current;
     const nextState = typeof updater === 'function' ? updater(currentState) : updater;
@@ -831,6 +840,8 @@ export default function CopilotWorkbenchPage({
 
           if (eventData.type === 'task_status') {
             updateAssistantMessage(assistantMessage.id, {
+              agentId: eventData.agentId,
+              intent: eventData.intent,
               statusText: eventData.label || eventData.status || copy.taskRunning,
             });
             return;
@@ -838,7 +849,9 @@ export default function CopilotWorkbenchPage({
 
           if (eventData.type === 'message_delta') {
             updateAssistantMessage(assistantMessage.id, {
+              agentId: eventData.agentId,
               contentDelta: eventData.content ?? eventData.delta ?? '',
+              intent: eventData.intent,
             });
             return;
           }
@@ -1670,7 +1683,7 @@ export default function CopilotWorkbenchPage({
                               ? 'border-blue-200 bg-blue-50'
                               : 'border-slate-100 bg-slate-50 hover:border-slate-200 hover:bg-white'
                           }`}
-                          onClick={() => setSelectedArtifactId(artifact.id)}
+                          onClick={() => openArtifactPreview(artifact.id)}
                         >
                           <span className="block truncate text-sm font-bold text-slate-900">{artifact.title}</span>
                           <span className="mt-1 block text-xs leading-5 text-slate-500">

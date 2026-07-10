@@ -63,6 +63,7 @@ function normalizeMessage(message) {
     createdAt: message.createdAt ?? nowIso(),
     error: message.error ?? '',
     id: message.id || createProjectEntityId('copilot-message'),
+    intent: message.intent ?? '',
     role: message.role ?? 'assistant',
     sourceIds: Array.isArray(message.sourceIds) ? message.sourceIds : [],
     status: message.status ?? 'done',
