@@ -1,10 +1,6 @@
-import { createBackendUrl } from './backendApi.js';
+import { createCodexServiceUrl } from './codexServiceApi.js';
 
 const maxResponseSampleLength = 800;
-
-function isEdgeOneAccessRestricted(text) {
-  return /eo_time missing|Access Restricted|Authentication Expired|UNAUTHORIZED/i.test(String(text ?? ''));
-}
 
 function parseSseEvent(rawEvent) {
   const dataLines = rawEvent
@@ -26,12 +22,10 @@ function parseSseEvent(rawEvent) {
 }
 
 function createStreamingFormatError(response, responseSample) {
-  if (isEdgeOneAccessRestricted(responseSample)) {
-    return new Error('EdgeOne backend access is restricted or the preview link has expired.');
-  }
-
   const contentType = response.headers.get('content-type') || 'unknown content type';
-  return new Error(`No SSE events were received from the backend (${contentType}).`);
+  const sample = String(responseSample || '').trim().slice(0, 160);
+  const detail = sample ? ` Response: ${sample}` : '';
+  return new Error(`No SSE events were received from the Codex service (${contentType}).${detail}`);
 }
 
 async function readErrorResponse(response) {
@@ -42,12 +36,7 @@ async function readErrorResponse(response) {
       return data?.error || data?.message || `Request failed (${response.status})`;
     }
 
-    const text = (await response.text()) || `Request failed (${response.status})`;
-    if (response.status === 401 && isEdgeOneAccessRestricted(text)) {
-      return 'EdgeOne backend access is restricted or the preview link has expired.';
-    }
-
-    return text;
+    return (await response.text()) || `Request failed (${response.status})`;
   } catch {
     return `Request failed (${response.status})`;
   }
@@ -74,7 +63,7 @@ export async function streamCopilotChat({
   onEvent,
   signal,
 }) {
-  const response = await fetch(createBackendUrl('/chat'), {
+  const response = await fetch(createCodexServiceUrl('/chat'), {
     body: JSON.stringify(body),
     headers: {
       'Content-Type': 'application/json',
@@ -135,4 +124,13 @@ export async function streamCopilotChat({
   if (!eventCount) {
     throw createStreamingFormatError(response, responseSample || buffer);
   }
+}
+
+export async function releaseCopilotThread(projectId, conversationId) {
+  const path = `/threads/${encodeURIComponent(projectId)}/${encodeURIComponent(conversationId)}`;
+  const response = await fetch(createCodexServiceUrl(path), { method: 'DELETE' });
+  if (!response.ok) {
+    throw new Error(await readErrorResponse(response));
+  }
+  return response.json();
 }

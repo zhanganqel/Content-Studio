@@ -1,10 +1,61 @@
 # Component Guidelines
 
-本文件是 Content Studio 共享组件使用规则。视觉 token、颜色、字体、间距、图标和 Figma 生成规范以根目录 `DESIGN.md` 为准；本文件只描述现有 React 组件的使用边界。
+本文件是 Content Studio 共享组件使用规则。视觉 token、颜色、字体、间距、图标和 Figma 生成规范以同目录 `DESIGN.md` 为准；本文件只描述现有 React 组件的使用边界。
 
 新增页面前先检查 `src/components/ui/` 是否已有可复用组件。只有当现有组件无法表达明确的新交互时，才新增组件或变体。
 
 如果开发中发现已有相同或高度相似的模块、布局、交互或页面元素，先列出可复用位置、建议复用方式和影响范围，再询问用户是否创建共享组件、扩展共享组件或直接复用已有组件；未确认前不要在业务页面重复手写一套相同结构。
+
+## Current Coverage
+
+当前已存在的共享组件：
+
+- `src/components/ui/Button.jsx` {#页面级按钮组件:提供 primary、secondary、neutral、danger 四类操作按钮}。
+- `src/components/ui/SquareIconButton.jsx` {#方形图标按钮组件:用于筛选、搜索、历史、新建、收起展开等紧凑工具入口}。
+- `src/components/ui/PageHeader.jsx` {#页面头部组件:统一页面标题、说明和右侧操作区}。
+- `src/components/ui/FixedPageLayout.jsx` {#固定页面布局组件:提供页面头部固定区域和内部滚动主体}。
+- `src/components/ui/ListCard.jsx` {#列表卡片组件:统一重复列表项的标题、元信息、标签和操作区}。
+- `src/components/ui/Toast.jsx` {#全局提示组件:通过 portal 显示成功、信息、警告和错误提示}。
+
+当前仍分散在业务页面、后续适合抽取的高频结构：
+
+- 确认、删除、放弃更改弹窗。
+- 表单字段、文本域、下拉、多选、标签输入。
+- 搜索栏、筛选按钮、筛选弹层、应用/清除筛选。
+- 空状态、无匹配状态、预览空状态。
+- 文章、任务、资料、来源等状态标签。
+- AI 创作步骤条、产物卡、引用来源卡、预览面板和资源选择弹窗。
+
+## Component Backlog
+
+### P0
+
+- `ConfirmDialog` {#确认弹窗候选组件:统一删除、放弃更改、离开页面和危险操作确认}：重复面最广，优先替换各页面局部 `ConfirmDialog`、`DeleteDialog`、`DiscardDialog`、`UnsavedDialog`。
+- `FormField` {#表单字段候选组件:统一 label、required、hint、error、disabled 和字段容器布局}：先支持 input、select、textarea，再扩展自定义 children。
+- `StatusBadge` {#状态标签候选组件:统一 success、info、warning、error、neutral 状态色和尺寸}：先覆盖文章状态、任务状态、资料处理状态、文件来源状态。
+- `EmptyState` {#空状态候选组件:统一空列表、筛选无结果、预览空和资料空的图标、标题、说明和操作按钮}：替代页面内临时空状态区块。
+
+### P1
+
+- `Drawer` {#右侧抽屉候选组件:统一创建和编辑复杂对象的标题栏、滚动正文、底部操作区和未保存确认}：优先覆盖受众画像和知识类型管理。
+- `FilterToolbar` {#筛选工具栏候选组件:统一搜索框、筛选入口、清除全部和列表控制区}：优先覆盖受众画像、博客文章和知识资料。
+- `FilterPopover` {#筛选弹层候选组件:统一筛选字段、蓝点状态、应用和清除操作}：与 `FilterToolbar` 配套抽取。
+- `TagInput` {#标签输入候选组件:统一标签展示、键盘添加、重复校验、数量上限和移除按钮}：优先覆盖品牌档案、受众画像和 AI 创建任务页。
+
+### P2
+
+- `ArtifactCard` {#AI 产物卡候选组件:统一 AI 创作产物入口的选中态、标题、说明和跳转提示}。
+- `ReferenceBlockCard` {#引用来源卡候选组件:统一引用证据、来源跳转、展开收起和生成内容高亮}。
+- `AIGenerationShell` {#AI 创作工作台候选组件:统一顶部固定栏、双栏主体、底部操作栏和页面级滚动策略}。
+- `ResourceSelectModal` {#资源选择弹窗候选组件:统一知识条目、知识资料、受众等可搜索多选资源的选择体验}。
+
+## Adoption Rule
+
+- 新页面必须优先复用现有共享组件和本 backlog 中已抽取的组件。
+- 旧页面不要求一次性重构；后续改到对应区域时，再按 P0、P1、P2 顺序逐步替换。
+- 抽取组件前先列出复用页面、props 需求、视觉差异和迁移风险，并向用户确认。
+- 组件抽取必须保持原页面行为不变；如果会改变文案、按钮顺序、交互路径或信息架构，先说明差异并等待确认。
+- 每次新增或修改共享组件后，同步更新同目录 `DESIGN.md` 和本文件。
 
 ## Button
 
@@ -79,5 +130,5 @@
 
 ## Change Rule
 
-- 新增或修改共享组件时，同步更新 `DESIGN.md` 和本文件。
+- 新增或修改共享组件时，同步更新同目录 `DESIGN.md` 和本文件。
 - 如果页面需要新的视觉变体，先把变体命名、状态和使用场景写入规范，再实现。

@@ -3,6 +3,9 @@ import {
   Bot,
   ChevronDown,
   ChevronRight,
+  CircleAlert,
+  CircleCheck,
+  Clock3,
   Database,
   FileText,
   History,
@@ -23,6 +26,7 @@ import {
   Send,
   Settings,
   Sparkles,
+  Square,
   Trash2,
   UserRound,
   UsersRound,
@@ -40,7 +44,7 @@ import {
   getCopilotSidebarCollapsedPreference,
   saveCopilotSidebarCollapsedPreference,
 } from '../../services/copilotWorkbenchStore.js';
-import { streamCopilotChat } from '../../services/copilotChatApi.js';
+import { releaseCopilotThread, streamCopilotChat } from '../../services/copilotChatApi.js';
 import {
   createCopilotArtifact,
   createCopilotConversation,
@@ -53,7 +57,7 @@ import {
   getCopilotConversationState,
   saveCopilotConversationState,
 } from '../../services/copilotConversationStore.js';
-import { buildCopilotProjectContext } from '../../services/copilotContextBuilder.js';
+import { createTargetArtifactSnapshot } from '../../services/copilotArtifactPayload.js';
 import SquareIconButton from '../ui/SquareIconButton.jsx';
 import { SolidDashboardIcon } from '../ui/SolidIcons.jsx';
 
@@ -79,13 +83,6 @@ function getProjectInitials(name = '') {
     : 'P';
 }
 
-function getDefaultConversations(copy) {
-  return copy.defaultConversations.map((item) => ({
-    ...item,
-    updatedAt: item.updatedAt,
-  }));
-}
-
 function formatRelativeTime(value, copy) {
   const timestamp = Date.parse(value);
   if (Number.isNaN(timestamp)) {
@@ -107,6 +104,37 @@ function formatRelativeTime(value, copy) {
 
 function sortConversations(conversations) {
   return [...conversations].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+}
+
+function getLatestConversationRuns(runs = []) {
+  const latestRuns = new Map();
+
+  for (const run of runs) {
+    const current = latestRuns.get(run.conversationId);
+    if (!current || Date.parse(run.startedAt) > Date.parse(current.startedAt)) {
+      latestRuns.set(run.conversationId, run);
+    }
+  }
+
+  return latestRuns;
+}
+
+function getPendingConversationRun(runs = [], conversationId = '') {
+  return runs
+    .filter(
+      (run) =>
+        run.conversationId === conversationId &&
+        run.status === 'waiting_input' &&
+        !run.resolvedAt,
+    )
+    .sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt))[0];
+}
+
+function isWaitingTaskCancellation(value = '') {
+  const normalized = value.trim().toLowerCase().replace(/[。！!.]+$/g, '').trim();
+  return /^(取消|停止|不用了|不继续|取消任务|停止任务|cancel|stop|never mind|don't continue)$/.test(
+    normalized,
+  );
 }
 
 function IconTooltip({ children, label, placement = 'right' }) {
@@ -140,8 +168,11 @@ function ConversationItem({
   onRenameStart,
   onSelect,
   onTogglePin,
+  taskRun,
 }) {
   const inputRef = useRef(null);
+  const taskStatus = taskRun?.status;
+  const taskAcknowledged = Boolean(taskRun?.acknowledgedAt);
 
   useEffect(() => {
     if (!isEditing) return;
@@ -206,8 +237,41 @@ function ConversationItem({
       </span>
       {isEditing ? null : (
         <span className="relative flex h-8 w-[88px] flex-none items-center justify-end">
-          <span className="text-xs font-medium text-slate-400 transition-opacity group-hover:opacity-0">
-            {formatRelativeTime(conversation.updatedAt, copy)}
+          <span
+            data-testid={`copilot-conversation-status-${conversation.id}`}
+            className="flex items-center justify-end text-xs font-medium text-slate-400 transition-opacity group-hover:opacity-0"
+          >
+            {taskStatus === 'running' ? (
+              <span
+                role="status"
+                aria-label={copy.taskRunning}
+                title={copy.taskRunning}
+                className="h-[18px] w-[18px] animate-spin rounded-full border-2 border-slate-200 border-t-blue-600"
+              />
+            ) : taskStatus === 'waiting_input' && !taskRun?.resolvedAt ? (
+              <Clock3
+                aria-label={copy.taskWaitingInput}
+                className="h-[18px] w-[18px] text-amber-500"
+                strokeWidth={2.4}
+                title={copy.taskWaitingInput}
+              />
+            ) : taskStatus === 'done' && !taskAcknowledged ? (
+              <CircleCheck
+                aria-label={copy.taskCompleted}
+                className="h-[18px] w-[18px] text-emerald-500"
+                strokeWidth={2.4}
+                title={copy.taskCompleted}
+              />
+            ) : (taskStatus === 'error' || taskStatus === 'interrupted') && !taskAcknowledged ? (
+              <CircleAlert
+                aria-label={taskStatus === 'error' ? copy.taskFailed : copy.taskInterrupted}
+                className="h-[18px] w-[18px] text-red-500"
+                strokeWidth={2.4}
+                title={taskStatus === 'error' ? copy.taskFailed : copy.taskInterrupted}
+              />
+            ) : (
+              formatRelativeTime(conversation.updatedAt, copy)
+            )}
           </span>
           <span className="absolute right-0 hidden items-center gap-0.5 group-hover:flex">
             <span
@@ -323,10 +387,9 @@ export default function CopilotWorkbenchPage({
     ],
     [t],
   );
-  const defaultConversations = useMemo(() => getDefaultConversations(copy), [copy]);
   const initialConversationStateRef = useRef(null);
   if (!initialConversationStateRef.current) {
-    initialConversationStateRef.current = getCopilotConversationState(activeProject.id, defaultConversations);
+    initialConversationStateRef.current = getCopilotConversationState(activeProject.id);
   }
   const [sidebarCollapsed, setSidebarCollapsed] = useState(getCopilotSidebarCollapsedPreference);
   const [brandSectionOpen, setBrandSectionOpen] = useState(true);
@@ -348,20 +411,22 @@ export default function CopilotWorkbenchPage({
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewWidthPercent, setPreviewWidthPercent] = useState(50);
   const [chatInput, setChatInput] = useState('');
-  const [chatError, setChatError] = useState('');
-  const [chatLoading, setChatLoading] = useState(false);
+  const [conversationErrors, setConversationErrors] = useState({});
+  const [runningConversationIds, setRunningConversationIds] = useState(() => new Set());
   const [selectedArtifactId, setSelectedArtifactId] = useState('');
   const projectMenuRef = useRef(null);
   const userMenuRef = useRef(null);
   const conversationActionMenuRef = useRef(null);
   const mainWorkspaceRef = useRef(null);
   const popoverCloseTimerRef = useRef(null);
-  const activeChatAbortRef = useRef(null);
+  const activeChatControllersRef = useRef(new Map());
 
   const sidebarWidth = sidebarCollapsed ? collapsedSidebarWidth : expandedSidebarWidth;
   const conversations = conversationState.conversations;
   const activeConversation =
     conversations.find((conversation) => conversation.id === activeConversationId) ?? conversations[0];
+  const activeConversationRunning = runningConversationIds.has(activeConversation?.id);
+  const chatError = conversationErrors[activeConversation?.id] ?? '';
   const activeMessages = useMemo(
     () => getConversationMessages(conversationState, activeConversation?.id),
     [activeConversation?.id, conversationState],
@@ -380,6 +445,10 @@ export default function CopilotWorkbenchPage({
   );
   const pinnedConversations = filteredConversations.filter((conversation) => conversation.pinned);
   const normalConversations = filteredConversations.filter((conversation) => !conversation.pinned);
+  const latestConversationRuns = useMemo(
+    () => getLatestConversationRuns(conversationState.runs),
+    [conversationState.runs],
+  );
   const isChatMode = workspaceMode === 'chat';
   const previewVisible = isChatMode && previewOpen;
   const artifactPanelVisible = isChatMode && artifactPanelOpen && !previewOpen;
@@ -398,7 +467,9 @@ export default function CopilotWorkbenchPage({
   }, [conversationState]);
 
   useEffect(() => {
-    const nextConversationState = getCopilotConversationState(activeProject.id, defaultConversations);
+    for (const controller of activeChatControllersRef.current.values()) controller.abort();
+    activeChatControllersRef.current.clear();
+    const nextConversationState = getCopilotConversationState(activeProject.id);
     conversationStateRef.current = nextConversationState;
     setConversationState(nextConversationState);
     setActiveConversationId(nextConversationState.conversations[0]?.id ?? '');
@@ -407,14 +478,16 @@ export default function CopilotWorkbenchPage({
     setConversationActionMenuOpen(false);
     setEditingConversationId('');
     setEditingConversationTitle('');
-    setChatError('');
+    setConversationErrors({});
+    setRunningConversationIds(new Set());
     setChatInput('');
     setSelectedArtifactId('');
-  }, [activeProject.id, defaultConversations]);
+  }, [activeProject.id]);
 
   useEffect(
     () => () => {
-      activeChatAbortRef.current?.abort();
+      for (const controller of activeChatControllersRef.current.values()) controller.abort();
+      activeChatControllersRef.current.clear();
     },
     [],
   );
@@ -468,6 +541,77 @@ export default function CopilotWorkbenchPage({
     if (nextActiveConversationId !== undefined) {
       setActiveConversationId(nextActiveConversationId);
     }
+  }
+
+  function setConversationRunning(conversationId, running) {
+    setRunningConversationIds((current) => {
+      const next = new Set(current);
+      if (running) next.add(conversationId);
+      else next.delete(conversationId);
+      return next;
+    });
+  }
+
+  function setConversationError(conversationId, message) {
+    setConversationErrors((current) => ({ ...current, [conversationId]: message }));
+  }
+
+  function cancelActiveProjectRuns() {
+    const conversationIds = new Set(activeChatControllersRef.current.keys());
+    if (!conversationIds.size) return;
+
+    for (const controller of activeChatControllersRef.current.values()) controller.abort();
+    activeChatControllersRef.current.clear();
+    const endedAt = new Date().toISOString();
+    persistConversationState({
+      ...conversationStateRef.current,
+      messages: conversationStateRef.current.messages.map((message) =>
+        conversationIds.has(message.conversationId) && message.status === 'streaming'
+          ? { ...message, status: 'cancelled', statusText: '', updatedAt: endedAt }
+          : message,
+      ),
+      runs: conversationStateRef.current.runs.map((run) =>
+        conversationIds.has(run.conversationId) && run.status === 'running'
+          ? { ...run, acknowledgedAt: endedAt, endedAt, status: 'cancelled' }
+          : run,
+      ),
+    });
+    setRunningConversationIds(new Set());
+  }
+
+  function cancelConversationRun(conversationId) {
+    const controller = activeChatControllersRef.current.get(conversationId);
+    if (!controller) return;
+
+    controller.abort();
+    activeChatControllersRef.current.delete(conversationId);
+    const endedAt = new Date().toISOString();
+    persistConversationState({
+      ...conversationStateRef.current,
+      messages: conversationStateRef.current.messages.map((message) =>
+        message.conversationId === conversationId && message.status === 'streaming'
+          ? {
+              ...message,
+              content: message.content || copy.chatStopped,
+              status: 'cancelled',
+              statusText: '',
+              updatedAt: endedAt,
+            }
+          : message,
+      ),
+      runs: conversationStateRef.current.runs.map((run) =>
+        run.conversationId === conversationId && run.status === 'running'
+          ? { ...run, acknowledgedAt: endedAt, endedAt, status: 'cancelled' }
+          : run,
+      ),
+    });
+    setConversationRunning(conversationId, false);
+    setConversationError(conversationId, '');
+  }
+
+  function closeWorkbench() {
+    cancelActiveProjectRuns();
+    onClose();
   }
 
   function createNewConversation() {
@@ -546,6 +690,16 @@ export default function CopilotWorkbenchPage({
   }
 
   function deleteConversation(conversationId) {
+    activeChatControllersRef.current.get(conversationId)?.abort();
+    activeChatControllersRef.current.delete(conversationId);
+    setConversationRunning(conversationId, false);
+    setConversationErrors((current) => {
+      const next = { ...current };
+      delete next[conversationId];
+      return next;
+    });
+    void releaseCopilotThread(activeProject.id, conversationId).catch(() => {});
+
     const currentState = conversationStateRef.current;
     const nextConversations = currentState.conversations.filter((conversation) => conversation.id !== conversationId);
     const nextState = {
@@ -577,12 +731,31 @@ export default function CopilotWorkbenchPage({
   }
 
   function selectProject(projectId) {
+    if (projectId !== activeProject.id) cancelActiveProjectRuns();
     onProjectChange(projectId);
     setActivePopover('');
   }
 
   function selectConversation(conversationId) {
-    setActiveConversationId(conversationId);
+    const latestRun = getLatestConversationRuns(conversationStateRef.current.runs).get(conversationId);
+    const shouldAcknowledge =
+      latestRun &&
+      !latestRun.acknowledgedAt &&
+      ['done', 'error', 'interrupted'].includes(latestRun.status);
+
+    if (shouldAcknowledge) {
+      persistConversationState(
+        {
+          ...conversationStateRef.current,
+          runs: conversationStateRef.current.runs.map((run) =>
+            run.id === latestRun.id ? { ...run, acknowledgedAt: new Date().toISOString() } : run,
+          ),
+        },
+        conversationId,
+      );
+    } else {
+      setActiveConversationId(conversationId);
+    }
     setWorkspaceMode('chat');
     setActivePopover('');
     setConversationActionMenuOpen(false);
@@ -668,7 +841,7 @@ export default function CopilotWorkbenchPage({
   }
 
   function updateAssistantMessage(messageId, patch) {
-    const { artifactId, contentDelta, sourceId, ...messagePatch } = patch;
+    const { artifactId, contentDelta, sourceId, warning, ...messagePatch } = patch;
 
     patchConversationState((currentState) => ({
       ...currentState,
@@ -688,6 +861,9 @@ export default function CopilotWorkbenchPage({
                 ? [...new Set([...(message.artifactIds ?? []), artifactId])]
                 : message.artifactIds,
               updatedAt: new Date().toISOString(),
+              warnings: warning
+                ? [...new Set([...(message.warnings ?? []), warning])]
+                : message.warnings,
             }
           : message,
       ),
@@ -696,12 +872,19 @@ export default function CopilotWorkbenchPage({
 
   function upsertConversationArtifact(conversationId, messageId, rawArtifact) {
     const artifact = createCopilotArtifact({
+      changedSections: rawArtifact.changedSections ?? [],
+      changeSummary: rawArtifact.changeSummary ?? '',
       content: rawArtifact.content,
+      contentFormat: rawArtifact.contentFormat ?? 'markdown',
       conversationId,
+      evidenceGaps: rawArtifact.evidenceGaps ?? [],
+      metadata: rawArtifact.metadata ?? {},
+      parentArtifactId: rawArtifact.parentArtifactId ?? '',
       sourceIds: rawArtifact.sourceIds ?? [],
       sourceMessageId: messageId,
       status: rawArtifact.status ?? 'ready',
       summary: rawArtifact.summary,
+      taskType: rawArtifact.taskType ?? '',
       title: rawArtifact.title,
       type: rawArtifact.type ?? 'reply',
     });
@@ -761,18 +944,77 @@ export default function CopilotWorkbenchPage({
     event.preventDefault();
 
     const content = chatInput.trim();
-    if (!content || chatLoading) return;
+    if (!content) return;
 
     const currentConversation =
       conversationStateRef.current.conversations.find((conversation) => conversation.id === activeConversationId) ??
       conversationStateRef.current.conversations[0];
     if (!currentConversation) return;
+    if (activeChatControllersRef.current.has(currentConversation.id)) return;
+
+    const pendingRun = getPendingConversationRun(
+      conversationStateRef.current.runs,
+      currentConversation.id,
+    );
 
     const userMessage = createCopilotMessage({
       content,
       conversationId: currentConversation.id,
       role: 'user',
     });
+    const nextTitle = currentConversation.messageIds?.length
+      ? currentConversation.title
+      : deriveConversationTitle(content, currentConversation.title);
+
+    if (pendingRun && isWaitingTaskCancellation(content)) {
+      const endedAt = new Date().toISOString();
+      const cancellationMessage = createCopilotMessage({
+        agentId: 'copilot',
+        content: copy.chatStopped,
+        conversationId: currentConversation.id,
+        role: 'assistant',
+      });
+      persistConversationState(
+        {
+          ...conversationStateRef.current,
+          conversations: conversationStateRef.current.conversations.map((conversation) =>
+            conversation.id === currentConversation.id
+              ? {
+                  ...conversation,
+                  messageIds: [
+                    ...(conversation.messageIds ?? []),
+                    userMessage.id,
+                    cancellationMessage.id,
+                  ],
+                  title: nextTitle,
+                  updatedAt: endedAt,
+                }
+              : conversation,
+          ),
+          messages: [
+            ...conversationStateRef.current.messages,
+            userMessage,
+            cancellationMessage,
+          ],
+          runs: conversationStateRef.current.runs.map((run) =>
+            run.id === pendingRun.id
+              ? {
+                  ...run,
+                  acknowledgedAt: endedAt,
+                  endedAt,
+                  resolvedAt: endedAt,
+                  status: 'cancelled',
+                }
+              : run,
+          ),
+        },
+        currentConversation.id,
+      );
+      setChatInput('');
+      setConversationError(currentConversation.id, '');
+      return;
+    }
+
     const assistantMessage = createCopilotMessage({
       agentId: 'copilot',
       content: '',
@@ -783,11 +1025,11 @@ export default function CopilotWorkbenchPage({
     });
     const run = createCopilotRun({
       conversationId: currentConversation.id,
+      originalMessage: pendingRun?.originalMessage || content,
       status: 'running',
+      taskType: pendingRun?.taskType || '',
     });
-    const nextTitle = currentConversation.messageIds?.length
-      ? currentConversation.title
-      : deriveConversationTitle(content, currentConversation.title);
+    const startedAt = new Date().toISOString();
     const nextState = {
       ...conversationStateRef.current,
       conversations: conversationStateRef.current.conversations.map((conversation) =>
@@ -801,37 +1043,42 @@ export default function CopilotWorkbenchPage({
           : conversation,
       ),
       messages: [...conversationStateRef.current.messages, userMessage, assistantMessage],
-      runs: [run, ...conversationStateRef.current.runs],
+      runs: [
+        run,
+        ...conversationStateRef.current.runs.map((item) =>
+          item.id === pendingRun?.id ? { ...item, resolvedAt: startedAt } : item,
+        ),
+      ],
     };
 
     persistConversationState(nextState, currentConversation.id);
     setChatInput('');
-    setChatError('');
-    setChatLoading(true);
+    setConversationError(currentConversation.id, '');
+    setConversationRunning(currentConversation.id, true);
 
     const controller = new AbortController();
-    activeChatAbortRef.current?.abort();
-    activeChatAbortRef.current = controller;
+    activeChatControllersRef.current.set(currentConversation.id, controller);
 
-    const projectContext = buildCopilotProjectContext(activeProject, {
-      conversationId: currentConversation.id,
-      conversationState: nextState,
-    });
-    const history = getConversationMessages(nextState, currentConversation.id)
-      .filter((message) => message.id !== assistantMessage.id)
-      .map((message) => ({
-        content: message.content,
-        role: message.role,
-      }));
-
+    const targetCandidate = previewOpen ? selectedArtifact : null;
+    const targetArtifact = createTargetArtifactSnapshot(targetCandidate);
+    const taskContinuation = pendingRun
+      ? {
+          originalMessage: pendingRun.originalMessage,
+          requiredField: pendingRun.requiredField,
+          response: content,
+          taskType: pendingRun.taskType,
+        }
+      : undefined;
+    let clarificationEvent = null;
     try {
       await streamCopilotChat({
         body: {
           conversationId: currentConversation.id,
-          history,
           message: content,
-          projectContext,
           projectId: activeProject.id,
+          taskContinuation,
+          targetArtifact,
+          threadId: currentConversation.threadId || undefined,
         },
         conversationId: currentConversation.id,
         signal: controller.signal,
@@ -844,6 +1091,31 @@ export default function CopilotWorkbenchPage({
               intent: eventData.intent,
               statusText: eventData.label || eventData.status || copy.taskRunning,
             });
+            patchConversationState((currentState) => ({
+              ...currentState,
+              runs: currentState.runs.map((item) =>
+                item.id === run.id
+                  ? { ...item, taskType: eventData.taskType || eventData.intent || item.taskType }
+                  : item,
+              ),
+            }));
+            return;
+          }
+
+          if (eventData.type === 'thread_bound') {
+            patchConversationState((currentState) => ({
+              ...currentState,
+              conversations: currentState.conversations.map((conversation) =>
+                conversation.id === currentConversation.id
+                  ? { ...conversation, threadId: eventData.threadId }
+                  : conversation,
+              ),
+            }));
+            if (eventData.reset) {
+              updateAssistantMessage(assistantMessage.id, {
+                warning: copy.threadResetWarning,
+              });
+            }
             return;
           }
 
@@ -866,24 +1138,60 @@ export default function CopilotWorkbenchPage({
             return;
           }
 
+          if (eventData.type === 'clarification_required') {
+            clarificationEvent = eventData;
+            updateAssistantMessage(assistantMessage.id, {
+              agentId: 'content_operator',
+              contentDelta: eventData.content ?? '',
+              intent: eventData.taskType ?? 'draft',
+              status: 'waiting_input',
+              statusText: '',
+            });
+            return;
+          }
+
+          if (eventData.type === 'capability_warning') {
+            updateAssistantMessage(assistantMessage.id, {
+              warning: eventData.content ?? '',
+            });
+            return;
+          }
+
           if (eventData.type === 'error_message') {
-            throw new Error(eventData.content || copy.chatFallbackError);
+            const streamError = new Error(eventData.content || copy.chatFallbackError);
+            streamError.code = eventData.code;
+            throw streamError;
           }
         },
       });
 
-      updateAssistantMessage(assistantMessage.id, { status: 'done', statusText: '' });
+      const endedAt = new Date().toISOString();
+      updateAssistantMessage(assistantMessage.id, {
+        status: clarificationEvent ? 'waiting_input' : 'done',
+        statusText: '',
+      });
       patchConversationState((currentState) => ({
         ...currentState,
         runs: currentState.runs.map((item) =>
-          item.id === run.id ? { ...item, endedAt: new Date().toISOString(), status: 'done' } : item,
+          item.id === run.id
+            ? clarificationEvent
+              ? {
+                  ...item,
+                  endedAt,
+                  originalMessage: pendingRun?.originalMessage || content,
+                  requiredField: clarificationEvent.field || '',
+                  status: 'waiting_input',
+                  taskType: clarificationEvent.taskType || item.taskType,
+                }
+              : { ...item, endedAt, status: 'done' }
+            : item,
         ),
       }));
     } catch (error) {
       if (error && typeof error === 'object' && error.name === 'AbortError') return;
 
       const message = getChatErrorMessage(error);
-      setChatError(message);
+      setConversationError(currentConversation.id, message);
       updateAssistantMessage(assistantMessage.id, {
         content: message,
         error: message,
@@ -894,15 +1202,21 @@ export default function CopilotWorkbenchPage({
         ...currentState,
         runs: currentState.runs.map((item) =>
           item.id === run.id
-            ? { ...item, endedAt: new Date().toISOString(), error: message, status: 'error' }
+            ? {
+                ...item,
+                endedAt: new Date().toISOString(),
+                error: message,
+                errorCode: error?.code || 'chat_error',
+                status: 'error',
+              }
             : item,
         ),
       }));
     } finally {
-      if (activeChatAbortRef.current === controller) {
-        activeChatAbortRef.current = null;
+      if (activeChatControllersRef.current.get(currentConversation.id) === controller) {
+        activeChatControllersRef.current.delete(currentConversation.id);
       }
-      setChatLoading(false);
+      setConversationRunning(currentConversation.id, false);
     }
   }
 
@@ -957,6 +1271,7 @@ export default function CopilotWorkbenchPage({
         onRenameStart={() => startInlineRename(conversation.id)}
         onSelect={() => selectConversation(conversation.id)}
         onTogglePin={() => toggleConversationPin(conversation.id)}
+        taskRun={latestConversationRuns.get(conversation.id)}
       />
     ));
   }
@@ -1075,11 +1390,7 @@ export default function CopilotWorkbenchPage({
         key={artifact.id}
         type="button"
         className="mt-3 flex w-full items-center justify-between gap-3 rounded-lg border border-blue-100 bg-blue-50/60 p-3 text-left transition hover:border-blue-200 hover:bg-blue-50"
-        onClick={() => {
-          setSelectedArtifactId(artifact.id);
-          setArtifactPanelOpen(true);
-          setPreviewOpen(false);
-        }}
+        onClick={() => openArtifactPreview(artifact.id)}
       >
         <span className="flex min-w-0 items-center gap-3">
           <span className="grid h-9 w-9 flex-none place-items-center rounded-lg bg-white text-blue-600">
@@ -1108,7 +1419,7 @@ export default function CopilotWorkbenchPage({
     const message = error instanceof Error ? error.message : String(error || '');
     if (
       error instanceof TypeError ||
-      /Failed to fetch|EdgeOne backend access is restricted|eo_time missing|Access Restricted|Authentication Expired|No SSE events/i.test(
+      /Failed to fetch|No SSE events|Codex service/i.test(
         message,
       )
     ) {
@@ -1120,7 +1431,7 @@ export default function CopilotWorkbenchPage({
 
   function renderChatMessage(message) {
     const isUser = message.role === 'user';
-    const isError = message.status === 'error';
+    const isError = message.status === 'error' || message.status === 'interrupted';
     const isStreaming = message.status === 'streaming';
 
     return (
@@ -1155,6 +1466,10 @@ export default function CopilotWorkbenchPage({
           >
             {message.content ? (
               <p className="whitespace-pre-wrap">{message.content}</p>
+            ) : message.status === 'interrupted' ? (
+              <span>{copy.taskInterrupted}</span>
+            ) : message.status === 'cancelled' ? (
+              <span>{copy.chatStopped}</span>
             ) : isStreaming ? (
               <span className="inline-flex items-center gap-2 text-slate-400">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -1164,6 +1479,18 @@ export default function CopilotWorkbenchPage({
               <span className="text-slate-400">{copy.chatEmptyResponse}</span>
             )}
             {!isUser ? renderMessageSources(message) : null}
+            {!isUser && message.warnings?.length ? (
+              <div className="mt-3 space-y-2">
+                {message.warnings.map((warning) => (
+                  <p
+                    key={warning}
+                    className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium leading-5 text-amber-700"
+                  >
+                    {warning}
+                  </p>
+                ))}
+              </div>
+            ) : null}
             {!isUser ? renderMessageArtifacts(message) : null}
           </div>
         </div>
@@ -1189,6 +1516,16 @@ export default function CopilotWorkbenchPage({
         <p className="text-xs font-bold uppercase tracking-[0.08em] text-blue-500">{artifact.type}</p>
         <h3 className="mt-2 text-sm font-bold leading-6 text-slate-900">{artifact.title}</h3>
         {artifact.summary ? <p className="mt-2 text-xs leading-5 text-slate-500">{artifact.summary}</p> : null}
+        {artifact.changeSummary ? (
+          <p className="mt-3 rounded-md border border-blue-100 bg-blue-50 px-3 py-2 text-xs leading-5 text-blue-700">
+            {artifact.changeSummary}
+          </p>
+        ) : null}
+        {artifact.evidenceGaps?.length ? (
+          <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-700">
+            {artifact.evidenceGaps.map((gap) => <p key={gap}>{gap}</p>)}
+          </div>
+        ) : null}
         <pre className="mt-4 whitespace-pre-wrap font-sans text-xs leading-5 text-slate-600">
           {artifact.content || copy.previewPlaceholderBody}
         </pre>
@@ -1514,7 +1851,7 @@ export default function CopilotWorkbenchPage({
             data-testid="copilot-home-button"
             type="button"
             className="inline-flex h-11 w-[96px] flex-none items-center justify-center gap-2 rounded-full bg-slate-950 pl-3 pr-4 text-sm font-bold text-white transition hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
-            onClick={onClose}
+            onClick={closeWorkbench}
             aria-label={copy.backToStudioLabel}
           >
             <SolidDashboardIcon className="h-4 w-4" />
@@ -1610,19 +1947,31 @@ export default function CopilotWorkbenchPage({
                     onKeyDown={(event) => {
                       if (event.key === 'Enter' && !event.shiftKey) {
                         event.preventDefault();
-                        event.currentTarget.form?.requestSubmit();
+                        if (!activeConversationRunning) {
+                          event.currentTarget.form?.requestSubmit();
+                        }
                       }
                     }}
                     placeholder={copy.chatInputPlaceholder}
                   />
                   <button
                     data-testid="copilot-chat-submit"
-                    type="submit"
-                    disabled={chatLoading || !chatInput.trim()}
-                    className="inline-flex h-10 shrink-0 items-center gap-2 rounded-lg bg-blue-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
+                    type={activeConversationRunning ? 'button' : 'submit'}
+                    disabled={!activeConversationRunning && !chatInput.trim()}
+                    className={`inline-flex h-10 shrink-0 items-center gap-2 rounded-lg px-4 text-sm font-bold text-white shadow-sm transition disabled:cursor-not-allowed disabled:bg-blue-300 ${
+                      activeConversationRunning
+                        ? 'bg-slate-900 hover:bg-slate-800'
+                        : 'bg-blue-600 hover:bg-blue-700'
+                    }`}
+                    onClick={
+                      activeConversationRunning
+                        ? () => cancelConversationRun(activeConversation.id)
+                        : undefined
+                    }
+                    aria-label={activeConversationRunning ? copy.chatStop : copy.chatSend}
                   >
-                    {chatLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                    {chatLoading ? copy.chatSending : copy.chatSend}
+                    {activeConversationRunning ? <Square className="h-3.5 w-3.5 fill-current" /> : <Send className="h-4 w-4" />}
+                    {activeConversationRunning ? copy.chatStop : copy.chatSend}
                   </button>
                 </div>
               </form>
