@@ -21,6 +21,7 @@ const tableNames = {
 const defaultHistoryCleanupVersion = 1;
 const legacyConversationsStorageKeyPrefix = 'content-studio-copilot-conversations:';
 
+// 复制持久化数据，避免页面层直接修改存储中的引用。
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
@@ -29,6 +30,7 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+// 读取旧版会话缓存，用于迁移到项目级表结构。
 function getLegacyConversations(projectId) {
   if (typeof window === 'undefined') {
     return [];
@@ -43,6 +45,7 @@ function getLegacyConversations(projectId) {
   }
 }
 
+// 会话归一化保证历史数据、demo seed 和新建会话具有同一字段形态。
 function normalizeConversation(projectId, conversation, index = 0) {
   const createdAt = conversation.createdAt ?? conversation.updatedAt ?? nowIso();
   const id = conversation.id || createProjectEntityId('copilot-conversation');
@@ -61,9 +64,18 @@ function normalizeConversation(projectId, conversation, index = 0) {
   };
 }
 
+// 消息归一化保留状态、产物和来源引用，供会话流式更新复用。
 function normalizeMessage(message) {
   return {
     agentId: message.agentId ?? '',
+    attachments: Array.isArray(message.attachments)
+      ? message.attachments.map((attachment) => ({
+          id: attachment.id ?? '',
+          kind: attachment.kind ?? 'knowledge_file',
+          sourceUrl: attachment.sourceUrl ?? '',
+          title: attachment.title ?? 'Untitled attachment',
+        }))
+      : [],
     artifactIds: Array.isArray(message.artifactIds) ? message.artifactIds : [],
     content: message.content ?? '',
     conversationId: message.conversationId,
@@ -75,11 +87,14 @@ function normalizeMessage(message) {
     sourceIds: Array.isArray(message.sourceIds) ? message.sourceIds : [],
     status: message.status ?? 'done',
     statusText: message.statusText ?? '',
+    uiBlocks: Array.isArray(message.uiBlocks) ? clone(message.uiBlocks) : [],
     updatedAt: message.updatedAt ?? message.createdAt ?? nowIso(),
+    userName: message.userName ?? '',
     warnings: Array.isArray(message.warnings) ? message.warnings : [],
   };
 }
 
+// 产物归一化统一内容格式、来源引用和修订关系。
 function normalizeArtifact(artifact) {
   return {
     changedSections: Array.isArray(artifact.changedSections) ? artifact.changedSections : [],
@@ -92,17 +107,22 @@ function normalizeArtifact(artifact) {
     id: artifact.id || createProjectEntityId('copilot-artifact'),
     metadata: artifact.metadata ?? {},
     parentArtifactId: artifact.parentArtifactId ?? '',
+    previewData: artifact.previewData && typeof artifact.previewData === 'object' ? clone(artifact.previewData) : {},
     sourceIds: Array.isArray(artifact.sourceIds) ? artifact.sourceIds : [],
     sourceMessageId: artifact.sourceMessageId ?? '',
     status: artifact.status ?? 'ready',
     summary: artifact.summary ?? '',
+    taskId: artifact.taskId ?? '',
+    taskKey: artifact.taskKey ?? artifact.taskType ?? '',
     taskType: artifact.taskType ?? '',
     title: artifact.title ?? 'Untitled artifact',
     type: artifact.type ?? 'reply',
     updatedAt: artifact.updatedAt ?? artifact.createdAt ?? nowIso(),
+    workflowId: artifact.workflowId ?? '',
   };
 }
 
+// 来源归一化统一知识库、网页和上下文引用的字段形态。
 function normalizeSource(source) {
   return {
     conversationId: source.conversationId ?? '',
@@ -116,6 +136,7 @@ function normalizeSource(source) {
   };
 }
 
+// 运行记录用于标记单次生成任务的开始、结束、失败和等待状态。
 function normalizeRun(run) {
   return {
     acknowledgedAt: run.acknowledgedAt ?? '',
@@ -124,15 +145,21 @@ function normalizeRun(run) {
     error: run.error ?? '',
     errorCode: run.errorCode ?? '',
     id: run.id || createProjectEntityId('copilot-run'),
+    operation: run.operation ?? '',
     originalMessage: run.originalMessage ?? '',
     requiredField: run.requiredField ?? '',
     resolvedAt: run.resolvedAt ?? '',
     startedAt: run.startedAt ?? nowIso(),
     status: run.status ?? 'running',
+    currentTaskIndex: Number.isFinite(run.currentTaskIndex) ? run.currentTaskIndex : 0,
+    taskKey: run.taskKey ?? run.taskType ?? '',
     taskType: run.taskType ?? '',
+    workflowId: run.workflowId ?? '',
+    workflowKey: run.workflowKey ?? '',
   };
 }
 
+// 没有历史会话时创建空会话，保证工作台始终有可选会话。
 function createFallbackConversation(projectId) {
   return normalizeConversation(projectId, {
     id: createProjectEntityId('copilot-conversation'),
@@ -141,10 +168,12 @@ function createFallbackConversation(projectId) {
   });
 }
 
+// 清理旧默认历史时只匹配系统生成的默认会话 ID。
 function isDefaultConversationId(projectId, id = '') {
   return id.startsWith('copilot-default-') || id.startsWith(`${projectId}-conv-`);
 }
 
+// 默认 seed 产物按项目 ID 前缀识别，避免误删用户创建的数据。
 function isDefaultSeedEntityId(projectId, id = '') {
   return (
     id.startsWith(`${projectId}-artifact-`) ||
@@ -154,6 +183,7 @@ function isDefaultSeedEntityId(projectId, id = '') {
   );
 }
 
+// 移除旧默认历史，保留用户新建或编辑过的会话数据。
 function removeDefaultHistory(projectId, state) {
   const removedConversationIds = new Set(
     (state.conversations ?? [])
@@ -188,22 +218,31 @@ function removeDefaultHistory(projectId, state) {
   };
 }
 
-function mergeSeedEntities(currentEntities = [], seedEntities = []) {
-  const currentIds = new Set(currentEntities.map((entity) => entity.id));
-  return [...seedEntities.filter((entity) => !currentIds.has(entity.id)), ...currentEntities];
+// demo seed 只补充缺失实体，不覆盖用户已有实体。
+function mergeSeedEntities(currentEntities = [], seedEntities = [], replaceUiDemo = false) {
+  const currentById = new Map(currentEntities.map((entity) => [entity.id, entity]));
+  const seedIds = new Set(seedEntities.map((entity) => entity.id));
+  const mergedSeedEntities = seedEntities.map((entity) =>
+    replaceUiDemo && entity.id.includes('-demo-ui-')
+      ? entity
+      : currentById.get(entity.id) ?? entity,
+  );
+  return [...mergedSeedEntities, ...currentEntities.filter((entity) => !seedIds.has(entity.id))];
 }
 
-function mergeCopilotSeed(state, seed) {
+// 将新版 demo 会话合并进当前状态，保留本地历史。
+function mergeCopilotSeed(state, seed, replaceUiDemo = false) {
   if (!seed) return state;
   return {
-    artifacts: mergeSeedEntities(state.artifacts, seed.artifacts),
-    conversations: mergeSeedEntities(state.conversations, seed.conversations),
-    messages: mergeSeedEntities(state.messages, seed.messages),
-    runs: mergeSeedEntities(state.runs, seed.runs),
-    sources: mergeSeedEntities(state.sources, seed.sources),
+    artifacts: mergeSeedEntities(state.artifacts, seed.artifacts, replaceUiDemo),
+    conversations: mergeSeedEntities(state.conversations, seed.conversations, replaceUiDemo),
+    messages: mergeSeedEntities(state.messages, seed.messages, replaceUiDemo),
+    runs: mergeSeedEntities(state.runs, seed.runs, replaceUiDemo),
+    sources: mergeSeedEntities(state.sources, seed.sources, replaceUiDemo),
   };
 }
 
+// 创建新会话时立即归一化，保证后续写入和读取使用同一结构。
 export function createCopilotConversation(projectId, title, options = {}) {
   const createdAt = nowIso();
 
@@ -249,6 +288,7 @@ export function createCopilotRun(input) {
   });
 }
 
+// 读取会话状态时同时处理旧缓存迁移、默认历史清理和中断运行恢复。
 export function getCopilotConversationState(projectId) {
   const hasNewConversations = hasProjectTable(projectId, tableNames.conversations);
   const storedConversations = hasNewConversations
@@ -264,6 +304,7 @@ export function getCopilotConversationState(projectId) {
     (conversation, index) => normalizeConversation(projectId, conversation, index),
   );
   const storedRuns = readProjectTable(projectId, tableNames.runs, []).map(normalizeRun);
+  // 页面刷新后仍处于 running 的任务视为中断，避免界面一直停在生成中。
   const shouldRecoverInterruptedRuns = storedRuns.some((run) => run.status === 'running');
   const runs = storedRuns.map((run) =>
     run.status === 'running'
@@ -309,7 +350,7 @@ export function getCopilotConversationState(projectId) {
   }
 
   if (shouldInstallDemoSeed) {
-    state = mergeCopilotSeed(state, demoSeed);
+    state = mergeCopilotSeed(state, demoSeed, true);
   }
 
   if (shouldCleanupDefaultHistory || shouldInstallDemoSeed) {
@@ -334,6 +375,7 @@ export function getCopilotConversationState(projectId) {
   return state;
 }
 
+// 保存会话状态时按表拆分，降低单个 localStorage 值过大的风险。
 export function saveCopilotConversationState(projectId, state) {
   const normalizedState = {
     artifacts: (state.artifacts ?? []).map(normalizeArtifact),

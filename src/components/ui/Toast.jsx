@@ -28,8 +28,10 @@ const toastTypeStyles = {
   },
 };
 
+// Toast 通过 portal 挂载到 body，避免被页面滚动容器裁剪。
 export default function Toast({
   actionLabel,
+  actions = [],
   message,
   onAction,
   onClose,
@@ -39,12 +41,18 @@ export default function Toast({
   const styles = toastTypeStyles[type] ?? toastTypeStyles.info;
   const Icon = styles.Icon;
   const hasAction = Boolean(actionLabel && onAction);
+  const actionItems = actions.length
+    ? actions
+    : hasAction
+      ? [{ icon: RefreshCw, label: actionLabel, onClick: onAction }]
+      : [];
   const canClose = Boolean(onClose);
 
   if (typeof document === 'undefined') {
     return null;
   }
 
+  // 根据是否传入操作和关闭回调，决定展示操作按钮和关闭按钮。
   return createPortal(
     <div className="pointer-events-none fixed left-1/2 top-24 z-50 flex -translate-x-1/2 justify-center">
       <div
@@ -60,15 +68,30 @@ export default function Toast({
         <span className="line-clamp-2 min-w-0 max-w-[640px] flex-1 whitespace-normal break-words text-base font-semibold leading-6 tracking-normal">
           {message}
         </span>
-        {hasAction ? (
-          <button
-            type="button"
-            className="ml-2 inline-flex h-7 flex-none items-center gap-1.5 whitespace-nowrap px-0 text-sm font-semibold text-[#365EFF] transition hover:text-[#2547D0]"
-            onClick={onAction}
-          >
-            <RefreshCw className="h-3.5 w-3.5 flex-none" />
-            {actionLabel}
-          </button>
+        {actionItems.length ? (
+          <div className="ml-2 flex flex-none items-center gap-3">
+            {actionItems.map((action) => {
+              const ActionIcon = action.icon;
+              const toneClass =
+                action.tone === 'danger'
+                  ? 'text-red-500 hover:text-red-600'
+                  : action.tone === 'neutral'
+                    ? 'text-[#606266] hover:text-[#303133]'
+                    : 'text-[#365EFF] hover:text-[#2547D0]';
+
+              return (
+                <button
+                  key={action.label}
+                  type="button"
+                  className={`inline-flex h-7 flex-none items-center gap-1.5 whitespace-nowrap px-0 text-sm font-semibold transition ${toneClass}`}
+                  onClick={action.onClick}
+                >
+                  {ActionIcon ? <ActionIcon className="h-3.5 w-3.5 flex-none" /> : null}
+                  {action.label}
+                </button>
+              );
+            })}
+          </div>
         ) : null}
         {canClose ? (
           <button

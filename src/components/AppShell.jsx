@@ -2,6 +2,7 @@ import MainContent from './MainContent.jsx';
 import Sidebar from './Sidebar.jsx';
 import Topbar from './Topbar.jsx';
 
+// 组合全局侧栏、顶栏和业务内容区，所有页面级状态由 App 传入。
 export default function AppShell({
   activeItem,
   activeItemId,
@@ -36,6 +37,7 @@ export default function AppShell({
 }) {
   return (
     <div className="min-h-screen bg-white text-slate-900">
+      {/* 侧栏负责项目切换、导航展开和当前菜单定位 */}
       <Sidebar
         activeItemId={activeItemId}
         activeProject={activeProject}
@@ -52,6 +54,7 @@ export default function AppShell({
         onSelectItem={onSelectItem}
         onSidebarCollapsedToggle={onSidebarCollapsedToggle}
       />
+      {/* 顶栏负责全局搜索、搜索范围选择和 Copilot 入口 */}
       <Topbar
         searchQuery={searchQuery}
         searchScope={searchScope}
@@ -63,6 +66,7 @@ export default function AppShell({
         onSearchQueryChange={onSearchQueryChange}
         onSearchScopeChange={onSearchScopeChange}
       />
+      {/* 主内容区根据当前导航项分发到具体业务页面 */}
       <MainContent
         activeItem={activeItem}
         activeProject={activeProject}

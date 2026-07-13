@@ -4,6 +4,7 @@ import { getBrandProfileDraft } from './brandProfileStore.js';
 const storageKeyPrefix = 'content-studio-blog-article-ai-tasks:';
 const storageSchemaVersion = 1;
 
+// AI 文章任务选项集中维护，创建任务页只负责展示和收集选择。
 export const aiArticleLanguageOptions = ['EN', 'CN'];
 
 export const aiArticleTypeOptions = [
@@ -49,6 +50,7 @@ export const aiModelOptions = ['GPT-5.5', 'GPT-5', 'GPT-4.1'];
 
 export const aiEvaluationVersion = 'ragseo-ai-writing-evaluation-v1';
 
+// 关键词输入支持数组或中英文逗号分隔文本，保存前统一转成数组。
 export function splitAiKeywordText(value) {
   if (Array.isArray(value)) {
     return value.filter(Boolean);
@@ -60,6 +62,7 @@ export function splitAiKeywordText(value) {
     .filter(Boolean);
 }
 
+// 品牌档案链接压缩成可读标签，用于文章内链选择。
 function formatUrlLabel(url) {
   try {
     const parsed = new URL(url);
@@ -70,6 +73,7 @@ function formatUrlLabel(url) {
   }
 }
 
+// 从品牌档案中挑选公司和权威链接，作为最终正文内链候选。
 function createSelectedBrandLinkItems(project) {
   const brandProfile = getBrandProfileDraft(project);
   const companyLinks = (brandProfile.companyLinks ?? []).filter(Boolean).slice(0, 2);
@@ -91,6 +95,7 @@ function createSelectedBrandLinkItems(project) {
   ];
 }
 
+// 从知识条目中提取可去重的来源链接，供最终正文引用。
 function createSelectedKnowledgeLinkItems(knowledgeItems = []) {
   const seenUrls = new Set();
 
@@ -111,6 +116,7 @@ function createSelectedKnowledgeLinkItems(knowledgeItems = []) {
     }));
 }
 
+// 任务输入缺少 URL 时，尝试从项目知识库中补回来源地址。
 function resolveKnowledgeSourceItems(inputItems, fallbackItems, project) {
   const sourceItems = Array.isArray(inputItems) ? inputItems : fallbackItems;
   const projectKnowledgeItems = project?.demoProject?.knowledgeItems ?? [];
@@ -262,6 +268,7 @@ function serializeTasks(tasks) {
   });
 }
 
+// 合并任务补丁时深合并阶段数据，避免只更新一个字段时覆盖整段产物。
 function mergeTaskPatch(task, patch) {
   return {
     ...task,
@@ -273,6 +280,7 @@ function mergeTaskPatch(task, patch) {
   };
 }
 
+// 读取 AI 创作任务时兼容旧数组格式，异常时返回空列表。
 export function getAiCreationTasks(projectId) {
   if (typeof window === 'undefined') {
     return [];
@@ -299,6 +307,7 @@ export function getAiCreationTasks(projectId) {
   }
 }
 
+// 新建任务插入列表顶部，后续阶段通过同一个 taskId 持续更新。
 export function saveAiCreationTask(projectId, taskInput) {
   const currentTasks = getAiCreationTasks(projectId);
   const task = {
@@ -319,6 +328,7 @@ export function saveAiCreationTask(projectId, taskInput) {
   return task;
 }
 
+// 更新任务只替换命中任务，并通过 mergeTaskPatch 保留已有阶段产物。
 export function updateAiCreationTask(projectId, taskId, patch) {
   const currentTasks = getAiCreationTasks(projectId);
   const nextTasks = currentTasks.map((task) => (task.id === taskId ? mergeTaskPatch(task, patch) : task));
@@ -341,6 +351,20 @@ export function deleteAiCreationTask(projectId, taskId) {
   return nextTasks;
 }
 
+// 协同创作转自动完成时只改任务模式和运行状态，保留已生成阶段数据。
+export function convertCollaborativeTaskToAuto(projectId, taskId) {
+  return updateAiCreationTask(projectId, taskId, {
+    errorMessage: '',
+    mode: 'auto',
+    stage: 'auto-generating',
+    content: {
+      isStopped: false,
+      updatedAt: today(),
+    },
+  });
+}
+
+// 重置策划阶段时保留任务输入，只清空运行状态和策划产物。
 export function resetAiPlanningTask(projectId, taskId) {
   return updateAiCreationTask(projectId, taskId, {
     errorMessage: '',
@@ -355,6 +379,7 @@ export function resetAiPlanningTask(projectId, taskId) {
   });
 }
 
+// 重置大纲阶段时保留策划阶段结果，只清空大纲相关状态。
 export function resetAiOutlineTask(projectId, taskId) {
   return updateAiCreationTask(projectId, taskId, {
     errorMessage: '',
@@ -451,6 +476,7 @@ export function resetAiAutoTask(projectId, taskId) {
   });
 }
 
+// 参考文章优先使用任务手动输入，缺失时使用内置搜索分析兜底。
 function getReferenceArticles(task) {
   const manualReferences = task?.taskInput?.referenceArticles ?? [];
   const searchAnalyses = task?.searchAnalyses?.length ? task.searchAnalyses : aiReferenceSearchAnalyses;
@@ -483,6 +509,7 @@ function getReferenceArticles(task) {
   });
 }
 
+// 根据任务输入和项目资料生成策划阶段的结构化文本。
 function createStrategyContent(task, project) {
   const input = task?.taskInput ?? {};
   const demoProject = project?.demoProject ?? {};
@@ -706,10 +733,12 @@ function createStrategyContent(task, project) {
   ].join('\n');
 }
 
+// 清理旧模板中遗留的模型说明，避免展示到页面正文。
 function normalizeStrategyContent(content) {
   return String(content ?? '').replace(/（参考质量评估模型 P0）/g, '');
 }
 
+// 项目分析报告把品牌、市场、知识和任务要求整理成策划依据。
 function createProjectAnalysisReport(task, project) {
   const input = task?.taskInput ?? {};
   const demoProject = project?.demoProject ?? {};
@@ -1014,6 +1043,7 @@ export function createPlanningDemoData(task, project) {
   };
 }
 
+// 默认大纲树用于模拟大纲生成结果，并驱动大纲预览层级。
 function createOutlineTree() {
   return [
     {
@@ -1285,6 +1315,7 @@ export function createOutlineDemoData(task, project) {
   };
 }
 
+// 将大纲树展开为文本，供正文生成和参考预览使用。
 function flattenOutlineHeadings(nodes, depth = 0) {
   return (nodes ?? []).flatMap((node) => [
     `${'  '.repeat(depth)}${node.level} ${node.title}`,
@@ -1292,6 +1323,7 @@ function flattenOutlineHeadings(nodes, depth = 0) {
   ]);
 }
 
+// 根据版本生成正文内容，终稿版本会插入图片和更明确的品牌表达。
 function createArticleContent({ companyName, images = [], primaryKeyword, title, version }) {
   const isFinal = version === 'final';
   const processImage = images[0];
@@ -1340,6 +1372,7 @@ function createArticleContent({ companyName, images = [], primaryKeyword, title,
     .join('\n');
 }
 
+// 评估报告用固定维度模拟质量门槛，首版保留 Low 项，终稿全部通过。
 function createEvaluationReport({ final = false, version }) {
   const makeItem = (name, rating, suggestion = '') => ({
     name,
@@ -1398,6 +1431,7 @@ function createEvaluationReport({ final = false, version }) {
   };
 }
 
+// 终稿评估基于最终正文、TDK 和链接数量生成可展示的检查结果。
 function createFinalContentEvaluationReport({ finalArticle, primaryKeyword, selectedLinks = [], tdk }) {
   const makeItem = (name, rating, suggestion = '') => ({
     name,
@@ -1474,6 +1508,7 @@ function createFinalContentEvaluationReport({ finalArticle, primaryKeyword, sele
   };
 }
 
+// 修改要求归一化为版本化记录，后续修订轮次按版本递增。
 function normalizeRevisionRequest(request, index) {
   const version = request?.version ?? index + 2;
   return {
@@ -1485,6 +1520,7 @@ function normalizeRevisionRequest(request, index) {
   };
 }
 
+// 根据修改要求中的关键词选择修订重点，避免每次修订都返回同一种结果。
 function getRevisionFocusText(requestText) {
   const text = requestText.toLowerCase();
 
@@ -1538,6 +1574,7 @@ function createRevisedFinalArticleContent({ baseContent, requestText }) {
   return baseContent.replace(closingLine, `${focus.articleNote}\n\n${closingLine}`);
 }
 
+// 单轮终稿修订同时生成新正文、评估报告、TDK 和修改记录。
 function createFinalRevisionRound({ baseArticle, baseEvaluationReport, baseTdk, primaryKeyword, request }) {
   const version = request.version;
   const focus = getRevisionFocusText(request.text);
@@ -1591,6 +1628,7 @@ function createFinalRevisionRound({ baseArticle, baseEvaluationReport, baseTdk, 
   };
 }
 
+// 来源列表支持多种字段名，统一压缩为工作流步骤可展示的 label。
 function normalizeSourceListItems(items, fallbackItems = []) {
   const sourceItems = Array.isArray(items) ? items : fallbackItems;
 
@@ -1664,6 +1702,7 @@ function scoreTextByTerms(text, terms) {
   }, 0);
 }
 
+// 从知识资料分块中挑选最相关片段，作为正文生成的引用来源。
 function createKnowledgeAssetReferenceBlocks(files, project, queryTerms) {
   const selectedFiles = Array.isArray(files) ? files.filter((file) => file?.id) : [];
   const blocks = selectedFiles.flatMap((file, fileIndex) => {
@@ -1707,6 +1746,7 @@ function createKnowledgeAssetReferenceBlocks(files, project, queryTerms) {
   return blocks.slice(0, 8);
 }
 
+// 创建完整创作演示数据，供策划、大纲、正文和自动创作页面共用。
 export function createContentDemoData(task, project, options = {}) {
   const input = task?.taskInput ?? {};
   const companyName = project?.demoProject?.name ?? project?.name ?? 'Rejin CNC Technology Co.,Ltd';
@@ -1719,6 +1759,7 @@ export function createContentDemoData(task, project, options = {}) {
   const secondaryKeywords = input.secondaryKeywords?.length
     ? input.secondaryKeywords
     : ['custom metal parts', 'DFM support', 'CNC turning vs milling'];
+  // 知识条目和知识资料都允许任务输入覆盖，缺失时回退到项目 demo 数据。
   const fallbackKnowledgeItems =
     project?.demoProject?.knowledgeItems?.filter((item) =>
       ['cnc-turning', 'cnc-milling', 'dfm-support'].includes(item.id),
@@ -1741,6 +1782,7 @@ export function createContentDemoData(task, project, options = {}) {
   const references = getReferenceArticles(task).slice(0, 3);
   const outlineHeadings = flattenOutlineHeadings(task?.outline?.outlineTree?.length ? task.outline.outlineTree : createOutlineTree());
   const queryTerms = [title, ...primaryKeywords, ...secondaryKeywords, ...outlineHeadings].filter(Boolean);
+  // 资料分块生成失败或未选择资料时，使用兜底文本块保证引用预览可用。
   const fallbackKnowledgeAssetReferenceBlocks = [
     {
       id: 'asset-main-products',
@@ -1785,6 +1827,7 @@ export function createContentDemoData(task, project, options = {}) {
   const selectedBrandLinks = createSelectedBrandLinkItems(project);
   const selectedKnowledgeLinks = createSelectedKnowledgeLinkItems(selectedKnowledgeSourceItems);
   const selectedLinks = [...selectedKnowledgeLinks, ...selectedBrandLinks];
+  // 从素材库中挑选正文插图，终稿版本会使用这些素材生成图片段落。
   const findMediaAsset = (predicate, fallbackIndex = 0) =>
     mediaAssets.find(predicate) ?? mediaAssets[fallbackIndex] ?? null;
   const finalArticleImages = [
@@ -1811,6 +1854,7 @@ export function createContentDemoData(task, project, options = {}) {
       sourcePageUrl: asset.sourcePageUrl,
       title: asset.title,
     }));
+  // 引用块统一知识条目、知识资料和参考网页，供预览和引用标记共用。
   const referenceBlocks = [
     {
       id: 'ki-cnc-turning',
@@ -1854,6 +1898,7 @@ export function createContentDemoData(task, project, options = {}) {
   ];
   const firstKnowledgeAssetBlock = knowledgeAssetReferenceBlocks[0];
   const secondKnowledgeAssetBlock = knowledgeAssetReferenceBlocks[1];
+  // 引用使用记录把正文片段和来源块绑定，用于展示内容依据。
   const citationUsages = [
     {
       id: 'citation-1',
@@ -1926,6 +1971,7 @@ export function createContentDemoData(task, project, options = {}) {
         'The article should answer buyer questions first, then connect process comparison to a practical RFQ checklist and supplier selection criteria.',
     },
   ].filter((usage) => usage.sourceBlockId);
+  // 文章版本模拟初稿到修订稿的演进，页面按版本展示产物。
   const articleVersions = [
     {
       id: 'article-v1',
@@ -2011,6 +2057,7 @@ export function createContentDemoData(task, project, options = {}) {
     selectedLinks,
     tdk,
   });
+  // 用户追加修改要求会转成修订轮次，并覆盖最新可保存终稿。
   const revisionRequests = (options.revisionRequests ?? task?.content?.revisionRequests ?? [])
     .map(normalizeRevisionRequest)
     .filter((request) => request.text.trim());
@@ -2073,6 +2120,7 @@ export function createContentDemoData(task, project, options = {}) {
       ],
     ]),
   );
+  // artifacts 是右侧预览面板的数据源，工作流步骤通过 artifactId 选中展示。
   const artifacts = {
     references: {
       id: 'references',
@@ -2133,6 +2181,7 @@ export function createContentDemoData(task, project, options = {}) {
     },
     ...revisionArtifacts,
   };
+  // 每条用户修改要求都会追加一组“要求 - 修改 - 评估”的工作流步骤。
   const revisionWorkflow = finalRevisionRounds.flatMap((round) => [
     {
       id: `user-revision-request-v${round.version}`,
@@ -2218,6 +2267,7 @@ export function createContentDemoData(task, project, options = {}) {
     revisionRecords,
     revisionSuggestions,
     tdk,
+    // workflow 决定创作过程左侧任务流的展示顺序和产物揭示节奏。
     workflow: [
       {
         id: 'load-content-knowledge',

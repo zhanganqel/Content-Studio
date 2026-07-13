@@ -5,6 +5,7 @@ export default function VideoGenerationPage({ onBack, t }) {
   const copy = t.videoAd.generation;
 
   return (
+    /* 视频生成页保留完整页面骨架，后续接入生成流程。 */
     <main className="flex h-screen min-h-0 flex-col bg-white text-slate-900">
       <header className="flex h-[72px] flex-none items-center justify-between border-b border-slate-200 bg-white px-7">
         <div className="flex min-w-0 items-center gap-4">

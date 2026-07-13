@@ -13,6 +13,7 @@ export const articleTypeOptions = [
   'FAQ',
 ];
 
+// 文章草稿按项目隔离存储，避免不同 demo 项目的文章互相覆盖。
 function getStorageKey(projectId) {
   return `${storageKeyPrefix}${projectId}`;
 }
@@ -69,6 +70,7 @@ function getDefaultContent(seed, project) {
   ].join('\n');
 }
 
+// 首次进入项目时由内容种子生成可编辑文章草稿。
 function articleFromSeed(seed, index, project) {
   const title = seed.title ?? `Blog Article ${index + 1}`;
 
@@ -106,6 +108,7 @@ export function createBlankBlogArticle(title) {
   };
 }
 
+// 读取文章草稿时兼容旧数组格式，无法解析时回退到 demo 数据。
 export function getBlogArticleDrafts(project) {
   if (typeof window === 'undefined') {
     return createDefaultBlogArticles(project);
@@ -143,6 +146,7 @@ export function saveBlogArticleDrafts(projectId, articles) {
   return articles;
 }
 
+// 保存或插入文章时保持最新文章在列表顶部。
 export function upsertBlogArticle(project, article) {
   const currentArticles = getBlogArticleDrafts(project);
   const exists = currentArticles.some((item) => item.id === article.id);

@@ -2,6 +2,7 @@ import { createCodexServiceUrl } from './codexServiceApi.js';
 
 const maxResponseSampleLength = 800;
 
+// 解析单个 SSE 事件，只处理 data 行并兼容纯文本增量。
 function parseSseEvent(rawEvent) {
   const dataLines = rawEvent
     .split('\n')
@@ -21,6 +22,7 @@ function parseSseEvent(rawEvent) {
   }
 }
 
+// 后端未返回 SSE 时保留响应样本，方便页面显示明确错误。
 function createStreamingFormatError(response, responseSample) {
   const contentType = response.headers.get('content-type') || 'unknown content type';
   const sample = String(responseSample || '').trim().slice(0, 160);
@@ -28,6 +30,7 @@ function createStreamingFormatError(response, responseSample) {
   return new Error(`No SSE events were received from the Codex service (${contentType}).${detail}`);
 }
 
+// 非 2xx 响应优先读取后端 JSON 错误，其次回退到文本内容。
 async function readErrorResponse(response) {
   try {
     const contentType = response.headers.get('content-type') || '';
@@ -42,6 +45,7 @@ async function readErrorResponse(response) {
   }
 }
 
+// 兼容不支持 ReadableStream 的环境，一次性文本也按 SSE 分段派发。
 function dispatchSseText(text, onEvent) {
   let eventCount = 0;
   const rawEvents = String(text ?? '').split(/\r?\n\r?\n/);
@@ -57,6 +61,7 @@ function dispatchSseText(text, onEvent) {
   return eventCount;
 }
 
+// 发起 Copilot 对话请求，并将后端 SSE 事件逐个派发给页面状态机。
 export async function streamCopilotChat({
   body,
   conversationId,
@@ -101,6 +106,7 @@ export async function streamCopilotChat({
 
     buffer += decoder.decode(value, { stream: true });
     responseSample = `${responseSample}${buffer}`.slice(0, maxResponseSampleLength);
+    // SSE 事件以空行分隔，最后一段可能是不完整事件，需要留到下一次读取。
     const events = buffer.split(/\r?\n\r?\n/);
     buffer = events.pop() ?? '';
 
@@ -114,6 +120,7 @@ export async function streamCopilotChat({
   }
 
   if (buffer.trim()) {
+    // 流结束后处理残留 buffer，避免最后一个事件没有尾随空行时丢失。
     const parsed = parseSseEvent(buffer);
     if (parsed) {
       eventCount += 1;
@@ -126,6 +133,7 @@ export async function streamCopilotChat({
   }
 }
 
+// 主动释放后端会话线程，用于用户关闭或重置会话后的资源清理。
 export async function releaseCopilotThread(projectId, conversationId) {
   const path = `/threads/${encodeURIComponent(projectId)}/${encodeURIComponent(conversationId)}`;
   const response = await fetch(createCodexServiceUrl(path), { method: 'DELETE' });

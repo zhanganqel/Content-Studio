@@ -26,6 +26,7 @@ import {
 import { createBlogArticleId, getTodayString, upsertBlogArticle } from '../../services/blogArticleStore.js';
 
 function getArtifactIcon(type) {
+  // 按产物类型选择预览卡片图标。
   if (type === 'evaluation') return ClipboardList;
   if (type === 'tdk') return Sparkles;
   if (type === 'references') return BookOpen;
@@ -33,11 +34,13 @@ function getArtifactIcon(type) {
 }
 
 function getLocalizedArtifactText(artifact, field, locale) {
+  // 英文环境优先读取对应的英文展示字段。
   const localizedField = `${field}En`;
   return locale === 'en-US' && artifact?.[localizedField] ? artifact[localizedField] : artifact?.[field];
 }
 
 function openAppViewInNewTab(params) {
+  // 使用查询参数打开指定页面，避免影响当前生成流程。
   if (typeof window === 'undefined') return;
 
   const url = new URL(window.location.href);
@@ -49,10 +52,12 @@ function openAppViewInNewTab(params) {
 }
 
 function getArtifactIdsFromItem(item) {
+  // 兼容单个产物和多个产物两种历史数据结构。
   return item?.artifactIds ?? (item?.artifactId ? [item.artifactId] : []);
 }
 
 function getTaskSteps(task) {
+  // 将单步任务归一为 steps 数组，方便统一播放。
   if (Array.isArray(task?.steps) && task.steps.length) {
     return task.steps.map((step, index) => ({
       ...step,
@@ -73,6 +78,7 @@ function getTaskSteps(task) {
 }
 
 function getStepRevealCount(step) {
+  // 每个步骤按思考内容和来源列表分段逐步展示。
   return (step?.thinking?.length ?? 0) + (step?.sourceList ? 1 : 0);
 }
 
@@ -85,6 +91,7 @@ function getWorkflowArtifactIds(workflow) {
 }
 
 function getWorkflowThinkingCounts(workflow, endIndex = workflow.length) {
+  // 生成已完成任务的完整思考展示进度。
   return Object.fromEntries(
     workflow
       .slice(0, endIndex)
@@ -93,12 +100,14 @@ function getWorkflowThinkingCounts(workflow, endIndex = workflow.length) {
 }
 
 function isStepDone(step, visibleThinkingCounts, visibleArtifactIds) {
+  // 思考内容和产物都可见后，当前步骤才算完成。
   const thinkingCount = visibleThinkingCounts[step.id] ?? 0;
   const allArtifactsVisible = step.artifactIds.every((artifactId) => visibleArtifactIds.includes(artifactId));
   return thinkingCount >= getStepRevealCount(step) && allArtifactsVisible;
 }
 
 function isStepReachable(steps, stepIndex, visibleThinkingCounts, visibleArtifactIds, taskCompleted) {
+  // 后续步骤必须等待前置步骤完成后再出现。
   if (taskCompleted) return true;
   if (stepIndex === 0) return true;
 
@@ -108,6 +117,7 @@ function isStepReachable(steps, stepIndex, visibleThinkingCounts, visibleArtifac
 }
 
 function getActiveStepState(task, visibleThinkingCounts, visibleArtifactIds) {
+  // 定位当前任务里第一个尚未完全展示的步骤。
   const steps = getTaskSteps(task);
   const step = steps.find((candidate) => !isStepDone(candidate, visibleThinkingCounts, visibleArtifactIds));
 
@@ -137,6 +147,7 @@ function getActiveStepState(task, visibleThinkingCounts, visibleArtifactIds) {
 }
 
 function getInitialPlaybackState(workflow, task) {
+  // 根据任务缓存恢复已完成、已中止或首次进入的播放状态。
   const alreadyCompleted = task?.stage === 'content-completed';
   const savedCompletedTaskIds = task?.content?.completedTaskIds ?? [];
   const savedArtifactId = task?.content?.currentArtifactId ?? '';
@@ -177,6 +188,7 @@ function getInitialPlaybackState(workflow, task) {
 
 function Stepper({ copy }) {
   return (
+    /* 顶部步骤条固定高亮正文生成阶段。 */
     <div className="flex flex-1 items-center justify-center gap-5">
       {copy.steps.map((step, index) => (
         <div key={step} className="flex items-center gap-3">
@@ -196,6 +208,7 @@ function Stepper({ copy }) {
 }
 
 function AgentAvatar({ agentTitle }) {
+  // 根据 Agent 名称生成统一头像样式。
   const agentDisplay = getAgentDisplay(agentTitle);
 
   return (
@@ -208,6 +221,7 @@ function AgentAvatar({ agentTitle }) {
 }
 
 function StatusIcon({ completed, stopped }) {
+  // 步骤图标区分完成、中止和进行中状态。
   if (completed) {
     return (
       <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-[#10B981] text-[#10B981]">
@@ -232,6 +246,7 @@ function StatusIcon({ completed, stopped }) {
 }
 
 function ThinkingBlock({ children }) {
+  // 加粗包裹的思考文本显示为强调段落。
   const text = typeof children === 'string' ? children : '';
   const emphasisMatch = text.match(/^\*\*(.*)\*\*$/);
 
@@ -250,6 +265,7 @@ function ThinkingBlock({ children }) {
 }
 
 function ArtifactCard({ artifact, locale, onClick, selected }) {
+  // 产物卡片负责在流程中暴露可点击预览入口。
   const Icon = getArtifactIcon(artifact.type);
   const title = getLocalizedArtifactText(artifact, 'title', locale);
   const subtitle = getLocalizedArtifactText(artifact, 'subtitle', locale);
@@ -275,6 +291,7 @@ function ArtifactCard({ artifact, locale, onClick, selected }) {
 }
 
 function StepSourceList({ locale, sourceList }) {
+  // 来源列表按资料、媒体、链接和普通标签分别渲染。
   const items = sourceList?.items ?? [];
   const isEnglish = locale === 'en-US';
 
@@ -366,6 +383,7 @@ function StepSourceList({ locale, sourceList }) {
 
 function RevisionRequestBox({ copy, disabled, locale, onChange, onSubmit, value }) {
   return (
+    /* 终稿评估通过后展示的二次修改输入区。 */
     <form
       className={`ml-14 mb-8 w-[560px] max-w-[calc(100%-56px)] rounded-[8px] border p-4 ${
         disabled ? 'border-[#DCDFE6] bg-[#F7F8FB]' : 'border-[#C7D2FE] bg-[#F5F7FF]'
@@ -439,9 +457,11 @@ function WorkflowTask({
   locale,
   copy,
 }) {
+  // 单个工作流任务负责按步骤展示思考、来源和产物。
   const steps = getTaskSteps(task);
 
   if (task.kind === 'user-request') {
+    // 用户请求以右侧气泡展示，保持和 Agent 输出的视觉区分。
     const userStep = steps[0];
     const thinkingCount = visibleThinkingCounts[userStep.id] ?? 0;
     const visibleText = userStep.thinking.slice(0, thinkingCount).join('\n') || getTaskRunningText(task, locale);
@@ -564,6 +584,7 @@ function RatingBadge({ rating }) {
 }
 
 function ArticleBody({ content }) {
+  // 将轻量 Markdown 文本转换为页面预览块。
   const lines = content.split('\n');
   const blocks = [];
 
@@ -619,6 +640,7 @@ function ArticleBody({ content }) {
 }
 
 function ArticlePreview({ artifact }) {
+  // 文章预览支持切换引用高亮。
   const [highlight, setHighlight] = useState(true);
 
   return (
@@ -658,6 +680,7 @@ function ArticlePreview({ artifact }) {
 
 function EvaluationPreview({ artifact }) {
   return (
+    /* 终稿评估预览展示分组指标和优化建议。 */
     <div className="flex h-full flex-col">
       <div className="flex h-[58px] flex-none items-center justify-between border-b border-[#EBEEF5] px-6">
         <div>
@@ -712,6 +735,7 @@ function EvaluationPreview({ artifact }) {
 
 function SuggestionPreview({ artifact }) {
   return (
+    /* 修改建议预览用于查看未通过指标的修正方向。 */
     <div className="flex h-full flex-col">
       <div className="flex h-[58px] flex-none items-center border-b border-[#EBEEF5] px-6">
         <h2 className="text-[16px] font-bold leading-[24px] text-[#303133]">{artifact.title}</h2>
@@ -735,6 +759,7 @@ function SuggestionPreview({ artifact }) {
 
 function RevisionPreview({ artifact }) {
   return (
+    /* 修改记录预览展示前后文案差异。 */
     <div className="flex h-full flex-col">
       <div className="flex h-[58px] flex-none items-center border-b border-[#EBEEF5] px-6">
         <h2 className="text-[16px] font-bold leading-[24px] text-[#303133]">{artifact.title}</h2>
@@ -763,6 +788,7 @@ function RevisionPreview({ artifact }) {
 
 function TdkPreview({ artifact }) {
   return (
+    /* TDK 预览展示标题、关键词和描述。 */
     <div className="flex h-full flex-col">
       <div className="flex h-[58px] flex-none items-center border-b border-[#EBEEF5] px-6">
         <h2 className="text-[16px] font-bold leading-[24px] text-[#303133]">文章元信息</h2>
@@ -796,6 +822,7 @@ function TdkPreview({ artifact }) {
 }
 
 function ReferenceOutline({ outline }) {
+  // 外部引用按标题层级展示网页大纲。
   if (!outline?.length) {
     return <p className="text-[14px] leading-[22px] text-[#909399]">暂无可展示的大纲结构。</p>;
   }
@@ -824,6 +851,7 @@ function ReferenceOutline({ outline }) {
 }
 
 function ReferenceBlockCard({ block, expanded, onOpenKnowledgeItem, onOpenSourcePreview, onToggle }) {
+  // 引用卡片根据来源类型跳转到网页、知识条目或资料预览。
   const isReferenceWeb = block.blockKind === 'reference-web';
   const isKnowledgeItem = block.blockKind === 'knowledge-item';
   const isKnowledgeAsset = block.blockKind === 'knowledge-asset';
@@ -892,6 +920,7 @@ function ReferenceBlockCard({ block, expanded, onOpenKnowledgeItem, onOpenSource
 }
 
 function getReferenceTabs(locale) {
+  // 引用抽屉只展示知识条目和知识资料两个来源组。
   return [
     { id: 'knowledge-items', label: locale === 'en-US' ? 'Knowledge Items' : '知识条目' },
     { id: 'knowledge-files', label: locale === 'en-US' ? 'Knowledge Files' : '知识资料' },
@@ -899,10 +928,12 @@ function getReferenceTabs(locale) {
 }
 
 function isReferenceBlockInTab(block, tab) {
+  // 当前标签决定引用块所属的筛选范围。
   return tab === 'knowledge-items' ? block.blockKind === 'knowledge-item' : block.blockKind === 'knowledge-asset';
 }
 
 function ReferencesPreview({ artifact, locale, onOpenKnowledgeItem, onOpenSourcePreview }) {
+  // 引用产物预览按标签切换知识条目和资料文本块。
   const [activeTab, setActiveTab] = useState('knowledge-items');
   const filteredBlocks = artifact.referenceBlocks.filter((block) => isReferenceBlockInTab(block, activeTab));
   const firstBlockId = filteredBlocks[0]?.id ?? '';
@@ -962,6 +993,7 @@ function ReferencesPreview({ artifact, locale, onOpenKnowledgeItem, onOpenSource
 }
 
 function PreviewPanel({ artifact, copy, locale, onOpenKnowledgeItem, onOpenSourcePreview }) {
+  // 根据产物类型选择右侧预览面板。
   if (!artifact) return <EmptyPreview copy={copy} />;
   if (artifact.type === 'references') {
     return (
@@ -991,6 +1023,7 @@ function ReferenceDrawer({
   onTabChange,
   references,
 }) {
+  // 引用抽屉在文章生成后展示实际引用与生成内容的对应关系。
   const tabs = getReferenceTabs(locale);
   const filtered = articleGenerated
     ? citationUsages
@@ -1002,6 +1035,7 @@ function ReferenceDrawer({
     : [];
 
   function openCitationSource(usage) {
+    // 点击引用时打开对应来源，而不是切换当前生成页面。
     const block = usage.sourceBlock;
     if (!block) return;
 
@@ -1099,8 +1133,9 @@ function ReferenceDrawer({
   );
 }
 
-export default function BlogArticleAiContentPage({ article, locale, onBack, onSaveAndEdit, project, t, task }) {
+export default function BlogArticleAiContentPage({ article, locale, onBack, onClose, onSaveAndEdit, project, t, task }) {
   const copy = t.blogArticle.aiCreation;
+  // 修改要求会参与 demo 数据重算，形成新的终稿版本。
   const [revisionRequests, setRevisionRequests] = useState(() => task?.content?.revisionRequests ?? []);
   const [revisionInput, setRevisionInput] = useState('');
   const demoData = useMemo(
@@ -1122,6 +1157,7 @@ export default function BlogArticleAiContentPage({ article, locale, onBack, onSa
   const [toast, setToast] = useState(null);
   const workflowRef = useRef(null);
 
+  // 当前展示状态由播放进度、可见产物和保存缓存共同决定。
   const currentTask = workflow[currentTaskIndex];
   const visibleTaskList = workflow.slice(0, Math.min(currentTaskIndex + 1, workflow.length));
   const selectedArtifact = selectedArtifactId ? demoData.artifacts[selectedArtifactId] : null;
@@ -1135,6 +1171,7 @@ export default function BlogArticleAiContentPage({ article, locale, onBack, onSa
   }, [task.id]);
 
   function buildContentPayload(data = demoData, overrides = {}) {
+    // 将页面播放状态和正文产物合并成任务缓存。
     return {
       articleVersions: data.articleVersions,
       citationUsages: data.citationUsages,
@@ -1161,6 +1198,7 @@ export default function BlogArticleAiContentPage({ article, locale, onBack, onSa
   }
 
   useEffect(() => {
+    // 首次进入时写回当前内容阶段，保证历史任务列表能恢复进度。
     updateAiCreationTask(project.id, task.id, {
       stage: isComplete ? 'content-completed' : isStopped ? 'content-stopped' : 'content',
       content: buildContentPayload(),
@@ -1168,6 +1206,7 @@ export default function BlogArticleAiContentPage({ article, locale, onBack, onSa
   }, []);
 
   useEffect(() => {
+    // 普通 toast 自动关闭，带操作按钮的 toast 等待用户处理。
     if (!toast || toast.actionLabel) {
       return undefined;
     }
@@ -1177,6 +1216,7 @@ export default function BlogArticleAiContentPage({ article, locale, onBack, onSa
   }, [toast]);
 
   useEffect(() => {
+    // 工作流按定时器逐段显示思考、来源和产物。
     if (isStopped || isComplete || !currentTask) {
       return undefined;
     }
@@ -1236,6 +1276,7 @@ export default function BlogArticleAiContentPage({ article, locale, onBack, onSa
   ]);
 
   useEffect(() => {
+    // 用户未手动上滑时，流程区自动跟随最新生成内容。
     const container = workflowRef.current;
     if (!container || !autoScrollEnabled) return;
 
@@ -1248,6 +1289,7 @@ export default function BlogArticleAiContentPage({ article, locale, onBack, onSa
   }, [autoScrollEnabled, completedTaskIds, currentTaskIndex, visibleArtifactIds, visibleThinkingCounts]);
 
   function handleWorkflowScroll() {
+    // 接近底部时继续自动滚动，离开底部则暂停。
     const container = workflowRef.current;
     if (!container) return;
 
@@ -1256,6 +1298,7 @@ export default function BlogArticleAiContentPage({ article, locale, onBack, onSa
   }
 
   function handleStopTask() {
+    // 中止任务时保留当前可见进度，方便返回后恢复。
     if (isStopped || isComplete) return;
 
     setIsStopped(true);
@@ -1280,11 +1323,13 @@ export default function BlogArticleAiContentPage({ article, locale, onBack, onSa
   }
 
   function handleRegenerate() {
+    // 重新生成会清空正文阶段缓存后刷新页面。
     resetAiContentTask(project.id, task.id);
     window.location.reload();
   }
 
   function handleSubmitRevisionRequest() {
+    // 提交修改要求后追加一轮修订任务。
     const text = revisionInput.trim();
     if (!text || !isComplete || isStopped) return;
 
@@ -1326,6 +1371,7 @@ export default function BlogArticleAiContentPage({ article, locale, onBack, onSa
   }
 
   function handleSaveAndEdit() {
+    // 将最终文章写入文章列表，并带着新文章进入编辑页。
     const finalArticle = demoData.latestFinalArticle;
     const tdk = demoData.latestTdk;
     const taskInput = task?.taskInput ?? {};
@@ -1367,6 +1413,7 @@ export default function BlogArticleAiContentPage({ article, locale, onBack, onSa
   }
 
   function handleOpenKnowledgeItem(block) {
+    // 知识条目从新标签进入，避免打断当前生成上下文。
     openAppViewInNewTab({
       knowledgeItemId: block.knowledgeItemId,
       projectId: project.id,
@@ -1375,6 +1422,7 @@ export default function BlogArticleAiContentPage({ article, locale, onBack, onSa
   }
 
   function handleOpenSourcePreview(block) {
+    // 知识资料优先打开文件预览，缺少文件时打开来源片段预览。
     if (block.sourceFileId) {
       openAppViewInNewTab({
         fileId: block.sourceFileId,
@@ -1407,7 +1455,7 @@ export default function BlogArticleAiContentPage({ article, locale, onBack, onSa
           <button
             type="button"
             className="mr-3 inline-flex h-8 w-8 items-center justify-center rounded-[6px] text-[#232E45] transition hover:bg-[#F5F7FA]"
-            onClick={onBack}
+            onClick={onClose ?? onBack}
             aria-label="返回"
           >
             <ArrowLeft className="h-5 w-5" />

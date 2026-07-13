@@ -1,4 +1,5 @@
 export default function AiCreationStepLabel({ active, step }) {
+  // 英文步骤名按单词换行，保证顶部步骤条宽度稳定。
   const words = String(step ?? '').split(/\s+/).filter(Boolean);
 
   return (

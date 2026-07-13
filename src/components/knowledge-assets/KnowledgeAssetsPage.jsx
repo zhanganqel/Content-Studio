@@ -40,6 +40,7 @@ import KnowledgeFileChunksPage from './KnowledgeFileChunksPage.jsx';
 const mediaCategoryIds = ['all', 'brand', 'services', 'products', 'cases', 'materials-process'];
 const fileCategoryIds = ['all', 'word', 'excel', 'pdf', 'text', 'chunked', 'failed'];
 
+// 媒体搜索覆盖标题、分类、用途、来源链接和标签。
 function getMediaSearchText(asset) {
   return [
     asset.title,
@@ -54,6 +55,7 @@ function getMediaSearchText(asset) {
     .toLowerCase();
 }
 
+// 文件搜索覆盖文件名、类型、用途、来源链接和标签。
 function getFileSearchText(file) {
   return [
     file.title,
@@ -68,6 +70,7 @@ function getFileSearchText(file) {
     .toLowerCase();
 }
 
+// 文件分类包含文件类型和处理状态两类筛选。
 function matchesFileCategory(file, activeCategory) {
   if (activeCategory === 'all') return true;
   if (activeCategory === 'word') return file.fileType === 'docx' || file.fileType === 'doc';
@@ -87,6 +90,7 @@ function getSourceUrl(item) {
   return item.sourcePageUrl || item.sourceUrls?.[0] || '';
 }
 
+// 上传文件没有外部来源页，只有 demo 数据可以打开来源链接。
 function canViewSource(item) {
   return getSourceKind(item) !== 'uploaded' && Boolean(getSourceUrl(item));
 }
@@ -153,6 +157,7 @@ function TagFilterButton({ activeTag, copy, onTagChange, tagOptions }) {
   const hasActiveTag = activeTag !== 'all';
 
   useEffect(() => {
+    // 标签筛选弹层只在打开时监听外部点击。
     function handleClickOutside(event) {
       if (tagMenuRef.current && !tagMenuRef.current.contains(event.target)) {
         setTagMenuOpen(false);
@@ -617,6 +622,7 @@ function WebParseDialog({ copy, onCancel, onSubmit }) {
 }
 
 export default function KnowledgeAssetsPage({ project, t }) {
+  // 页面同时管理文件库和媒体库，activeTab 决定当前展示和操作对象。
   const copy = t.knowledgeAssets;
   const [activeTab, setActiveTab] = useState('files');
   const [files, setFiles] = useState(() => listFiles(project));
@@ -634,6 +640,7 @@ export default function KnowledgeAssetsPage({ project, t }) {
   const bodyScrollRef = useRef(null);
 
   useEffect(() => {
+    // 切换项目时重新读取文件、媒体和分块入口状态。
     setActiveTab('files');
     setSearchQuery('');
     setActiveCategory('all');
@@ -644,6 +651,7 @@ export default function KnowledgeAssetsPage({ project, t }) {
   }, [project]);
 
   useEffect(() => {
+    // 切换文件/媒体标签页时重置筛选，并把滚动位置回到顶部。
     setSearchQuery('');
     setActiveCategory('all');
     setActiveTag('all');
@@ -667,6 +675,7 @@ export default function KnowledgeAssetsPage({ project, t }) {
   );
 
   const filteredFiles = useMemo(() => {
+    // 文件筛选同时应用分类、标签和搜索词。
     const query = searchQuery.trim().toLowerCase();
     return files.filter((file) => {
       const matchesCategory = matchesFileCategory(file, activeCategory);
@@ -677,6 +686,7 @@ export default function KnowledgeAssetsPage({ project, t }) {
   }, [activeCategory, activeTag, files, searchQuery]);
 
   const filteredAssets = useMemo(() => {
+    // 媒体筛选使用媒体分类、标签和搜索词。
     const query = searchQuery.trim().toLowerCase();
     return mediaAssets.filter((asset) => {
       const matchesCategory = activeCategory === 'all' || asset.category === activeCategory;
@@ -700,6 +710,7 @@ export default function KnowledgeAssetsPage({ project, t }) {
   }, [mediaAssets]);
 
   function openPreview(file) {
+    // 文件预览使用独立 URL 打开，避免主页面状态被预览页影响。
     const url = `${window.location.origin}${window.location.pathname}?view=knowledge-file-preview&projectId=${project.id}&fileId=${file.id}`;
     window.open(url, '_blank', 'noopener,noreferrer');
   }
@@ -714,6 +725,7 @@ export default function KnowledgeAssetsPage({ project, t }) {
   }
 
   async function handleFileUpload(event) {
+    // 文件上传后立即尝试浏览器端解析分块，失败时仍保留上传记录。
     const selectedFiles = Array.from(event.target.files ?? []);
     event.target.value = '';
     if (!selectedFiles.length) return;
@@ -740,6 +752,7 @@ export default function KnowledgeAssetsPage({ project, t }) {
   }
 
   async function handleMediaUpload(event) {
+    // 媒体上传只写入媒体库，不进入文件分块处理流程。
     const selectedFiles = Array.from(event.target.files ?? []);
     event.target.value = '';
     if (!selectedFiles.length) return;
@@ -760,6 +773,7 @@ export default function KnowledgeAssetsPage({ project, t }) {
   }
 
   async function handleParseWebPage(url) {
+    // 网页解析入口目前依赖服务配置，未配置时显示明确提示。
     try {
       await parseWebPage(project, url);
       setWebParseOpen(false);
@@ -777,6 +791,7 @@ export default function KnowledgeAssetsPage({ project, t }) {
   }
 
   function handleSaveTags(nextTags) {
+    // 标签保存根据当前对象类型写回文件库或媒体库。
     if (!editingTagsItem) return;
 
     if (editingTagsItem.type === 'media') {
@@ -792,6 +807,7 @@ export default function KnowledgeAssetsPage({ project, t }) {
   }
 
   function handleDelete(item, type = activeTab === 'media' ? 'media' : 'file') {
+    // demo 数据受保护，只有用户上传的文件或媒体允许删除。
     if (!item.canDelete) {
       showToast(copy.toast.demoProtected, 'warning');
       return;
@@ -815,6 +831,7 @@ export default function KnowledgeAssetsPage({ project, t }) {
   }
 
   if (chunkFileId) {
+    // 分块编辑页复用当前项目上下文，返回后重新读取文件状态。
     return (
       <KnowledgeFileChunksPage
         fileId={chunkFileId}
@@ -829,6 +846,7 @@ export default function KnowledgeAssetsPage({ project, t }) {
   }
 
   const isFilesTab = activeTab === 'files';
+  // 筛选面板根据文件和媒体标签页切换分类集合。
   const filterPanel = isFilesTab ? (
     <FilterPanel
       activeCategory={activeCategory}

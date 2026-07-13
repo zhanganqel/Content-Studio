@@ -15,6 +15,7 @@ const leadingToneClasses = {
   violet: 'bg-indigo-50 text-indigo-600',
 };
 
+// meta 项为空时不渲染，避免列表卡片出现无意义占位。
 function hasMetaValue(item) {
   if (!item || item.hidden) return false;
   if (item.children) return true;
@@ -22,6 +23,7 @@ function hasMetaValue(item) {
   return item.value !== undefined && item.value !== null && item.value !== '';
 }
 
+// 卡片操作只负责展示和触发，权限、禁用和文案由页面层决定。
 function ListCardAction({ action }) {
   if (!action || action.hidden) {
     return null;
@@ -50,6 +52,7 @@ function ListCardAction({ action }) {
   );
 }
 
+// meta 支持纯文本、数组和自定义 children，统一处理截断和图标。
 function ListCardMetaItem({ item }) {
   if (!hasMetaValue(item)) {
     return null;
@@ -73,6 +76,7 @@ function ListCardMetaItem({ item }) {
   );
 }
 
+// 通用列表卡片承载标题、状态、元信息、标签、操作和扩展内容。
 export default function ListCard({
   actions = [],
   children,
@@ -87,6 +91,7 @@ export default function ListCard({
   titleAriaLabel,
   onTitleClick,
 }) {
+  // 先过滤不可见数据，再计算布局，保证空区块不会占用空间。
   const visibleMetaItems = metaItems.filter(hasMetaValue);
   const visibleActions = actions.filter((action) => action && !action.hidden);
   const visibleTags = tags.filter(Boolean);
@@ -105,6 +110,7 @@ export default function ListCard({
     .filter(Boolean)
     .join(' ');
 
+  // 有点击行为时使用按钮，否则使用标题标签保留语义。
   const titleNode = onTitleClick ? (
     <button
       type="button"

@@ -28,6 +28,7 @@ const variantClasses = {
   },
 };
 
+// 方形图标按钮用于工具栏和卡片操作，固定尺寸避免 hover 时布局跳动。
 export default function SquareIconButton({
   active = false,
   children,
@@ -38,6 +39,7 @@ export default function SquareIconButton({
   variant = 'outline',
   ...props
 }) {
+  // 组合尺寸和视觉变体，aria-label 由调用方提供。
   const selectedSize = sizeClasses[size] ?? sizeClasses.md;
   const selectedVariant = variantClasses[variant] ?? variantClasses.outline;
   const classes = [

@@ -17,6 +17,7 @@ function closeOrBack() {
 }
 
 export default function KnowledgeFilePreviewPage({ fileId, project, t }) {
+  // 预览页打开后会尝试重新解析文件，失败时展示已有或兜底分块。
   const copy = t.knowledgeAssets;
   const [file, setFile] = useState(() => listFiles(project).find((item) => item.id === fileId));
   const [chunks, setChunks] = useState(() => listChunks(project, fileId));
@@ -24,6 +25,7 @@ export default function KnowledgeFilePreviewPage({ fileId, project, t }) {
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
+    // 使用 disposed 标记避免异步解析完成后更新已卸载页面。
     let disposed = false;
     const currentFile = listFiles(project).find((item) => item.id === fileId);
     setFile(currentFile);
@@ -60,6 +62,7 @@ export default function KnowledgeFilePreviewPage({ fileId, project, t }) {
   }, [fileId, project]);
 
   const previewText = useMemo(
+    // 多个分块使用分隔线合并为预览文本。
     () => chunks.map((chunk) => chunk.originalText).join('\n\n---\n\n'),
     [chunks],
   );

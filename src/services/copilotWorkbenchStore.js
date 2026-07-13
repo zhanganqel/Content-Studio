@@ -1,10 +1,12 @@
 const sidebarCollapsedStorageKey = 'content-studio-copilot-sidebar-collapsed';
 const conversationsStorageKeyPrefix = 'content-studio-copilot-conversations:';
 
+// 旧版工作台会话 key 仅用于读取历史偏好，当前会话数据已迁移到项目级表。
 function getConversationsStorageKey(projectId) {
   return `${conversationsStorageKeyPrefix}${projectId}`;
 }
 
+// 深拷贝工作台会话，防止调用方直接修改缓存对象。
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }

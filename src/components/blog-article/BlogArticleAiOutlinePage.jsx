@@ -27,6 +27,7 @@ function getTodayString() {
   return new Date().toISOString().slice(0, 10);
 }
 
+// 大纲树需要深拷贝后再编辑，避免直接修改已保存结构。
 function cloneTree(tree) {
   return JSON.parse(JSON.stringify(tree ?? []));
 }
@@ -136,6 +137,7 @@ function getTargetLevelIndex(targetNode, position) {
 }
 
 function canDropNode({ draggedNode, position, targetNode }) {
+  // 拖拽前校验层级和父子关系，防止树结构超过 H4 或拖入自身。
   if (!draggedNode || !targetNode) {
     return { ok: false, reason: '无效的拖拽目标' };
   }
@@ -176,6 +178,7 @@ function hasCompletedOutlineOutput(task) {
 }
 
 function getInitialPlaybackState(workflow, task) {
+  // 返回正文阶段时，大纲页需要恢复为已完成状态。
   const returnedFromContentStage = isPostOutlineStage(task?.stage);
   const alreadyCompleted = task?.stage === 'outline-completed' || hasCompletedOutlineOutput(task);
   const savedCompletedTaskIds = task?.outline?.completedTaskIds ?? [];
@@ -404,6 +407,7 @@ function TitleSelection({
 }
 
 function groupWorkflowTasks(tasks) {
+  // 连续相同角色的任务合并展示，减少左侧流程重复头像。
   return tasks.reduce((groups, task) => {
     const lastGroup = groups[groups.length - 1];
 
@@ -781,6 +785,7 @@ function UnsavedDialog({ copy, onClose, onDiscard }) {
 }
 
 export default function BlogArticleAiOutlinePage({ article, locale, onBack, onClose, onGenerateContent, project, t, task }) {
+  // 大纲页同时管理任务播放状态、标题确认和可编辑大纲树。
   const copy = t.blogArticle.aiCreation;
   const demoData = useMemo(() => createOutlineDemoData(task, project), [project, task]);
   const workflow = demoData.workflow;
@@ -825,6 +830,7 @@ export default function BlogArticleAiOutlinePage({ article, locale, onBack, onCl
   const editorReady = titlesVisible || outlineReady;
 
   useEffect(() => {
+    // 首次进入时把当前大纲播放快照写回任务，刷新后可恢复阶段。
     const nextStage = isPostOutlineStage(task?.stage)
       ? task.stage
       : isComplete
@@ -860,6 +866,7 @@ export default function BlogArticleAiOutlinePage({ article, locale, onBack, onCl
   }, [toast]);
 
   useEffect(() => {
+    // 未停止且未完成时，按节奏展示思考文本、标题候选和大纲产物。
     if (isStopped || isComplete || !currentTask) {
       return undefined;
     }
@@ -947,6 +954,7 @@ export default function BlogArticleAiOutlinePage({ article, locale, onBack, onCl
   ]);
 
   useEffect(() => {
+    // 用户停留在任务流底部时自动跟随最新生成步骤。
     const container = workflowRef.current;
     if (!container || !autoScrollEnabled) return;
 
@@ -959,6 +967,7 @@ export default function BlogArticleAiOutlinePage({ article, locale, onBack, onCl
   }, [autoScrollEnabled, completedTaskIds, currentTaskIndex, titlesVisible, visibleArtifactIds, visibleThinkingCounts]);
 
   function handleWorkflowScroll() {
+    // 距离底部较远说明用户正在查看历史步骤，暂停自动滚动。
     const container = workflowRef.current;
     if (!container) return;
 
@@ -967,6 +976,7 @@ export default function BlogArticleAiOutlinePage({ article, locale, onBack, onCl
   }
 
   function persistOutline(overrides = {}) {
+    // 大纲局部保存统一经过这里，便于保留当前标题和树结构。
     return updateAiCreationTask(project.id, task.id, {
       outline: {
         currentArtifactId: selectedArtifactId,
@@ -982,6 +992,7 @@ export default function BlogArticleAiOutlinePage({ article, locale, onBack, onCl
   }
 
   function executePendingAction(action) {
+    // 未保存确认通过后，从这里恢复原本要执行的动作。
     if (!action) return;
 
     if (action.type === 'select-title') {
@@ -1010,6 +1021,7 @@ export default function BlogArticleAiOutlinePage({ article, locale, onBack, onCl
   }
 
   function requestAction(action) {
+    // 大纲树或标题有未保存改动时，先确认再切换步骤或离开。
     if (outlineDirty) {
       setPendingAction(action);
       return;
@@ -1063,6 +1075,7 @@ export default function BlogArticleAiOutlinePage({ article, locale, onBack, onCl
   }
 
   function handleConfirmTitle() {
+    // 标题确认后才允许继续播放到大纲生成步骤。
     const nextTitle = titleDraft.trim();
     if (!selectedTitleId || !nextTitle) {
       setToast({ message: '请先选择并确认文章标题', type: 'error' });
@@ -1105,6 +1118,7 @@ export default function BlogArticleAiOutlinePage({ article, locale, onBack, onCl
   }
 
   function stopTask() {
+    // 停止任务保留当前标题、大纲树和已完成步骤。
     if (isStopped || isComplete) return;
 
     setIsStopped(true);
@@ -1138,11 +1152,13 @@ export default function BlogArticleAiOutlinePage({ article, locale, onBack, onCl
   }
 
   function handleRegenerate() {
+    // 重新生成先清空大纲阶段状态，再刷新页面进入初始播放。
     resetAiOutlineTask(project.id, task.id);
     window.location.reload();
   }
 
   function handleDiscardUnsaved() {
+    // 丢弃改动后恢复上次保存的标题和大纲树。
     const action = pendingAction;
     setPendingAction(null);
     setTitleDraft(savedTitleDraft);
@@ -1174,6 +1190,7 @@ export default function BlogArticleAiOutlinePage({ article, locale, onBack, onCl
   }
 
   function handleDrop(event, targetNode) {
+    // 拖拽落点校验通过后，先移除原节点再插入目标位置。
     event.preventDefault();
     if (!dragState) return;
 
@@ -1222,6 +1239,7 @@ export default function BlogArticleAiOutlinePage({ article, locale, onBack, onCl
   }
 
   function saveAndEnterContent() {
+    // 进入正文前保存最终标题和大纲树，并初始化正文阶段状态。
     const nextTitle = titleDraft.trim();
     if (!nextTitle) {
       setToast({

@@ -11,6 +11,7 @@ const articleStorageKeyPrefix = 'content-studio-blog-articles:';
 const taskStorageKeyPrefix = 'content-studio-blog-article-ai-tasks:';
 const taskArticleRuleMigrationKeyPrefix = 'content-studio-blog-article-task-article-rule-v1:';
 
+// 文章类型会带中文说明，保存到文章草稿前只保留类型名称。
 function normalizeArticleType(value) {
   return String(value ?? '').replace(/（.*$/, '').trim();
 }
@@ -33,6 +34,7 @@ function getTaskArticleType(task) {
   return normalizeArticleType(getTaskInput(task).articleType);
 }
 
+// 解析旧版任务缓存，兼容数组和带 tasks 包装的格式。
 function parseStoredTasks(value) {
   if (!value) return [];
 
@@ -46,6 +48,7 @@ function parseStoredTasks(value) {
   }
 }
 
+// 解析旧版文章缓存，兼容数组和带 articles 包装的格式。
 function parseStoredArticles(value) {
   if (!value) return [];
 
@@ -59,6 +62,7 @@ function parseStoredArticles(value) {
   }
 }
 
+// 旧规则会生成空文章草稿，这类草稿需要在迁移时清理。
 function isUnsavedTaskDraft(article, taskArticleIds) {
   return (
     taskArticleIds.has(article.id) &&
@@ -69,6 +73,7 @@ function isUnsavedTaskDraft(article, taskArticleIds) {
   );
 }
 
+// 迁移文章 AI 任务存储规则，防止旧任务和空草稿继续覆盖新流程。
 export function migrateAiTaskArticleRuleStorage(project) {
   if (typeof window === 'undefined' || !project?.id) return false;
 
@@ -102,6 +107,7 @@ export function migrateAiTaskArticleRuleStorage(project) {
   return changed;
 }
 
+// 从 AI 任务合成文章上下文，供策划、大纲、正文和编辑器共用。
 export function createArticleContextFromAiTask(task, fallback = {}) {
   const input = getTaskInput(task);
   const title = task?.content?.finalArticle?.headline || task?.outline?.titleDraft || input.articleTopic || '文章创作任务';
@@ -141,6 +147,7 @@ export function getAiTaskArticleContext(project, task) {
   return createArticleContextFromAiTask(task, existingArticle);
 }
 
+// 保存 AI 任务为正式文章，同时回写任务的正文完成状态。
 export function saveAiTaskAsBlogArticle(project, task, options = {}) {
   const demoData = createContentDemoData(task, project);
   const finalArticle = options.content?.finalArticle ?? demoData.latestFinalArticle;

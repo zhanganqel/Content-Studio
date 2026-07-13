@@ -1,5 +1,6 @@
 export function SolidDashboardIcon({ className = '' }) {
   return (
+    /* 仪表盘图标用于返回主工作台入口。 */
     <svg
       aria-hidden="true"
       className={className}
@@ -17,6 +18,7 @@ export function SolidDashboardIcon({ className = '' }) {
 
 export function SolidSparklesIcon({ className = '' }) {
   return (
+    /* 闪光图标用于 AI 和 Copilot 相关入口。 */
     <svg
       aria-hidden="true"
       className={className}

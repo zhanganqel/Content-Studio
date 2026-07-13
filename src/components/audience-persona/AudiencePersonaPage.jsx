@@ -40,6 +40,7 @@ function valuesEqual(a, b) {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
+// 抽屉编辑对象始终补齐空画像字段，避免旧数据缺字段导致表单失控。
 function createEditablePersona(persona = createEmptyAudiencePersona()) {
   return {
     ...createEmptyAudiencePersona(),
@@ -49,6 +50,7 @@ function createEditablePersona(persona = createEmptyAudiencePersona()) {
   };
 }
 
+// 筛选搜索只匹配画像名称、行业和职位，保持搜索范围可预期。
 function getFieldText(persona) {
   return [persona.name, persona.industry, persona.jobTitle]
     .filter(Boolean)
@@ -56,6 +58,7 @@ function getFieldText(persona) {
     .toLowerCase();
 }
 
+// 保存前校验所有必填字段，多选字段使用独立错误文案。
 function validatePersona(data, copy) {
   const errors = {};
 
@@ -199,6 +202,7 @@ function MultiSelectField({
   const ref = useRef(null);
 
   useEffect(() => {
+    // 多选下拉点击外部关闭，避免标签移除后下拉残留。
     function handleClickOutside(event) {
       if (ref.current && !ref.current.contains(event.target)) {
         setOpen(false);
@@ -210,6 +214,7 @@ function MultiSelectField({
   }, []);
 
   function toggleValue(value) {
+    // 已选项再次点击即取消，保持多选字段和标签移除逻辑一致。
     if (values.includes(value)) {
       onChange(values.filter((item) => item !== value));
       return;
@@ -307,6 +312,7 @@ function FilterSelect({ className = 'w-full sm:w-56', label, onChange, options, 
 }
 
 function PersonaCard({ copy, onDelete, onDuplicate, onEdit, persona }) {
+  // 画像卡片只展示摘要字段，完整画像内容通过编辑抽屉查看。
   return (
     <ListCard
       title={persona.name}
@@ -445,6 +451,7 @@ function PersonaDrawer({
         </div>
 
         <div className="min-h-0 flex-1 space-y-7 overflow-y-auto px-7 py-7">
+          {/* 基础身份信息：定义画像所属组织和职位 */}
           <FormSection
             description={copy.sections.identity.description}
             icon={UserRound}
@@ -512,6 +519,7 @@ function PersonaDrawer({
             </div>
           </FormSection>
 
+          {/* 搜索偏好：描述画像的痛点、目标和常见问题 */}
           <FormSection
             description={copy.sections.searchPreference.description}
             icon={SearchCheck}
@@ -545,6 +553,7 @@ function PersonaDrawer({
             </div>
           </FormSection>
 
+          {/* 内容偏好：用于后续内容策略和文章生成约束 */}
           <FormSection
             description={copy.sections.readingPreference.description}
             icon={BookOpenText}
@@ -642,6 +651,7 @@ function ConfirmDialog({ cancelLabel, confirmLabel, danger = false, message, onC
 }
 
 export default function AudiencePersonaPage({ project, sidebarWidth = 300, t }) {
+  // 页面状态分为已保存列表、筛选草稿、抽屉草稿和确认弹窗。
   const [personas, setPersonas] = useState(() => getAudiencePersonaDrafts(project));
   const [searchQuery, setSearchQuery] = useState('');
   const [depthFilter, setDepthFilter] = useState('all');
@@ -659,6 +669,7 @@ export default function AudiencePersonaPage({ project, sidebarWidth = 300, t }) 
   const copy = t.audiencePersona;
 
   useEffect(() => {
+    // 切换项目时重新读取该项目画像，并清空当前页面临时状态。
     setPersonas(getAudiencePersonaDrafts(project));
     setSearchQuery('');
     setDepthFilter('all');
@@ -681,6 +692,7 @@ export default function AudiencePersonaPage({ project, sidebarWidth = 300, t }) 
   }, [toast]);
 
   useEffect(() => {
+    // 筛选弹层只在打开时监听外部点击，关闭后移除监听。
     function handleClickOutside(event) {
       if (filterRef.current && !filterRef.current.contains(event.target)) {
         setFilterOpen(false);
@@ -695,6 +707,7 @@ export default function AudiencePersonaPage({ project, sidebarWidth = 300, t }) 
   }, [filterOpen]);
 
   const filteredPersonas = useMemo(() => {
+    // 应用后的筛选条件才影响列表，弹层草稿不直接改动结果。
     const query = searchQuery.trim().toLowerCase();
 
     return personas.filter((persona) => {
@@ -714,6 +727,7 @@ export default function AudiencePersonaPage({ project, sidebarWidth = 300, t }) 
     Boolean(searchQuery.trim()) || depthFilter !== 'all' || typeFilter !== 'all';
 
   function persist(nextPersonas, message) {
+    // 所有增删改都通过 persist 写入当前项目缓存并触发提示。
     const saved = saveAudiencePersonaDrafts(project.id, nextPersonas);
     setPersonas(saved);
     setToast({ id: Date.now(), message, type: 'success' });
@@ -732,6 +746,7 @@ export default function AudiencePersonaPage({ project, sidebarWidth = 300, t }) 
   }
 
   function openDuplicateDrawer(persona) {
+    // 复制画像先清空 id，保存时会生成新的画像 ID。
     const data = createEditablePersona({
       ...persona,
       id: '',
@@ -757,6 +772,7 @@ export default function AudiencePersonaPage({ project, sidebarWidth = 300, t }) 
   }
 
   function closeDrawer() {
+    // 有未保存改动时先弹出确认框，避免关闭抽屉直接丢失草稿。
     if (hasDrawerChanges) {
       setShowDiscardDialog(true);
       return;
@@ -773,6 +789,7 @@ export default function AudiencePersonaPage({ project, sidebarWidth = 300, t }) 
   }
 
   function saveDrawer() {
+    // 校验失败时滚动到首个错误字段，方便直接修正。
     const nextErrors = validatePersona(drawerState.data, copy);
     setErrors(nextErrors);
 
@@ -819,6 +836,7 @@ export default function AudiencePersonaPage({ project, sidebarWidth = 300, t }) 
   }
 
   function toggleFilterPopover() {
+    // 打开筛选弹层时同步当前已应用条件，取消后不影响列表。
     setDraftSearchQuery(searchQuery);
     setDraftDepthFilter(depthFilter);
     setDraftTypeFilter(typeFilter);

@@ -1,9 +1,11 @@
+// Vite 将本地图片转换为可在页面中访问的资源 URL。
 const imageModules = import.meta.glob('../../../demo-data/gowe-group/assets/images/**/*.{jpg,jpeg,png,webp}', {
   eager: true,
   import: 'default',
   query: '?url',
 });
 
+// GOWE 项目的演示图片素材元数据。
 const rawGoweGroupAssetLibrary = [
   {
     "id": "brand-beijing1-1b42d95e",
@@ -901,10 +903,12 @@ const rawGoweGroupAssetLibrary = [
 ];
 
 function resolveImageUrl(localPath) {
+  // 优先使用构建后的资源 URL，缺失时保留原路径便于排查。
   const moduleKey = `../../../${localPath}`;
   return imageModules[moduleKey] ?? localPath;
 }
 
+// 页面和 AI 创作流程读取的图片素材库。
 export const goweGroupAssetLibrary = rawGoweGroupAssetLibrary.map((asset) => ({
   ...asset,
   imageUrl: resolveImageUrl(asset.localPath),

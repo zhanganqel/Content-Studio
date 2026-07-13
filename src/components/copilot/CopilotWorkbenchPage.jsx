@@ -1,11 +1,10 @@
 import {
+  ArrowDown,
+  ArrowUp,
   BookOpenText,
   Bot,
   ChevronDown,
   ChevronRight,
-  CircleAlert,
-  CircleCheck,
-  Clock3,
   Database,
   FileText,
   History,
@@ -23,13 +22,13 @@ import {
   PinOff,
   Plus,
   Search,
-  Send,
   Settings,
   Sparkles,
   Square,
   Trash2,
   UserRound,
   UsersRound,
+  X,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import AudiencePersonaPage from '../audience-persona/AudiencePersonaPage.jsx';
@@ -58,8 +57,34 @@ import {
   saveCopilotConversationState,
 } from '../../services/copilotConversationStore.js';
 import { createTargetArtifactSnapshot } from '../../services/copilotArtifactPayload.js';
+import { getCodexServiceHealth } from '../../services/codexServiceApi.js';
+import {
+  buildCopilotKnowledgeAttachments,
+  copilotAttachmentLimits,
+  getKnowledgeSelectionData,
+} from '../../services/knowledgeSelectionData.js';
+import {
+  createKnowledgeSelectionLabels,
+  KnowledgeFileSelectionModal,
+  KnowledgeItemSelectionModal,
+} from '../knowledge-selection/KnowledgeSelectionModals.jsx';
 import SquareIconButton from '../ui/SquareIconButton.jsx';
+import ConfirmDialog from '../ui/ConfirmDialog.jsx';
 import { SolidDashboardIcon } from '../ui/SolidIcons.jsx';
+import {
+  AgentAvatar,
+  AgentTaskGroup,
+  getAgentPresentation,
+  TaskStatusIcon,
+} from '../ai-workflow/AiWorkflowComponents.jsx';
+import {
+  ArticleTaskForm,
+  TitleSelector,
+} from '../ai-workflow/AiInputComponents.jsx';
+import {
+  ArtifactCard,
+  ArtifactPreview,
+} from '../ai-workflow/ArtifactComponents.jsx';
 
 const userMenuIcons = {
   switchAccount: UsersRound,
@@ -68,7 +93,14 @@ const userMenuIcons = {
   logout: LogOut,
 };
 
+const emptyComposerDraft = {
+  knowledgeFileIds: [],
+  knowledgeItemIds: [],
+  text: '',
+};
+
 function getProjectInitials(name = '') {
+  // 项目头像取前两个有效单词首字母。
   const words = name
     .replace(/[^a-zA-Z0-9\s]/g, ' ')
     .split(/\s+/)
@@ -83,7 +115,13 @@ function getProjectInitials(name = '') {
     : 'P';
 }
 
+function getUserInitial(name = '') {
+  const match = String(name).match(/[a-z]/i);
+  return match ? match[0].toUpperCase() : 'U';
+}
+
 function formatRelativeTime(value, copy) {
+  // 会话列表统一显示分钟、小时或天级相对时间。
   const timestamp = Date.parse(value);
   if (Number.isNaN(timestamp)) {
     return '';
@@ -103,10 +141,12 @@ function formatRelativeTime(value, copy) {
 }
 
 function sortConversations(conversations) {
+  // 会话按更新时间倒序展示。
   return [...conversations].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
 }
 
 function getLatestConversationRuns(runs = []) {
+  // 每个会话只保留最新一次任务运行状态。
   const latestRuns = new Map();
 
   for (const run of runs) {
@@ -120,6 +160,7 @@ function getLatestConversationRuns(runs = []) {
 }
 
 function getPendingConversationRun(runs = [], conversationId = '') {
+  // 查找等待用户补充信息且尚未解决的任务。
   return runs
     .filter(
       (run) =>
@@ -131,6 +172,7 @@ function getPendingConversationRun(runs = [], conversationId = '') {
 }
 
 function isWaitingTaskCancellation(value = '') {
+  // 等待补充时识别用户明确取消任务的表达。
   const normalized = value.trim().toLowerCase().replace(/[。！!.]+$/g, '').trim();
   return /^(取消|停止|不用了|不继续|取消任务|停止任务|cancel|stop|never mind|don't continue)$/.test(
     normalized,
@@ -138,6 +180,7 @@ function isWaitingTaskCancellation(value = '') {
 }
 
 function IconTooltip({ children, label, placement = 'right' }) {
+  // 折叠侧栏里的图标按钮通过悬浮提示展示含义。
   const placementClass =
     placement === 'left'
       ? 'right-[calc(100%+10px)] top-1/2 -translate-y-1/2'
@@ -170,11 +213,13 @@ function ConversationItem({
   onTogglePin,
   taskRun,
 }) {
+  // 会话条目同时承载选择、重命名、置顶和删除入口。
   const inputRef = useRef(null);
   const taskStatus = taskRun?.status;
   const taskAcknowledged = Boolean(taskRun?.acknowledgedAt);
 
   useEffect(() => {
+    // 进入重命名状态时自动聚焦并选中标题。
     if (!isEditing) return;
 
     inputRef.current?.focus();
@@ -242,33 +287,15 @@ function ConversationItem({
             className="flex items-center justify-end text-xs font-medium text-slate-400 transition-opacity group-hover:opacity-0"
           >
             {taskStatus === 'running' ? (
-              <span
-                role="status"
-                aria-label={copy.taskRunning}
-                title={copy.taskRunning}
-                className="h-[18px] w-[18px] animate-spin rounded-full border-2 border-slate-200 border-t-blue-600"
-              />
+              <TaskStatusIcon label={copy.taskRunning} status="running" />
             ) : taskStatus === 'waiting_input' && !taskRun?.resolvedAt ? (
-              <Clock3
-                aria-label={copy.taskWaitingInput}
-                className="h-[18px] w-[18px] text-amber-500"
-                strokeWidth={2.4}
-                title={copy.taskWaitingInput}
-              />
+              <TaskStatusIcon label={copy.taskWaitingInput} status="waiting_input" />
             ) : taskStatus === 'done' && !taskAcknowledged ? (
-              <CircleCheck
-                aria-label={copy.taskCompleted}
-                className="h-[18px] w-[18px] text-emerald-500"
-                strokeWidth={2.4}
-                title={copy.taskCompleted}
-              />
+              <TaskStatusIcon label={copy.taskCompleted} status="done" />
             ) : (taskStatus === 'error' || taskStatus === 'interrupted') && !taskAcknowledged ? (
-              <CircleAlert
-                aria-label={taskStatus === 'error' ? copy.taskFailed : copy.taskInterrupted}
-                className="h-[18px] w-[18px] text-red-500"
-                strokeWidth={2.4}
-                title={taskStatus === 'error' ? copy.taskFailed : copy.taskInterrupted}
-              />
+              <TaskStatusIcon label={taskStatus === 'error' ? copy.taskFailed : copy.taskInterrupted} status={taskStatus} />
+            ) : taskStatus === 'cancelled' && !taskAcknowledged ? (
+              <TaskStatusIcon label={copy.taskCancelled || copy.chatStopped} status="cancelled" />
             ) : (
               formatRelativeTime(conversation.updatedAt, copy)
             )}
@@ -340,6 +367,7 @@ function ConversationItem({
 
 function ProjectMenu({ activeProject, onSelect, placement = 'side', projects }) {
   return (
+    /* 项目切换菜单在折叠态和展开态共用。 */
     <div
       className={`absolute z-50 overflow-hidden rounded-xl border border-slate-200 bg-white py-2 shadow-menu ${
         placement === 'bottom'
@@ -371,6 +399,7 @@ function ProjectMenu({ activeProject, onSelect, placement = 'side', projects }) 
 
 export default function CopilotWorkbenchPage({
   activeProject,
+  locale,
   projects,
   t,
   userMenuItems,
@@ -378,6 +407,15 @@ export default function CopilotWorkbenchPage({
   onProjectChange,
 }) {
   const copy = t.copilot;
+  const knowledgeSelection = useMemo(() => getKnowledgeSelectionData(activeProject), [activeProject]);
+  const knowledgeSelectionLabels = useMemo(
+    () => createKnowledgeSelectionLabels(locale, {
+      knowledgeFiles: copy.selectKnowledgeFiles,
+      knowledgeItems: copy.selectKnowledgeItems,
+    }),
+    [copy.knowledgeFiles, copy.knowledgeItems, locale],
+  );
+  // 品牌知识入口复用主应用里的四个业务页面。
   const brandItems = useMemo(
     () => [
       { id: 'brand-profile', icon: FileText, title: t.navItems['brand-profile'] },
@@ -389,8 +427,10 @@ export default function CopilotWorkbenchPage({
   );
   const initialConversationStateRef = useRef(null);
   if (!initialConversationStateRef.current) {
+    // 首次渲染只读取一次当前项目的会话缓存。
     initialConversationStateRef.current = getCopilotConversationState(activeProject.id);
   }
+  // 工作台状态分为侧栏、会话、弹层、预览和流式任务五组。
   const [sidebarCollapsed, setSidebarCollapsed] = useState(getCopilotSidebarCollapsedPreference);
   const [brandSectionOpen, setBrandSectionOpen] = useState(true);
   const [pinnedSectionOpen, setPinnedSectionOpen] = useState(true);
@@ -404,19 +444,30 @@ export default function CopilotWorkbenchPage({
   );
   const [editingConversationId, setEditingConversationId] = useState('');
   const [editingConversationTitle, setEditingConversationTitle] = useState('');
+  const [editingConversationSurface, setEditingConversationSurface] = useState('');
+  const [deleteConversationTarget, setDeleteConversationTarget] = useState(null);
   const [activePopover, setActivePopover] = useState('');
   const [conversationActionMenuOpen, setConversationActionMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [artifactPanelOpen, setArtifactPanelOpen] = useState(true);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewWidthPercent, setPreviewWidthPercent] = useState(50);
-  const [chatInput, setChatInput] = useState('');
+  const [composerDrafts, setComposerDrafts] = useState({});
+  const [composerMenuOpen, setComposerMenuOpen] = useState(false);
+  const [knowledgeModal, setKnowledgeModal] = useState(null);
+  const [currentModel, setCurrentModel] = useState('Codex');
+  const [showScrollToLatest, setShowScrollToLatest] = useState(false);
   const [conversationErrors, setConversationErrors] = useState({});
   const [runningConversationIds, setRunningConversationIds] = useState(() => new Set());
   const [selectedArtifactId, setSelectedArtifactId] = useState('');
   const projectMenuRef = useRef(null);
   const userMenuRef = useRef(null);
   const conversationActionMenuRef = useRef(null);
+  const headerRenameInputRef = useRef(null);
+  const composerMenuRef = useRef(null);
+  const chatScrollRef = useRef(null);
+  const chatEndRef = useRef(null);
+  const chatInputRef = useRef(null);
   const mainWorkspaceRef = useRef(null);
   const popoverCloseTimerRef = useRef(null);
   const activeChatControllersRef = useRef(new Map());
@@ -425,6 +476,23 @@ export default function CopilotWorkbenchPage({
   const conversations = conversationState.conversations;
   const activeConversation =
     conversations.find((conversation) => conversation.id === activeConversationId) ?? conversations[0];
+  const activeComposerDraft = composerDrafts[activeConversation?.id] ?? emptyComposerDraft;
+  const chatInput = activeComposerDraft.text;
+  const selectedComposerItems = knowledgeSelection.items.filter((item) =>
+    activeComposerDraft.knowledgeItemIds.includes(item.id),
+  );
+  const selectedComposerFiles = knowledgeSelection.files.filter((file) =>
+    activeComposerDraft.knowledgeFileIds.includes(file.id),
+  );
+  const knowledgeModalBlock = getKnowledgeModalBlock();
+  const knowledgeModalItemIds =
+    knowledgeModal?.target === 'ui-block'
+      ? knowledgeModalBlock?.knowledgeItemIds ?? []
+      : activeComposerDraft.knowledgeItemIds;
+  const knowledgeModalFileIds =
+    knowledgeModal?.target === 'ui-block'
+      ? knowledgeModalBlock?.knowledgeFileIds ?? []
+      : activeComposerDraft.knowledgeFileIds;
   const activeConversationRunning = runningConversationIds.has(activeConversation?.id);
   const chatError = conversationErrors[activeConversation?.id] ?? '';
   const activeMessages = useMemo(
@@ -449,6 +517,7 @@ export default function CopilotWorkbenchPage({
     () => getLatestConversationRuns(conversationState.runs),
     [conversationState.runs],
   );
+  const activePendingRun = getPendingConversationRun(conversationState.runs, activeConversation?.id);
   const isChatMode = workspaceMode === 'chat';
   const previewVisible = isChatMode && previewOpen;
   const artifactPanelVisible = isChatMode && artifactPanelOpen && !previewOpen;
@@ -459,14 +528,26 @@ export default function CopilotWorkbenchPage({
       : 'minmax(0, 1fr)';
 
   useEffect(() => {
+    // 折叠偏好持久化到本地缓存。
     saveCopilotSidebarCollapsedPreference(sidebarCollapsed);
   }, [sidebarCollapsed]);
 
   useEffect(() => {
+    // ref 始终指向最新会话状态，供异步流式回调读取。
     conversationStateRef.current = conversationState;
   }, [conversationState]);
 
   useEffect(() => {
+    // 模型名称只读自后端健康检查；读取失败不阻塞用户编辑和后续请求。
+    const controller = new AbortController();
+    getCodexServiceHealth({ signal: controller.signal })
+      .then((health) => setCurrentModel(health?.model || 'Codex'))
+      .catch(() => setCurrentModel('Codex'));
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    // 切换项目时中断当前流式任务并重载项目会话缓存。
     for (const controller of activeChatControllersRef.current.values()) controller.abort();
     activeChatControllersRef.current.clear();
     const nextConversationState = getCopilotConversationState(activeProject.id);
@@ -478,14 +559,55 @@ export default function CopilotWorkbenchPage({
     setConversationActionMenuOpen(false);
     setEditingConversationId('');
     setEditingConversationTitle('');
+    setEditingConversationSurface('');
+    setDeleteConversationTarget(null);
     setConversationErrors({});
     setRunningConversationIds(new Set());
-    setChatInput('');
+    setComposerDrafts({});
+    setComposerMenuOpen(false);
+    setKnowledgeModal(null);
     setSelectedArtifactId('');
   }, [activeProject.id]);
 
+  useEffect(() => {
+    // 顶部重命名输入框出现后自动聚焦并选中现有标题。
+    if (editingConversationSurface !== 'header') return;
+    headerRenameInputRef.current?.focus();
+    headerRenameInputRef.current?.select();
+  }, [editingConversationSurface]);
+
+  useEffect(() => {
+    // 文本框在 72px 到 160px 之间随内容增高。
+    const textarea = chatInputRef.current;
+    if (!textarea) return;
+    textarea.style.height = '72px';
+    textarea.style.height = `${Math.min(Math.max(textarea.scrollHeight, 72), 160)}px`;
+    textarea.style.overflowY = textarea.scrollHeight > 160 ? 'auto' : 'hidden';
+  }, [chatInput, activeConversation?.id]);
+
+  useEffect(() => {
+    // 切换会话时定位到最新消息。
+    const frame = requestAnimationFrame(() => {
+      chatEndRef.current?.scrollIntoView({ block: 'end' });
+      setShowScrollToLatest(false);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [activeConversation?.id]);
+
+  useEffect(() => {
+    // 用户停留在底部时跟随流式消息，否则只显示“回到最新消息”。
+    const container = chatScrollRef.current;
+    if (!container) return;
+    if (!showScrollToLatest) {
+      chatEndRef.current?.scrollIntoView({ block: 'end' });
+    } else if (activeMessages.length) {
+      setShowScrollToLatest(true);
+    }
+  }, [activeMessages]);
+
   useEffect(
     () => () => {
+      // 页面卸载时中断所有未完成的流式请求。
       for (const controller of activeChatControllersRef.current.values()) controller.abort();
       activeChatControllersRef.current.clear();
     },
@@ -493,6 +615,7 @@ export default function CopilotWorkbenchPage({
   );
 
   useEffect(() => {
+    // 当前选中产物不存在时自动回退到第一个产物。
     if (!activeArtifacts.length) {
       if (selectedArtifactId) setSelectedArtifactId('');
       return;
@@ -504,6 +627,7 @@ export default function CopilotWorkbenchPage({
   }, [activeArtifacts, selectedArtifactId]);
 
   useEffect(() => {
+    // 点击工作台外部区域时关闭弹层菜单。
     function handleClickOutside(event) {
       if (projectMenuRef.current && !projectMenuRef.current.contains(event.target)) {
         setActivePopover((current) => (current === 'project' ? '' : current));
@@ -519,6 +643,10 @@ export default function CopilotWorkbenchPage({
       ) {
         setConversationActionMenuOpen(false);
       }
+
+      if (composerMenuRef.current && !composerMenuRef.current.contains(event.target)) {
+        setComposerMenuOpen(false);
+      }
     }
 
     document.addEventListener('mousedown', handleClickOutside);
@@ -527,6 +655,7 @@ export default function CopilotWorkbenchPage({
 
   useEffect(
     () => () => {
+      // 清理延迟关闭弹层的计时器。
       if (popoverCloseTimerRef.current) {
         clearTimeout(popoverCloseTimerRef.current);
       }
@@ -535,6 +664,7 @@ export default function CopilotWorkbenchPage({
   );
 
   function persistConversationState(nextState, nextActiveConversationId) {
+    // 所有会话状态变更都通过项目维度缓存落盘。
     const savedState = saveCopilotConversationState(activeProject.id, nextState);
     conversationStateRef.current = savedState;
     setConversationState(savedState);
@@ -543,7 +673,45 @@ export default function CopilotWorkbenchPage({
     }
   }
 
+  function updateComposerDraft(conversationId, patch) {
+    // 未发送文本和附件按会话隔离，切换会话时不会串用。
+    if (!conversationId) return;
+    setComposerDrafts((current) => ({
+      ...current,
+      [conversationId]: {
+        ...emptyComposerDraft,
+        ...(current[conversationId] ?? {}),
+        ...patch,
+      },
+    }));
+  }
+
+  function clearComposerDraft(conversationId) {
+    if (!conversationId) return;
+    setComposerDrafts((current) => ({ ...current, [conversationId]: emptyComposerDraft }));
+  }
+
+  function removeComposerDraft(conversationId) {
+    setComposerDrafts((current) => {
+      const next = { ...current };
+      delete next[conversationId];
+      return next;
+    });
+  }
+
+  function scrollToLatest() {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    setShowScrollToLatest(false);
+  }
+
+  function handleChatScroll(event) {
+    const container = event.currentTarget;
+    const distance = container.scrollHeight - container.scrollTop - container.clientHeight;
+    setShowScrollToLatest(distance >= 120);
+  }
+
   function setConversationRunning(conversationId, running) {
+    // runningConversationIds 只保存当前正在流式响应的会话。
     setRunningConversationIds((current) => {
       const next = new Set(current);
       if (running) next.add(conversationId);
@@ -553,10 +721,12 @@ export default function CopilotWorkbenchPage({
   }
 
   function setConversationError(conversationId, message) {
+    // 错误信息按会话隔离，避免切换会话后串台。
     setConversationErrors((current) => ({ ...current, [conversationId]: message }));
   }
 
   function cancelActiveProjectRuns() {
+    // 离开项目或关闭工作台时批量中止当前项目的流式任务。
     const conversationIds = new Set(activeChatControllersRef.current.keys());
     if (!conversationIds.size) return;
 
@@ -572,7 +742,7 @@ export default function CopilotWorkbenchPage({
       ),
       runs: conversationStateRef.current.runs.map((run) =>
         conversationIds.has(run.conversationId) && run.status === 'running'
-          ? { ...run, acknowledgedAt: endedAt, endedAt, status: 'cancelled' }
+          ? { ...run, acknowledgedAt: '', endedAt, status: 'cancelled' }
           : run,
       ),
     });
@@ -580,6 +750,7 @@ export default function CopilotWorkbenchPage({
   }
 
   function cancelConversationRun(conversationId) {
+    // 用户点击停止时，只中断当前会话的流式请求。
     const controller = activeChatControllersRef.current.get(conversationId);
     if (!controller) return;
 
@@ -601,7 +772,7 @@ export default function CopilotWorkbenchPage({
       ),
       runs: conversationStateRef.current.runs.map((run) =>
         run.conversationId === conversationId && run.status === 'running'
-          ? { ...run, acknowledgedAt: endedAt, endedAt, status: 'cancelled' }
+          ? { ...run, acknowledgedAt: '', endedAt, status: 'cancelled' }
           : run,
       ),
     });
@@ -610,11 +781,13 @@ export default function CopilotWorkbenchPage({
   }
 
   function closeWorkbench() {
+    // 关闭工作台前先释放当前项目的运行中任务。
     cancelActiveProjectRuns();
     onClose();
   }
 
   function createNewConversation() {
+    // 新建会话插入到历史列表顶部并切回聊天模式。
     const conversation = createCopilotConversation(
       activeProject.id,
       copy.newConversationTitle(conversations.length + 1),
@@ -632,9 +805,11 @@ export default function CopilotWorkbenchPage({
     setConversationActionMenuOpen(false);
     setEditingConversationId('');
     setEditingConversationTitle('');
+    setEditingConversationSurface('');
   }
 
-  function startInlineRename(conversationId) {
+  function startConversationRename(conversationId, surface = 'sidebar') {
+    // 顶部和侧栏共享同一份标题草稿，但只在触发入口显示输入框。
     const target = conversations.find((conversation) => conversation.id === conversationId);
     if (!target) return;
 
@@ -645,14 +820,18 @@ export default function CopilotWorkbenchPage({
     setConversationActionMenuOpen(false);
     setEditingConversationId(conversationId);
     setEditingConversationTitle(target.title);
+    setEditingConversationSurface(surface);
   }
 
   function cancelInlineRename() {
+    // 退出重命名时清空临时标题。
     setEditingConversationId('');
     setEditingConversationTitle('');
+    setEditingConversationSurface('');
   }
 
   function commitInlineRename(conversationId) {
+    // 空标题或未变化标题不写入缓存。
     if (editingConversationId !== conversationId) return;
 
     const target = conversations.find((conversation) => conversation.id === conversationId);
@@ -677,6 +856,7 @@ export default function CopilotWorkbenchPage({
   }
 
   function toggleConversationPin(conversationId) {
+    // 置顶状态直接写回会话列表。
     persistConversationState(
       {
         ...conversationStateRef.current,
@@ -690,9 +870,11 @@ export default function CopilotWorkbenchPage({
   }
 
   function deleteConversation(conversationId) {
+    // 删除会话会同步清理消息、产物、来源和运行记录。
     activeChatControllersRef.current.get(conversationId)?.abort();
     activeChatControllersRef.current.delete(conversationId);
     setConversationRunning(conversationId, false);
+    removeComposerDraft(conversationId);
     setConversationErrors((current) => {
       const next = { ...current };
       delete next[conversationId];
@@ -730,18 +912,35 @@ export default function CopilotWorkbenchPage({
     );
   }
 
+  function requestConversationDelete(conversationId) {
+    // 删除入口只记录目标，会话数据在确认前保持不变。
+    const target = conversations.find((conversation) => conversation.id === conversationId);
+    if (!target) return;
+    setConversationActionMenuOpen(false);
+    setDeleteConversationTarget(target);
+  }
+
+  function confirmConversationDelete() {
+    if (!deleteConversationTarget) return;
+    const conversationId = deleteConversationTarget.id;
+    setDeleteConversationTarget(null);
+    deleteConversation(conversationId);
+  }
+
   function selectProject(projectId) {
+    // 切换项目前先中断当前项目的运行任务。
     if (projectId !== activeProject.id) cancelActiveProjectRuns();
     onProjectChange(projectId);
     setActivePopover('');
   }
 
   function selectConversation(conversationId) {
+    // 查看已结束任务时标记最新运行状态为已读。
     const latestRun = getLatestConversationRuns(conversationStateRef.current.runs).get(conversationId);
     const shouldAcknowledge =
       latestRun &&
       !latestRun.acknowledgedAt &&
-      ['done', 'error', 'interrupted'].includes(latestRun.status);
+      ['done', 'error', 'interrupted', 'cancelled'].includes(latestRun.status);
 
     if (shouldAcknowledge) {
       persistConversationState(
@@ -759,30 +958,37 @@ export default function CopilotWorkbenchPage({
     setWorkspaceMode('chat');
     setActivePopover('');
     setConversationActionMenuOpen(false);
+    if (editingConversationId && editingConversationId !== conversationId) cancelInlineRename();
   }
 
   function selectWorkspaceMode(mode) {
+    // 进入业务模块时关闭会话相关浮层。
     setWorkspaceMode(mode);
     setActivePopover('');
     setConversationActionMenuOpen(false);
     setEditingConversationId('');
     setEditingConversationTitle('');
+    setEditingConversationSurface('');
   }
 
   function updateSidebarCollapsed(collapsed) {
+    // 侧栏折叠切换会重置正在编辑和打开的浮层。
     setSidebarCollapsed(collapsed);
     setActivePopover('');
     setConversationActionMenuOpen(false);
     setEditingConversationId('');
     setEditingConversationTitle('');
+    setEditingConversationSurface('');
   }
 
   function runConversationAction(action) {
+    // 会话菜单动作执行后立即关闭菜单。
     action();
     setConversationActionMenuOpen(false);
   }
 
   function openPopover(id) {
+    // 鼠标重新进入弹层时取消延迟关闭。
     if (popoverCloseTimerRef.current) {
       clearTimeout(popoverCloseTimerRef.current);
     }
@@ -791,6 +997,7 @@ export default function CopilotWorkbenchPage({
   }
 
   function closePopoverLater() {
+    // 折叠侧栏弹层延迟关闭，方便鼠标移入弹层本体。
     if (popoverCloseTimerRef.current) {
       clearTimeout(popoverCloseTimerRef.current);
     }
@@ -799,10 +1006,12 @@ export default function CopilotWorkbenchPage({
   }
 
   function togglePopover(id) {
+    // 同一个弹层重复点击时收起。
     setActivePopover((current) => (current === id ? '' : id));
   }
 
   function toggleArtifactPanel() {
+    // 产物列表和预览页互斥展示。
     if (artifactPanelVisible) {
       setArtifactPanelOpen(false);
       return;
@@ -813,6 +1022,7 @@ export default function CopilotWorkbenchPage({
   }
 
   function togglePreview() {
+    // 打开预览页时关闭右侧产物列表。
     if (previewOpen) {
       setPreviewOpen(false);
       setArtifactPanelOpen(true);
@@ -825,6 +1035,7 @@ export default function CopilotWorkbenchPage({
   }
 
   function openArtifactPreview(artifactId) {
+    // 点击产物后直接进入独立预览区。
     setSelectedArtifactId(artifactId);
     setArtifactPanelOpen(false);
     if (!previewOpen) {
@@ -834,13 +1045,52 @@ export default function CopilotWorkbenchPage({
   }
 
   function patchConversationState(updater) {
+    // 异步回调统一通过函数式补丁更新最新缓存。
     const currentState = conversationStateRef.current;
     const nextState = typeof updater === 'function' ? updater(currentState) : updater;
     persistConversationState(nextState);
     return nextState;
   }
 
+  function updateMessageUiBlock(messageId, blockId, updater) {
+    // 演示表单和标题选择状态跟随消息写入项目级会话缓存。
+    patchConversationState((currentState) => ({
+      ...currentState,
+      messages: currentState.messages.map((message) =>
+        message.id === messageId
+          ? {
+              ...message,
+              uiBlocks: (message.uiBlocks ?? []).map((block) =>
+                block.id === blockId
+                  ? typeof updater === 'function'
+                    ? updater(block)
+                    : { ...block, ...updater }
+                  : block,
+              ),
+              updatedAt: new Date().toISOString(),
+            }
+          : message,
+      ),
+    }));
+  }
+
+  function appendToComposer(value) {
+    if (!activeConversation?.id || !String(value).trim()) return;
+    const nextValue = String(value).trim();
+    updateComposerDraft(activeConversation.id, {
+      text: chatInput.trim() ? `${chatInput.trimEnd()}\n${nextValue}` : nextValue,
+    });
+    window.requestAnimationFrame(() => chatInputRef.current?.focus());
+  }
+
+  function getKnowledgeModalBlock() {
+    if (knowledgeModal?.target !== 'ui-block') return null;
+    const message = conversationState.messages.find((item) => item.id === knowledgeModal.messageId);
+    return message?.uiBlocks?.find((block) => block.id === knowledgeModal.blockId) ?? null;
+  }
+
   function updateAssistantMessage(messageId, patch) {
+    // 流式事件增量合并到同一条助手消息。
     const { artifactId, contentDelta, sourceId, warning, ...messagePatch } = patch;
 
     patchConversationState((currentState) => ({
@@ -870,7 +1120,116 @@ export default function CopilotWorkbenchPage({
     }));
   }
 
+  function upsertTaskEventBlock(messageId, eventData) {
+    // 后端任务生命周期事件映射为现有多智能体任务组组件。
+    const taskId = eventData.taskId || `${messageId}-copilot-process`;
+    const blockId = `task-group-${taskId}`;
+    patchConversationState((currentState) => ({
+      ...currentState,
+      messages: currentState.messages.map((message) => {
+        if (message.id !== messageId) return message;
+        const blocks = [...(message.uiBlocks ?? [])];
+        const blockIndex = blocks.findIndex((block) => block.id === blockId);
+        const currentBlock = blockIndex >= 0 ? blocks[blockIndex] : null;
+        const currentTask = currentBlock?.tasks?.[0] ?? {};
+        const nextTask = {
+          ...currentTask,
+          agentId: eventData.agentId || currentTask.agentId || 'copilot',
+          clarification: eventData.prompt ?? currentTask.clarification ?? '',
+          id: taskId,
+          status: eventData.status || currentTask.status || 'running',
+          taskKey: eventData.taskKey || currentTask.taskKey || 'copilot_reply',
+          taskName: eventData.taskName || currentTask.taskName,
+        };
+        const nextBlock = {
+          ...currentBlock,
+          agentId: eventData.agentId || currentBlock?.agentId || 'copilot',
+          id: blockId,
+          tasks: [nextTask],
+          type: 'task_group',
+          workflowId: eventData.workflowId || currentBlock?.workflowId || '',
+        };
+        if (blockIndex >= 0) blocks[blockIndex] = nextBlock;
+        else blocks.push(nextBlock);
+        return { ...message, uiBlocks: blocks, updatedAt: new Date().toISOString() };
+      }),
+    }));
+  }
+
+  function appendTaskProcessEvent(messageId, eventData) {
+    const taskId = eventData.taskId || `${messageId}-copilot-process`;
+    upsertTaskEventBlock(messageId, {
+      agentId: eventData.agentId || 'copilot',
+      status: 'running',
+      taskId,
+      taskKey: eventData.taskKey || 'copilot_reply',
+      taskName: eventData.taskKey ? undefined : '处理当前请求',
+      workflowId: eventData.workflowId,
+    });
+    patchConversationState((currentState) => ({
+      ...currentState,
+      messages: currentState.messages.map((message) =>
+        message.id === messageId
+          ? {
+              ...message,
+              uiBlocks: (message.uiBlocks ?? []).map((block) =>
+                block.id === `task-group-${taskId}`
+                  ? {
+                      ...block,
+                      tasks: (block.tasks ?? []).map((task) =>
+                        task.id === taskId
+                          ? {
+                              ...task,
+                              processItems: [
+                                ...(task.processItems ?? []).filter((item) => item.id !== `${taskId}-process-${eventData.sequence}`),
+                                {
+                                  emphasis: eventData.kind === 'summary',
+                                  id: `${taskId}-process-${eventData.sequence}`,
+                                  text: eventData.content,
+                                },
+                              ],
+                            }
+                          : task,
+                      ),
+                    }
+                  : block,
+              ),
+              updatedAt: new Date().toISOString(),
+            }
+          : message,
+      ),
+    }));
+  }
+
+  function attachArtifactToTask(messageId, taskId, artifactId) {
+    if (!taskId || !artifactId) return;
+    patchConversationState((currentState) => ({
+      ...currentState,
+      messages: currentState.messages.map((message) =>
+        message.id === messageId
+          ? {
+              ...message,
+              uiBlocks: (message.uiBlocks ?? []).map((block) => ({
+                ...block,
+                tasks: (block.tasks ?? []).map((task) =>
+                  task.id === taskId
+                    ? { ...task, artifactIds: [...new Set([...(task.artifactIds ?? []), artifactId])] }
+                    : task,
+                ),
+              })),
+            }
+          : message,
+      ),
+    }));
+  }
+
   function upsertConversationArtifact(conversationId, messageId, rawArtifact) {
+    // 后端返回的产物写入产物列表，并关联到消息和会话。
+    const sourceIds = (rawArtifact.sourceIds ?? []).map((sourceId) =>
+      conversationStateRef.current.sources.find(
+        (source) => source.conversationId === conversationId && source.originId === sourceId,
+      )?.id ?? sourceId,
+    );
     const artifact = createCopilotArtifact({
       changedSections: rawArtifact.changedSections ?? [],
       changeSummary: rawArtifact.changeSummary ?? '',
@@ -878,15 +1237,19 @@ export default function CopilotWorkbenchPage({
       contentFormat: rawArtifact.contentFormat ?? 'markdown',
       conversationId,
       evidenceGaps: rawArtifact.evidenceGaps ?? [],
+      id: rawArtifact.id,
       metadata: rawArtifact.metadata ?? {},
       parentArtifactId: rawArtifact.parentArtifactId ?? '',
-      sourceIds: rawArtifact.sourceIds ?? [],
+      sourceIds,
       sourceMessageId: messageId,
       status: rawArtifact.status ?? 'ready',
       summary: rawArtifact.summary,
+      taskId: rawArtifact.taskId ?? '',
+      taskKey: rawArtifact.taskKey ?? rawArtifact.taskType ?? '',
       taskType: rawArtifact.taskType ?? '',
       title: rawArtifact.title,
       type: rawArtifact.type ?? 'reply',
+      workflowId: rawArtifact.workflowId ?? '',
     });
 
     patchConversationState((currentState) => ({
@@ -912,9 +1275,11 @@ export default function CopilotWorkbenchPage({
       ),
     }));
     setSelectedArtifactId(artifact.id);
+    return artifact;
   }
 
   function upsertConversationSource(conversationId, messageId, rawSource) {
+    // 后端返回的来源写入来源列表，并关联到助手消息。
     const source = createCopilotSource({
       conversationId,
       metadata: rawSource.metadata ?? {},
@@ -941,6 +1306,7 @@ export default function CopilotWorkbenchPage({
   }
 
   async function submitChat(event) {
+    // 提交聊天消息后创建用户消息、助手占位消息和运行记录。
     event.preventDefault();
 
     const content = chatInput.trim();
@@ -956,17 +1322,30 @@ export default function CopilotWorkbenchPage({
       conversationStateRef.current.runs,
       currentConversation.id,
     );
+    const composerDraft = composerDrafts[currentConversation.id] ?? emptyComposerDraft;
+    const cancellingWaitingTask = pendingRun && isWaitingTaskCancellation(content);
+    const requestAttachments = cancellingWaitingTask
+      ? []
+      : buildCopilotKnowledgeAttachments({
+          fileIds: composerDraft.knowledgeFileIds,
+          files: knowledgeSelection.files,
+          itemIds: composerDraft.knowledgeItemIds,
+          items: knowledgeSelection.items,
+        });
 
     const userMessage = createCopilotMessage({
+      attachments: requestAttachments.map(({ content: _content, ...attachment }) => attachment),
       content,
       conversationId: currentConversation.id,
       role: 'user',
+      userName: 'Angel',
     });
     const nextTitle = currentConversation.messageIds?.length
       ? currentConversation.title
       : deriveConversationTitle(content, currentConversation.title);
 
-    if (pendingRun && isWaitingTaskCancellation(content)) {
+    if (cancellingWaitingTask) {
+      // 等待用户补充时，取消表达直接结束待处理任务。
       const endedAt = new Date().toISOString();
       const cancellationMessage = createCopilotMessage({
         agentId: 'copilot',
@@ -1000,7 +1379,7 @@ export default function CopilotWorkbenchPage({
             run.id === pendingRun.id
               ? {
                   ...run,
-                  acknowledgedAt: endedAt,
+                  acknowledgedAt: '',
                   endedAt,
                   resolvedAt: endedAt,
                   status: 'cancelled',
@@ -1010,7 +1389,7 @@ export default function CopilotWorkbenchPage({
         },
         currentConversation.id,
       );
-      setChatInput('');
+      clearComposerDraft(currentConversation.id);
       setConversationError(currentConversation.id, '');
       return;
     }
@@ -1025,9 +1404,14 @@ export default function CopilotWorkbenchPage({
     });
     const run = createCopilotRun({
       conversationId: currentConversation.id,
+      currentTaskIndex: pendingRun?.currentTaskIndex || 0,
+      operation: pendingRun?.operation || '',
       originalMessage: pendingRun?.originalMessage || content,
       status: 'running',
+      taskKey: pendingRun?.taskKey || pendingRun?.taskType || '',
       taskType: pendingRun?.taskType || '',
+      workflowId: pendingRun?.workflowId || '',
+      workflowKey: pendingRun?.workflowKey || '',
     });
     const startedAt = new Date().toISOString();
     const nextState = {
@@ -1052,7 +1436,7 @@ export default function CopilotWorkbenchPage({
     };
 
     persistConversationState(nextState, currentConversation.id);
-    setChatInput('');
+    clearComposerDraft(currentConversation.id);
     setConversationError(currentConversation.id, '');
     setConversationRunning(currentConversation.id, true);
 
@@ -1060,19 +1444,29 @@ export default function CopilotWorkbenchPage({
     activeChatControllersRef.current.set(currentConversation.id, controller);
 
     const targetCandidate = previewOpen ? selectedArtifact : null;
+    // 预览页打开时，把当前产物快照传给后端作为修改目标。
     const targetArtifact = createTargetArtifactSnapshot(targetCandidate);
     const taskContinuation = pendingRun
       ? {
+          currentTaskIndex: pendingRun.currentTaskIndex || 0,
+          operation: pendingRun.operation || undefined,
           originalMessage: pendingRun.originalMessage,
           requiredField: pendingRun.requiredField,
           response: content,
+          taskKey: pendingRun.taskKey || pendingRun.taskType,
           taskType: pendingRun.taskType,
+          workflowId: pendingRun.workflowId || undefined,
+          workflowKey: pendingRun.workflowKey || undefined,
         }
       : undefined;
     let clarificationEvent = null;
+    let latestTaskEvent = null;
+    let latestWorkflowEvent = null;
+    let streamOutcome = '';
     try {
       await streamCopilotChat({
         body: {
+          attachments: requestAttachments,
           conversationId: currentConversation.id,
           message: content,
           projectId: activeProject.id,
@@ -1083,9 +1477,13 @@ export default function CopilotWorkbenchPage({
         conversationId: currentConversation.id,
         signal: controller.signal,
         onEvent: (eventData) => {
+          // SSE 事件按类型更新任务状态、消息内容、来源和产物。
           if (eventData.type === 'ping') return;
 
           if (eventData.type === 'task_status') {
+            // 任务状态事件用于刷新助手气泡上的执行标签。
+            latestTaskEvent = eventData;
+            upsertTaskEventBlock(assistantMessage.id, eventData);
             updateAssistantMessage(assistantMessage.id, {
               agentId: eventData.agentId,
               intent: eventData.intent,
@@ -1095,14 +1493,56 @@ export default function CopilotWorkbenchPage({
               ...currentState,
               runs: currentState.runs.map((item) =>
                 item.id === run.id
-                  ? { ...item, taskType: eventData.taskType || eventData.intent || item.taskType }
+                  ? {
+                      ...item,
+                      currentTaskIndex: eventData.currentTaskIndex ?? item.currentTaskIndex,
+                      operation: eventData.operation || item.operation,
+                      taskKey: eventData.taskKey || item.taskKey,
+                      taskType: eventData.taskType || eventData.taskKey || eventData.intent || item.taskType,
+                      workflowId: eventData.workflowId || item.workflowId,
+                    }
+                  : item,
+              ),
+            }));
+            if (eventData.status === 'waiting_input') {
+              clarificationEvent = {
+                content: eventData.prompt || '',
+                field: eventData.requiredField || '',
+                taskKey: eventData.taskKey || '',
+                taskType: eventData.taskType || eventData.taskKey || '',
+                workflowId: eventData.workflowId || '',
+                workflowKey: latestWorkflowEvent?.workflowKey || '',
+                operation: eventData.operation || '',
+              };
+            }
+            return;
+          }
+
+          if (eventData.type === 'workflow_status') {
+            latestWorkflowEvent = eventData;
+            patchConversationState((currentState) => ({
+              ...currentState,
+              runs: currentState.runs.map((item) =>
+                item.id === run.id
+                  ? {
+                      ...item,
+                      currentTaskIndex: eventData.currentTaskIndex ?? item.currentTaskIndex,
+                      workflowId: eventData.workflowId || item.workflowId,
+                      workflowKey: eventData.workflowKey || item.workflowKey,
+                    }
                   : item,
               ),
             }));
             return;
           }
 
+          if (eventData.type === 'process_delta') {
+            appendTaskProcessEvent(assistantMessage.id, eventData);
+            return;
+          }
+
           if (eventData.type === 'thread_bound') {
+            // thread_bound 将后端会话线程 ID 绑定到当前前端会话。
             patchConversationState((currentState) => ({
               ...currentState,
               conversations: currentState.conversations.map((conversation) =>
@@ -1120,6 +1560,7 @@ export default function CopilotWorkbenchPage({
           }
 
           if (eventData.type === 'message_delta') {
+            // 文本增量追加到正在流式展示的助手消息。
             updateAssistantMessage(assistantMessage.id, {
               agentId: eventData.agentId,
               contentDelta: eventData.content ?? eventData.delta ?? '',
@@ -1129,16 +1570,25 @@ export default function CopilotWorkbenchPage({
           }
 
           if (eventData.type === 'source' && eventData.source) {
+            // 来源事件追加到当前助手消息的引用列表。
             upsertConversationSource(currentConversation.id, assistantMessage.id, eventData.source);
             return;
           }
 
           if (eventData.type === 'artifact' && eventData.artifact) {
-            upsertConversationArtifact(currentConversation.id, assistantMessage.id, eventData.artifact);
+            // 产物事件写入右侧产物面板。
+            const artifact = upsertConversationArtifact(currentConversation.id, assistantMessage.id, {
+              ...eventData.artifact,
+              taskId: eventData.taskId || eventData.artifact.taskId,
+              taskKey: eventData.taskKey || eventData.artifact.taskKey,
+              workflowId: eventData.workflowId || eventData.artifact.workflowId,
+            });
+            attachArtifactToTask(assistantMessage.id, eventData.taskId || eventData.artifact.taskId, artifact.id);
             return;
           }
 
           if (eventData.type === 'clarification_required') {
+            // 需要补充信息时，当前运行转为 waiting_input。
             clarificationEvent = eventData;
             updateAssistantMessage(assistantMessage.id, {
               agentId: 'content_operator',
@@ -1151,6 +1601,7 @@ export default function CopilotWorkbenchPage({
           }
 
           if (eventData.type === 'capability_warning') {
+            // 能力缺失或降级提示保留在助手消息里。
             updateAssistantMessage(assistantMessage.id, {
               warning: eventData.content ?? '',
             });
@@ -1158,36 +1609,53 @@ export default function CopilotWorkbenchPage({
           }
 
           if (eventData.type === 'error_message') {
+            // 后端主动返回错误事件时抛出到统一 catch 分支。
             const streamError = new Error(eventData.content || copy.chatFallbackError);
             streamError.code = eventData.code;
             throw streamError;
+          }
+
+          if (eventData.type === 'done') {
+            streamOutcome = eventData.outcome || 'completed';
           }
         },
       });
 
       const endedAt = new Date().toISOString();
+      // 流式完成后根据是否需要澄清写入最终运行状态。
+      const finalStatus = clarificationEvent || streamOutcome === 'waiting_input'
+        ? 'waiting_input'
+        : streamOutcome === 'error'
+          ? 'error'
+          : 'done';
       updateAssistantMessage(assistantMessage.id, {
-        status: clarificationEvent ? 'waiting_input' : 'done',
+        status: finalStatus,
         statusText: '',
       });
       patchConversationState((currentState) => ({
         ...currentState,
         runs: currentState.runs.map((item) =>
           item.id === run.id
-            ? clarificationEvent
+            ? finalStatus === 'waiting_input'
               ? {
                   ...item,
+                  currentTaskIndex: latestWorkflowEvent?.currentTaskIndex ?? item.currentTaskIndex,
                   endedAt,
                   originalMessage: pendingRun?.originalMessage || content,
-                  requiredField: clarificationEvent.field || '',
+                  requiredField: clarificationEvent?.field || '',
                   status: 'waiting_input',
-                  taskType: clarificationEvent.taskType || item.taskType,
+                  operation: clarificationEvent?.operation || latestTaskEvent?.operation || item.operation,
+                  taskKey: clarificationEvent?.taskKey || latestTaskEvent?.taskKey || item.taskKey,
+                  taskType: clarificationEvent?.taskType || item.taskType,
+                  workflowId: clarificationEvent?.workflowId || latestWorkflowEvent?.workflowId || item.workflowId,
+                  workflowKey: clarificationEvent?.workflowKey || latestWorkflowEvent?.workflowKey || item.workflowKey,
                 }
-              : { ...item, endedAt, status: 'done' }
+              : { ...item, endedAt, status: finalStatus }
             : item,
         ),
       }));
     } catch (error) {
+      // AbortError 属于主动停止，不展示为失败。
       if (error && typeof error === 'object' && error.name === 'AbortError') return;
 
       const message = getChatErrorMessage(error);
@@ -1213,6 +1681,7 @@ export default function CopilotWorkbenchPage({
         ),
       }));
     } finally {
+      // 无论成功或失败，都清理当前会话的控制器和运行标记。
       if (activeChatControllersRef.current.get(currentConversation.id) === controller) {
         activeChatControllersRef.current.delete(currentConversation.id);
       }
@@ -1221,6 +1690,7 @@ export default function CopilotWorkbenchPage({
   }
 
   function startPreviewResize(event) {
+    // 拖拽分隔线时按容器宽度限制预览面板大小。
     const container = mainWorkspaceRef.current;
     if (!container) return;
 
@@ -1234,6 +1704,7 @@ export default function CopilotWorkbenchPage({
     document.body.style.userSelect = 'none';
 
     function updatePreviewWidth(pointerEvent) {
+      // 预览宽度被限制在最小可读宽度和最大比例之间。
       const previewWidth = rect.right - pointerEvent.clientX;
       const maxWidthByRatio = rect.width * 0.7;
       const maxWidthByChat = rect.width - 480;
@@ -1245,6 +1716,7 @@ export default function CopilotWorkbenchPage({
     }
 
     function stopPreviewResize() {
+      // 拖拽结束后恢复页面光标和选中文本能力。
       document.body.style.cursor = previousCursor;
       document.body.style.userSelect = previousUserSelect;
       window.removeEventListener('pointermove', updatePreviewWidth);
@@ -1256,6 +1728,7 @@ export default function CopilotWorkbenchPage({
   }
 
   function renderConversationList(items) {
+    // 会话列表统一传入当前编辑态和最新运行态。
     return items.map((conversation) => (
       <ConversationItem
         key={conversation.id}
@@ -1263,12 +1736,12 @@ export default function CopilotWorkbenchPage({
         conversation={conversation}
         copy={copy}
         editingTitle={editingConversationTitle}
-        isEditing={conversation.id === editingConversationId}
-        onDelete={() => deleteConversation(conversation.id)}
+        isEditing={conversation.id === editingConversationId && editingConversationSurface === 'sidebar'}
+        onDelete={() => requestConversationDelete(conversation.id)}
         onCancelRename={cancelInlineRename}
         onCommitRename={commitInlineRename}
         onEditingTitleChange={setEditingConversationTitle}
-        onRenameStart={() => startInlineRename(conversation.id)}
+        onRenameStart={() => startConversationRename(conversation.id, 'sidebar')}
         onSelect={() => selectConversation(conversation.id)}
         onTogglePin={() => toggleConversationPin(conversation.id)}
         taskRun={latestConversationRuns.get(conversation.id)}
@@ -1277,6 +1750,7 @@ export default function CopilotWorkbenchPage({
   }
 
   function renderConversationGroups({ collapsible = false } = {}) {
+    // 会话列表按置顶和普通历史分组展示。
     if (!filteredConversations.length) {
       return <p className="px-3 py-4 text-sm font-medium text-slate-400">{copy.emptyConversations}</p>;
     }
@@ -1319,6 +1793,7 @@ export default function CopilotWorkbenchPage({
   }
 
   function renderBrandModule() {
+    // 非聊天模式复用主应用里的品牌知识页面。
     if (workspaceMode === 'brand-profile') {
       return <BrandProfilePage project={activeProject} t={t} />;
     }
@@ -1339,6 +1814,7 @@ export default function CopilotWorkbenchPage({
   }
 
   function renderSearchPopover() {
+    // 折叠态搜索弹层内联复用会话分组列表。
     return (
       <div className="absolute left-[calc(100%+10px)] top-0 z-50 w-[320px] rounded-xl border border-slate-200 bg-white p-3 shadow-menu">
         <label className="flex h-10 items-center gap-2 rounded-md border border-slate-200 bg-white px-3">
@@ -1358,6 +1834,7 @@ export default function CopilotWorkbenchPage({
   }
 
   function renderHistoryPopover() {
+    // 折叠态历史弹层只展示会话分组。
     return (
       <div className="absolute left-[calc(100%+10px)] top-0 z-50 w-[320px] rounded-xl border border-slate-200 bg-white p-3 shadow-menu">
         {renderConversationGroups()}
@@ -1366,6 +1843,7 @@ export default function CopilotWorkbenchPage({
   }
 
   function renderMessageSources(message) {
+    // 助手消息下方展示已关联来源。
     const sources = conversationState.sources.filter((source) => message.sourceIds?.includes(source.id));
     if (!sources.length) return null;
 
@@ -1386,36 +1864,106 @@ export default function CopilotWorkbenchPage({
 
   function renderInlineArtifactCard(artifact) {
     return (
-      <button
-        key={artifact.id}
-        type="button"
-        className="mt-3 flex w-full items-center justify-between gap-3 rounded-lg border border-blue-100 bg-blue-50/60 p-3 text-left transition hover:border-blue-200 hover:bg-blue-50"
-        onClick={() => openArtifactPreview(artifact.id)}
-      >
-        <span className="flex min-w-0 items-center gap-3">
-          <span className="grid h-9 w-9 flex-none place-items-center rounded-lg bg-white text-blue-600">
-            <FileText className="h-4 w-4" />
-          </span>
-          <span className="min-w-0">
-            <span className="block truncate text-sm font-bold text-slate-900">{artifact.title}</span>
-            <span className="mt-0.5 block truncate text-xs font-medium text-slate-500">
-              {artifact.summary || copy.generatedArtifact}
-            </span>
-          </span>
-        </span>
-        <ChevronRight className="h-4 w-4 flex-none text-slate-400" />
-      </button>
+      <div key={artifact.id} className="mt-3">
+        <ArtifactCard artifact={artifact} selected={selectedArtifact?.id === artifact.id} onClick={() => openArtifactPreview(artifact.id)} />
+      </div>
     );
   }
 
   function renderMessageArtifacts(message) {
-    const artifacts = conversationState.artifacts.filter((artifact) => message.artifactIds?.includes(artifact.id));
+    // 助手消息下方展示已关联产物入口。
+    const blockArtifactIds = new Set(
+      (message.uiBlocks ?? [])
+        .flatMap((block) => block.tasks ?? [])
+        .flatMap((task) => task.artifactIds ?? []),
+    );
+    const artifacts = conversationState.artifacts.filter(
+      (artifact) => message.artifactIds?.includes(artifact.id) && !blockArtifactIds.has(artifact.id),
+    );
     if (!artifacts.length) return null;
 
     return <div>{artifacts.map(renderInlineArtifactCard)}</div>;
   }
 
+  function renderMessageUiBlocks(message) {
+    if (!message.uiBlocks?.length) return null;
+
+    return (
+      <div className="space-y-6">
+        {message.uiBlocks.map((block) => {
+          if (block.type === 'task_group') {
+            return (
+              <AgentTaskGroup
+                key={block.id}
+                block={block}
+                locale={locale}
+                sources={conversationState.sources}
+                renderArtifact={(artifactId) => {
+                  const artifact = conversationState.artifacts.find((item) => item.id === artifactId);
+                  return artifact ? renderInlineArtifactCard(artifact) : null;
+                }}
+              />
+            );
+          }
+
+          const agent = getAgentPresentation(block.agentId || message.agentId || 'copilot', locale);
+          return (
+            <section key={block.id} className="flex gap-4">
+              <AgentAvatar agentId={agent.id} locale={locale} />
+              <div className="min-w-0 flex-1 pb-4">
+                <div className="text-[15px] font-semibold leading-6 text-slate-900">{agent.name}</div>
+                <div className="mt-3">
+                  {block.type === 'article_task_form' ? (
+                    <ArticleTaskForm
+                      block={block}
+                      knowledgeFiles={knowledgeSelection.files}
+                      knowledgeItems={knowledgeSelection.items}
+                      locale={locale}
+                      onChange={(values) => updateMessageUiBlock(message.id, block.id, { values })}
+                      onOpenKnowledge={(kind) => setKnowledgeModal({ kind, target: 'ui-block', messageId: message.id, blockId: block.id })}
+                    />
+                  ) : block.type === 'title_selector' ? (
+                    <TitleSelector
+                      locale={locale}
+                      options={block.options}
+                      selectedTitleId={block.selectedTitleId}
+                      onSelect={(option) => {
+                        updateMessageUiBlock(message.id, block.id, { selectedTitleId: option.id });
+                        appendToComposer(option.title);
+                      }}
+                    />
+                  ) : null}
+                </div>
+              </div>
+            </section>
+          );
+        })}
+      </div>
+    );
+  }
+
+  function renderMessageAttachments(message) {
+    if (!message.attachments?.length) return null;
+    return (
+      <div className="mt-3 flex flex-wrap gap-2">
+        {message.attachments.map((attachment) => {
+          const Icon = attachment.kind === 'knowledge_item' ? Database : BookOpenText;
+          return (
+            <span
+              key={`${attachment.kind}:${attachment.id}`}
+              className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-white/15 px-2.5 py-1 text-xs font-semibold text-white"
+            >
+              <Icon className="h-3.5 w-3.5 flex-none" />
+              <span className="truncate">{attachment.title}</span>
+            </span>
+          );
+        })}
+      </div>
+    );
+  }
+
   function getChatErrorMessage(error) {
+    // 网络和 SSE 异常统一映射为连接错误文案。
     const message = error instanceof Error ? error.message : String(error || '');
     if (
       error instanceof TypeError ||
@@ -1430,68 +1978,47 @@ export default function CopilotWorkbenchPage({
   }
 
   function renderChatMessage(message) {
+    // 聊天气泡根据角色、错误和流式状态切换展示样式。
     const isUser = message.role === 'user';
     const isError = message.status === 'error' || message.status === 'interrupted';
     const isStreaming = message.status === 'streaming';
 
-    return (
-      <article
-        key={message.id}
-        className={`flex w-full gap-3 ${isUser ? 'justify-end' : 'justify-start'}`}
-      >
-        {!isUser ? (
-          <span className="grid h-9 w-9 flex-none place-items-center rounded-full bg-blue-50 text-blue-600">
-            <Bot className="h-4 w-4" />
-          </span>
-        ) : null}
-        <div className={`max-w-[76%] ${isUser ? 'items-end' : 'items-start'}`}>
-          <div className={`mb-1 flex items-center gap-2 ${isUser ? 'justify-end' : 'justify-start'}`}>
-            <span className="text-xs font-bold text-slate-400">
-              {isUser ? copy.userName : copy.assistantName}
-            </span>
-            {message.statusText ? (
-              <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-bold text-blue-600">
-                {message.statusText}
-              </span>
-            ) : null}
-          </div>
-          <div
-            className={`rounded-2xl px-4 py-3 text-sm leading-6 shadow-sm ${
-              isUser
-                ? 'rounded-tr-md bg-slate-900 text-white'
-                : isError
-                  ? 'rounded-tl-md border border-red-100 bg-red-50 text-red-600'
-                  : 'rounded-tl-md border border-slate-200 bg-white text-slate-700'
-            }`}
-          >
-            {message.content ? (
+    if (isUser) {
+      const userName = message.userName || 'Angel';
+      return (
+        <article key={message.id} className="flex w-full justify-end gap-3">
+          <div className="max-w-[74%] text-right">
+            <div className="mb-1 text-xs font-bold text-slate-400">{userName}</div>
+            <div className="rounded-[8px] bg-slate-950 px-4 py-3 text-left text-sm leading-6 text-white shadow-sm">
               <p className="whitespace-pre-wrap">{message.content}</p>
-            ) : message.status === 'interrupted' ? (
-              <span>{copy.taskInterrupted}</span>
-            ) : message.status === 'cancelled' ? (
-              <span>{copy.chatStopped}</span>
-            ) : isStreaming ? (
-              <span className="inline-flex items-center gap-2 text-slate-400">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                {copy.chatThinking}
-              </span>
-            ) : (
-              <span className="text-slate-400">{copy.chatEmptyResponse}</span>
-            )}
-            {!isUser ? renderMessageSources(message) : null}
-            {!isUser && message.warnings?.length ? (
-              <div className="mt-3 space-y-2">
-                {message.warnings.map((warning) => (
-                  <p
-                    key={warning}
-                    className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium leading-5 text-amber-700"
-                  >
-                    {warning}
-                  </p>
-                ))}
-              </div>
-            ) : null}
-            {!isUser ? renderMessageArtifacts(message) : null}
+              {renderMessageAttachments(message)}
+            </div>
+          </div>
+          <span className="inline-flex h-10 w-10 flex-none items-center justify-center rounded-full bg-slate-950 text-[15px] font-bold text-white">
+            {getUserInitial(userName)}
+          </span>
+        </article>
+      );
+    }
+
+    if (message.uiBlocks?.length) {
+      return <article key={message.id} className="w-full">{renderMessageUiBlocks(message)}{message.content ? <div className="ml-14 mt-2 whitespace-pre-wrap text-[14px] leading-6 text-slate-600">{message.content}</div> : null}</article>;
+    }
+
+    const agent = getAgentPresentation(message.agentId || 'copilot', locale);
+    return (
+      <article key={message.id} className="flex w-full gap-4">
+        <AgentAvatar agentId={agent.id} locale={locale} />
+        <div className="min-w-0 flex-1 pb-4">
+          <div className="flex items-center gap-2">
+            <span className="text-[15px] font-semibold leading-6 text-slate-900">{agent.name}</span>
+            {message.statusText ? <span className="text-xs font-semibold text-blue-600">{message.statusText}</span> : null}
+          </div>
+          <div className={`mt-2 text-[14px] leading-6 ${isError ? 'text-red-600' : 'text-slate-600'}`}>
+            {message.content ? <p className="whitespace-pre-wrap">{message.content}</p> : message.status === 'interrupted' ? <span>{copy.taskInterrupted}</span> : message.status === 'cancelled' ? <span>{copy.chatStopped}</span> : isStreaming ? <span className="inline-flex items-center gap-2 text-slate-400"><Loader2 className="h-3.5 w-3.5 animate-spin" />{copy.chatThinking}</span> : <span className="text-slate-400">{copy.chatEmptyResponse}</span>}
+            {renderMessageSources(message)}
+            {message.warnings?.length ? <div className="mt-3 space-y-2">{message.warnings.map((warning) => <p key={warning} className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium leading-5 text-amber-700">{warning}</p>)}</div> : null}
+            {renderMessageArtifacts(message)}
           </div>
         </div>
       </article>
@@ -1499,41 +2026,17 @@ export default function CopilotWorkbenchPage({
   }
 
   function renderArtifactPreviewBody(artifact) {
-    if (!artifact) {
-      return (
-        <div className="flex min-h-0 flex-1 items-center justify-center rounded-lg border border-dashed border-slate-200 bg-slate-50 p-6 text-center">
-          <div>
-            <FileText className="mx-auto h-7 w-7 text-slate-300" />
-            <p className="mt-3 text-sm font-bold text-slate-700">{copy.artifactPlaceholderTitle}</p>
-            <p className="mt-2 text-xs leading-5 text-slate-400">{copy.artifactPlaceholderBody}</p>
-          </div>
-        </div>
-      );
-    }
-
     return (
-      <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-slate-100 bg-slate-50 p-4">
-        <p className="text-xs font-bold uppercase tracking-[0.08em] text-blue-500">{artifact.type}</p>
-        <h3 className="mt-2 text-sm font-bold leading-6 text-slate-900">{artifact.title}</h3>
-        {artifact.summary ? <p className="mt-2 text-xs leading-5 text-slate-500">{artifact.summary}</p> : null}
-        {artifact.changeSummary ? (
-          <p className="mt-3 rounded-md border border-blue-100 bg-blue-50 px-3 py-2 text-xs leading-5 text-blue-700">
-            {artifact.changeSummary}
-          </p>
-        ) : null}
-        {artifact.evidenceGaps?.length ? (
-          <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-700">
-            {artifact.evidenceGaps.map((gap) => <p key={gap}>{gap}</p>)}
-          </div>
-        ) : null}
-        <pre className="mt-4 whitespace-pre-wrap font-sans text-xs leading-5 text-slate-600">
-          {artifact.content || copy.previewPlaceholderBody}
-        </pre>
-      </div>
+      <ArtifactPreview
+        artifact={artifact}
+        emptyText={copy.artifactPlaceholderBody}
+        onInsertToComposer={appendToComposer}
+      />
     );
   }
 
   function renderArtifactTools() {
+    // 产物工具栏负责切换列表面板和独立预览页。
     const artifactPanelLabel = artifactPanelVisible ? copy.collapseArtifactPanel : copy.expandArtifactPanel;
     const previewLabel = previewOpen ? copy.closePreviewPage : copy.openPreviewPage;
 
@@ -1809,7 +2312,33 @@ export default function CopilotWorkbenchPage({
               {copy.backToChat}
             </button>
           ) : null}
-          <h1 className="truncate text-xl font-bold tracking-normal text-slate-900">{pageTitle}</h1>
+          {workspaceMode === 'chat' && editingConversationSurface === 'header' && editingConversationId === activeConversation?.id ? (
+            <input
+              ref={headerRenameInputRef}
+              data-testid="copilot-header-rename-input"
+              className="h-9 min-w-0 rounded-md border border-blue-200 bg-white px-3 text-xl font-bold tracking-normal text-slate-900 outline-none ring-2 ring-blue-100 focus:border-blue-400 [width:clamp(240px,32vw,560px)]"
+              value={editingConversationTitle}
+              onBlur={(event) => {
+                if (event.currentTarget.dataset.renameCanceled === 'true') return;
+                commitInlineRename(activeConversation.id);
+              }}
+              onChange={(event) => setEditingConversationTitle(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  commitInlineRename(activeConversation.id);
+                }
+                if (event.key === 'Escape') {
+                  event.preventDefault();
+                  event.currentTarget.dataset.renameCanceled = 'true';
+                  cancelInlineRename();
+                }
+              }}
+              aria-label={copy.rename}
+            />
+          ) : (
+            <h1 className="truncate text-xl font-bold tracking-normal text-slate-900">{pageTitle}</h1>
+          )}
           {workspaceMode === 'chat' ? (
             <div ref={conversationActionMenuRef} className="relative">
               <SquareIconButton
@@ -1827,7 +2356,7 @@ export default function CopilotWorkbenchPage({
                   <ActionMenuButton
                     icon={Pencil}
                     label={copy.rename}
-                    onClick={() => runConversationAction(() => startInlineRename(activeConversation.id))}
+                    onClick={() => runConversationAction(() => startConversationRename(activeConversation.id, 'header'))}
                   />
                   <ActionMenuButton
                     icon={activeConversation.pinned ? PinOff : Pin}
@@ -1838,7 +2367,7 @@ export default function CopilotWorkbenchPage({
                     danger
                     icon={Trash2}
                     label={copy.delete}
-                    onClick={() => runConversationAction(() => deleteConversation(activeConversation.id))}
+                    onClick={() => runConversationAction(() => requestConversationDelete(activeConversation.id))}
                   />
                 </div>
               ) : null}
@@ -1904,7 +2433,11 @@ export default function CopilotWorkbenchPage({
         <section className="min-h-0 min-w-0 overflow-hidden">
           {workspaceMode === 'chat' ? (
             <div className="flex h-full min-h-0 flex-col bg-white">
-              <div className="min-h-0 flex-1 overflow-y-auto px-8 py-8">
+              <div
+                ref={chatScrollRef}
+                className="min-h-0 flex-1 overflow-y-auto px-8 py-8"
+                onScroll={handleChatScroll}
+              >
                 <div
                   className={`mx-auto flex min-h-full w-full max-w-4xl flex-col gap-5 ${
                     activeMessages.length ? '' : 'justify-center'
@@ -1925,54 +2458,95 @@ export default function CopilotWorkbenchPage({
                       <p className="mt-2 text-sm leading-6 text-slate-500">{copy.chatPlaceholderBody}</p>
                     </div>
                   )}
+                  <div ref={chatEndRef} aria-hidden="true" />
                 </div>
               </div>
 
-              {chatError ? (
-                <div className="border-t border-red-100 bg-red-50 px-8 py-3 text-sm font-semibold text-red-600">
-                  <div className="mx-auto max-w-4xl">
-                    <span className="font-bold">{copy.chatErrorTitle}: </span>
-                    {chatError}
-                  </div>
-                </div>
-              ) : null}
-
-              <form className="border-t border-slate-200 bg-white px-8 py-5" onSubmit={submitChat}>
-                <div className="mx-auto flex w-full max-w-4xl items-end gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm focus-within:border-blue-300 focus-within:ring-4 focus-within:ring-blue-50">
+              <form className="relative bg-transparent px-8 pb-6 pt-2" onSubmit={submitChat}>
+                {showScrollToLatest ? (
+                  <button
+                    type="button"
+                    className="absolute -top-11 left-1/2 z-10 grid h-9 w-9 -translate-x-1/2 place-items-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-md transition hover:bg-slate-50 hover:text-slate-900"
+                    onClick={scrollToLatest}
+                    aria-label={copy.scrollToLatest}
+                  >
+                    <ArrowDown className="h-4 w-4" />
+                  </button>
+                ) : null}
+                <div className="mx-auto flex min-h-[152px] w-full max-w-4xl flex-col rounded-[24px] border border-slate-200 bg-white p-4 shadow-[0_12px_32px_rgba(15,23,42,0.08)] transition focus-within:border-blue-300 focus-within:ring-4 focus-within:ring-blue-50/70">
+                  {chatError ? (
+                    <p className="mb-2 rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold leading-5 text-red-600">
+                      <span className="font-bold">{copy.chatErrorTitle}: </span>{chatError}
+                    </p>
+                  ) : null}
+                  {activePendingRun ? (
+                    <p className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold leading-5 text-amber-700">
+                      {copy.taskWaitingInput}
+                    </p>
+                  ) : null}
+                  {selectedComposerItems.length || selectedComposerFiles.length ? (
+                    <div className="mb-2 flex flex-wrap gap-2" data-testid="copilot-composer-attachments">
+                      {[...selectedComposerItems.map((item) => ({ ...item, kind: 'knowledge_item' })), ...selectedComposerFiles.map((file) => ({ ...file, kind: 'knowledge_file' }))].map((attachment) => {
+                        const Icon = attachment.kind === 'knowledge_item' ? Database : BookOpenText;
+                        return (
+                          <span key={`${attachment.kind}:${attachment.id}`} className="inline-flex h-7 max-w-[240px] items-center gap-1.5 rounded-full border border-blue-100 bg-blue-50 px-2.5 text-xs font-semibold text-blue-700">
+                            <Icon className="h-3.5 w-3.5 flex-none" />
+                            <span className="truncate">{attachment.title}</span>
+                            <button
+                              type="button"
+                              className="grid h-4 w-4 flex-none place-items-center rounded-full hover:bg-white"
+                              onClick={() => updateComposerDraft(activeConversation.id, attachment.kind === 'knowledge_item'
+                                ? { knowledgeItemIds: activeComposerDraft.knowledgeItemIds.filter((id) => id !== attachment.id) }
+                                : { knowledgeFileIds: activeComposerDraft.knowledgeFileIds.filter((id) => id !== attachment.id) })}
+                              aria-label={`${copy.removeAttachment} ${attachment.title}`}
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </span>
+                        );
+                      })}
+                    </div>
+                  ) : null}
                   <textarea
+                    ref={chatInputRef}
                     data-testid="copilot-chat-input"
-                    className="max-h-32 min-h-[48px] min-w-0 flex-1 resize-none border-none bg-transparent px-1 py-1 text-sm font-medium leading-6 text-slate-800 outline-none placeholder:text-slate-400"
+                    className="min-h-[72px] max-h-[160px] w-full resize-none border-none bg-transparent px-1 py-1 text-sm font-medium leading-6 text-slate-800 outline-none placeholder:text-slate-400"
                     value={chatInput}
-                    onChange={(event) => setChatInput(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter' && !event.shiftKey) {
-                        event.preventDefault();
-                        if (!activeConversationRunning) {
-                          event.currentTarget.form?.requestSubmit();
-                        }
-                      }
-                    }}
+                    onChange={(event) => updateComposerDraft(activeConversation.id, { text: event.target.value })}
                     placeholder={copy.chatInputPlaceholder}
                   />
-                  <button
-                    data-testid="copilot-chat-submit"
-                    type={activeConversationRunning ? 'button' : 'submit'}
-                    disabled={!activeConversationRunning && !chatInput.trim()}
-                    className={`inline-flex h-10 shrink-0 items-center gap-2 rounded-lg px-4 text-sm font-bold text-white shadow-sm transition disabled:cursor-not-allowed disabled:bg-blue-300 ${
-                      activeConversationRunning
-                        ? 'bg-slate-900 hover:bg-slate-800'
-                        : 'bg-blue-600 hover:bg-blue-700'
-                    }`}
-                    onClick={
-                      activeConversationRunning
-                        ? () => cancelConversationRun(activeConversation.id)
-                        : undefined
-                    }
-                    aria-label={activeConversationRunning ? copy.chatStop : copy.chatSend}
-                  >
-                    {activeConversationRunning ? <Square className="h-3.5 w-3.5 fill-current" /> : <Send className="h-4 w-4" />}
-                    {activeConversationRunning ? copy.chatStop : copy.chatSend}
-                  </button>
+                  <div className="mt-auto flex h-10 items-center justify-between gap-3">
+                    <div ref={composerMenuRef} className="relative">
+                      <button
+                        type="button"
+                        className={`grid h-9 w-9 place-items-center rounded-full text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 ${composerMenuOpen ? 'bg-slate-100 text-slate-900' : ''}`}
+                        onClick={() => setComposerMenuOpen((open) => !open)}
+                        aria-expanded={composerMenuOpen}
+                        aria-label={copy.addContent}
+                      >
+                        <Plus className="h-5 w-5" />
+                      </button>
+                      {composerMenuOpen ? (
+                        <div className="absolute bottom-[calc(100%+10px)] left-0 z-50 w-44 overflow-hidden rounded-xl border border-slate-200 bg-white py-1.5 shadow-menu">
+                          <button type="button" className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50" onClick={() => { setKnowledgeModal({ kind: 'items', target: 'composer' }); setComposerMenuOpen(false); }}><Database className="h-4 w-4 text-blue-600" />{copy.knowledgeItems}</button>
+                          <button type="button" className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50" onClick={() => { setKnowledgeModal({ kind: 'files', target: 'composer' }); setComposerMenuOpen(false); }}><BookOpenText className="h-4 w-4 text-blue-600" />{copy.knowledgeFiles}</button>
+                        </div>
+                      ) : null}
+                    </div>
+                    <div className="flex min-w-0 items-center gap-3">
+                      <span className="max-w-[180px] truncate text-xs font-semibold text-slate-500" title={currentModel}>{currentModel}</span>
+                      <button
+                        data-testid="copilot-chat-submit"
+                        type={activeConversationRunning ? 'button' : 'submit'}
+                        disabled={!activeConversationRunning && !chatInput.trim()}
+                        className={`grid h-10 w-10 flex-none place-items-center rounded-full text-white shadow-sm transition disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 ${activeConversationRunning ? 'bg-slate-900 hover:bg-slate-800' : 'bg-blue-600 hover:bg-blue-700'}`}
+                        onClick={activeConversationRunning ? () => cancelConversationRun(activeConversation.id) : undefined}
+                        aria-label={activeConversationRunning ? copy.chatStop : copy.chatSend}
+                      >
+                        {activeConversationRunning ? <Square className="h-3.5 w-3.5 fill-current" /> : <ArrowUp className="h-5 w-5 stroke-[2.5]" />}
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </form>
             </div>
@@ -2024,21 +2598,13 @@ export default function CopilotWorkbenchPage({
                   {activeArtifacts.length ? (
                     <div className="space-y-3">
                       {activeArtifacts.map((artifact) => (
-                        <button
+                        <ArtifactCard
                           key={artifact.id}
-                          type="button"
-                          className={`w-full rounded-lg border p-3 text-left transition ${
-                            selectedArtifact?.id === artifact.id
-                              ? 'border-blue-200 bg-blue-50'
-                              : 'border-slate-100 bg-slate-50 hover:border-slate-200 hover:bg-white'
-                          }`}
+                          artifact={artifact}
+                          panel
+                          selected={selectedArtifact?.id === artifact.id}
                           onClick={() => openArtifactPreview(artifact.id)}
-                        >
-                          <span className="block truncate text-sm font-bold text-slate-900">{artifact.title}</span>
-                          <span className="mt-1 block text-xs leading-5 text-slate-500">
-                            {artifact.summary || copy.generatedArtifact}
-                          </span>
-                        </button>
+                        />
                       ))}
                     </div>
                   ) : (
@@ -2050,12 +2616,65 @@ export default function CopilotWorkbenchPage({
           </aside>
         ) : null}
       </main>
+
+      {deleteConversationTarget ? (
+        <ConfirmDialog
+          cancelLabel={copy.cancel}
+          confirmLabel={copy.confirmDelete}
+          danger
+          message={copy.deleteConversationBody(deleteConversationTarget.title)}
+          onCancel={() => setDeleteConversationTarget(null)}
+          onConfirm={confirmConversationDelete}
+          testId="copilot-delete-conversation-dialog"
+          title={copy.deleteConversationTitle}
+        />
+      ) : null}
+
+      {knowledgeModal?.kind === 'items' ? (
+        <KnowledgeItemSelectionModal
+          items={knowledgeSelection.items}
+          labels={knowledgeSelectionLabels}
+          locale={locale}
+          maxSelected={copilotAttachmentLimits.maxAttachments - knowledgeModalFileIds.length}
+          onClose={() => setKnowledgeModal(null)}
+          onConfirm={(ids) => {
+            if (knowledgeModal.target === 'ui-block' && knowledgeModalBlock) {
+              updateMessageUiBlock(knowledgeModal.messageId, knowledgeModal.blockId, { knowledgeItemIds: ids });
+            } else {
+              updateComposerDraft(activeConversation.id, { knowledgeItemIds: ids });
+            }
+            setKnowledgeModal(null);
+          }}
+          selectedIds={knowledgeModalItemIds}
+          types={knowledgeSelection.types}
+        />
+      ) : null}
+      {knowledgeModal?.kind === 'files' ? (
+        <KnowledgeFileSelectionModal
+          files={knowledgeSelection.files}
+          labels={knowledgeSelectionLabels}
+          locale={locale}
+          maxSelected={copilotAttachmentLimits.maxAttachments - knowledgeModalItemIds.length}
+          onClose={() => setKnowledgeModal(null)}
+          onConfirm={(ids) => {
+            if (knowledgeModal.target === 'ui-block' && knowledgeModalBlock) {
+              updateMessageUiBlock(knowledgeModal.messageId, knowledgeModal.blockId, { knowledgeFileIds: ids });
+            } else {
+              updateComposerDraft(activeConversation.id, { knowledgeFileIds: ids });
+            }
+            setKnowledgeModal(null);
+          }}
+          requireUsableContent
+          selectedIds={knowledgeModalFileIds}
+        />
+      ) : null}
     </div>
   );
 }
 
 function CollapsibleSidebarGroup({ children, open, title, onToggle, 'data-testid': dataTestId }) {
   return (
+    /* 展开侧栏中的可折叠分组。 */
     <section className="mb-4">
       <button
         data-testid={dataTestId}
@@ -2074,6 +2693,7 @@ function CollapsibleSidebarGroup({ children, open, title, onToggle, 'data-testid
 
 function HistoryGroup({ children, title }) {
   return (
+    /* 非折叠弹层里的静态会话分组。 */
     <section className="mb-4">
       <h3 className="mb-2 flex min-h-7 items-center px-3 text-[12px] font-bold text-slate-400">{title}</h3>
       <div className="space-y-1">{children}</div>
@@ -2083,6 +2703,7 @@ function HistoryGroup({ children, title }) {
 
 function ActionMenuButton({ danger = false, icon: Icon, label, onClick }) {
   return (
+    /* 会话动作菜单的单个操作项。 */
     <button
       type="button"
       className={`flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-semibold transition ${

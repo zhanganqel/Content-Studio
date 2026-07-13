@@ -26,6 +26,7 @@ function StatusBadge({ copy, status }) {
   );
 }
 
+// 二次处理会覆盖当前分块，需要确认后再执行。
 function ConfirmDialog({ copy, onCancel, onConfirm }) {
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/35 px-6">
@@ -45,6 +46,7 @@ function ConfirmDialog({ copy, onCancel, onConfirm }) {
   );
 }
 
+// 切换分块或返回前确认未保存文本是否丢弃。
 function DiscardDialog({ copy, onCancel, onConfirm }) {
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/35 px-6">
@@ -65,6 +67,7 @@ function DiscardDialog({ copy, onCancel, onConfirm }) {
 }
 
 export default function KnowledgeFileChunksPage({ fileId, onBack, project, t }) {
+  // 分块页维护文件状态、当前分块、编辑草稿和待执行动作。
   const copy = t.knowledgeAssets;
   const [files, setFiles] = useState(() => listFiles(project));
   const file = files.find((item) => item.id === fileId);
@@ -79,6 +82,7 @@ export default function KnowledgeFileChunksPage({ fileId, onBack, project, t }) 
   const [toast, setToast] = useState(null);
 
   useEffect(() => {
+    // 文件或项目变化时重新读取分块，并默认选中第一个分块。
     const nextFiles = listFiles(project);
     const nextFile = nextFiles.find((item) => item.id === fileId);
     const nextChunks = nextFile ? listChunks(project, fileId) : [];
@@ -100,6 +104,7 @@ export default function KnowledgeFileChunksPage({ fileId, onBack, project, t }) 
   }
 
   const filteredChunks = useMemo(() => {
+    // 分块搜索同时匹配标题、原文和编辑后文本。
     const query = searchQuery.trim().toLowerCase();
     return chunks.filter((chunk) => {
       const text = [chunk.title, chunk.originalText, chunk.editedText]
@@ -113,12 +118,14 @@ export default function KnowledgeFileChunksPage({ fileId, onBack, project, t }) 
   const hasUnsavedDraft = Boolean(isEditing && activeChunk && draftText !== activeChunk.editedText);
 
   useEffect(() => {
+    // 非编辑态切换分块时同步草稿文本，编辑态保留当前输入。
     if (!isEditing) {
       setDraftText(activeChunk?.editedText ?? '');
     }
   }, [activeChunk?.editedText, activeChunk?.id, isEditing]);
 
   function requestDiscard(action) {
+    // 待执行动作先暂存，用户确认丢弃后再继续执行。
     setPendingAction(action);
     setDiscardOpen(true);
   }
@@ -145,6 +152,7 @@ export default function KnowledgeFileChunksPage({ fileId, onBack, project, t }) 
   }
 
   function handleSave() {
+    // 保存当前分块后刷新文件状态，保证列表状态与分块内容一致。
     if (!file || !activeChunk) return;
     const savedChunk = saveChunk(project, file.id, activeChunk.id, {
       editedText: draftText,
@@ -189,6 +197,7 @@ export default function KnowledgeFileChunksPage({ fileId, onBack, project, t }) 
   }
 
   async function handleReprocess() {
+    // 重新处理会重新生成分块，失败时保留可用状态并提示。
     if (!file) return;
     setConfirmOpen(false);
     try {

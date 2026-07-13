@@ -1,10 +1,13 @@
+// 默认语言用于首次进入应用和语言缓存缺失时的兜底。
 export const defaultLocale = 'zh-CN';
 
+// 语言切换器展示的可选语言。
 export const locales = [
   { code: 'zh-CN', label: '中文' },
   { code: 'en-US', label: 'English' },
 ];
 
+// 全站文案字典按语言隔离，页面只读取当前 locale 对应分支。
 export const messages = {
   'zh-CN': {
     navSections: {
@@ -96,6 +99,10 @@ export const messages = {
       pin: '置顶',
       unpin: '取消置顶',
       delete: '删除',
+      cancel: '取消',
+      confirmDelete: '确认删除',
+      deleteConversationTitle: '删除会话',
+      deleteConversationBody: (title) => `删除“${title}”后，会话消息、任务记录、来源和产物将一并删除，且无法恢复。`,
       conversationActions: '对话操作',
       backToChat: '返回对话',
       artifacts: '产物',
@@ -112,6 +119,13 @@ export const messages = {
       assistantName: 'Copilot',
       userName: 'Angel',
       chatInputPlaceholder: '@项目研究专家 帮我基于知识资料分析这个主题...',
+      addContent: '添加内容',
+      knowledgeItems: '知识条目',
+      knowledgeFiles: '知识文件',
+      selectKnowledgeItems: '选择知识条目',
+      selectKnowledgeFiles: '选择知识文件',
+      removeAttachment: '移除附件',
+      scrollToLatest: '回到最新消息',
       chatSend: '发送',
       chatSending: '发送中',
       chatStop: '停止',
@@ -127,6 +141,7 @@ export const messages = {
       taskCompleted: '任务完成',
       taskFailed: '任务执行失败',
       taskInterrupted: '任务意外中断',
+      taskCancelled: '任务已中止。',
       sources: '引用来源',
       generatedArtifact: '当前会话生成的结构化产物',
       outlineTesterTitle: '本机大纲生成验证',
@@ -485,7 +500,10 @@ export const messages = {
           confirm: '确定',
           cancel: '取消',
           continue: '继续填写',
+          continueTask: '继续任务',
           leave: '确认离开',
+          exit: '退出',
+          autoFinish: '自动完成',
           search: '搜索',
           searching: '搜索中',
           createTask: '创建任务',
@@ -541,6 +559,8 @@ export const messages = {
           autoFailedManual: '生成失败，请返回上一步重新创建任务',
           autoStopped: '创作任务已中止',
           autoStoppedManual: '任务已中止，可返回上一步重新创建任务',
+          unsavedExitPrompt: '当前任务还未保存，是否退出创作流程？',
+          convertedToAuto: '已转为自动创作任务',
         },
         empty: {
           outlinePreviewTitle: '等待标题与大纲生成',
@@ -549,6 +569,7 @@ export const messages = {
           contentPreviewBody: '文章、评估报告、修改建议和 TDK 生成后不会自动切换，需要手动点击卡片查看。',
         },
         dialog: {
+          exitTitle: '退出协同创作？',
           leaveTitle: '离开文章创作流程？',
           leaveBody: '当前创建任务内容尚未保存，离开后本次填写的内容将丢失。',
           unsavedTitle: '内容未保存',
@@ -1002,6 +1023,10 @@ export const messages = {
       pin: 'Pin',
       unpin: 'Unpin',
       delete: 'Delete',
+      cancel: 'Cancel',
+      confirmDelete: 'Delete',
+      deleteConversationTitle: 'Delete conversation',
+      deleteConversationBody: (title) => `Deleting “${title}” also removes its messages, task runs, sources, and artifacts. This action cannot be undone.`,
       conversationActions: 'Conversation actions',
       backToChat: 'Back to chat',
       artifacts: 'Artifacts',
@@ -1019,6 +1044,13 @@ export const messages = {
       assistantName: 'Copilot',
       userName: 'Angel',
       chatInputPlaceholder: '@Project researcher Help me analyze this topic based on the knowledge base...',
+      addContent: 'Add content',
+      knowledgeItems: 'Knowledge items',
+      knowledgeFiles: 'Knowledge files',
+      selectKnowledgeItems: 'Select knowledge items',
+      selectKnowledgeFiles: 'Select knowledge files',
+      removeAttachment: 'Remove attachment',
+      scrollToLatest: 'Jump to latest message',
       chatSend: 'Send',
       chatSending: 'Sending',
       chatStop: 'Stop',
@@ -1035,6 +1067,7 @@ export const messages = {
       taskCompleted: 'Task completed',
       taskFailed: 'Task failed',
       taskInterrupted: 'Task interrupted',
+      taskCancelled: 'Task stopped.',
       sources: 'Sources',
       generatedArtifact: 'Structured artifact generated in this conversation',
       outlineTesterTitle: 'Local Outline Test',
@@ -1397,7 +1430,10 @@ export const messages = {
           confirm: 'Confirm',
           cancel: 'Cancel',
           continue: 'Continue',
+          continueTask: 'Continue',
           leave: 'Leave',
+          exit: 'Exit',
+          autoFinish: 'Auto Finish',
           search: 'Search',
           searching: 'Searching',
           createTask: 'Create Task',
@@ -1453,6 +1489,8 @@ export const messages = {
           autoFailedManual: 'Generation failed. You can go back and recreate the task.',
           autoStopped: 'Writing task stopped.',
           autoStoppedManual: 'Task stopped. You can go back and recreate the task.',
+          unsavedExitPrompt: 'The current task has not been saved. Exit the writing flow?',
+          convertedToAuto: 'Converted to an auto writing task.',
         },
         empty: {
           outlinePreviewTitle: 'Waiting for Outline',
@@ -1461,6 +1499,7 @@ export const messages = {
           contentPreviewBody: 'Generated drafts, reviews, suggestions, and TDK appear after you select a card.',
         },
         dialog: {
+          exitTitle: 'Exit Collaborative Writing?',
           leaveTitle: 'Leave Article Writing?',
           leaveBody: 'This brief is not saved. Leaving will discard your input.',
           unsavedTitle: 'Unsaved Content',

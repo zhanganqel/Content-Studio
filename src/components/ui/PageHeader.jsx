@@ -1,3 +1,4 @@
+// 页面头部统一标题、说明和右侧操作区的间距。
 export default function PageHeader({ actions, className = '', description, title }) {
   const classes = [
     'flex flex-col gap-5 rounded-lg bg-slate-50 px-7 py-6 xl:flex-row xl:items-start xl:justify-between',

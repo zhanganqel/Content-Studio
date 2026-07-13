@@ -16,10 +16,13 @@
 - `src/components/ui/FixedPageLayout.jsx` {#固定页面布局组件:提供页面头部固定区域和内部滚动主体}。
 - `src/components/ui/ListCard.jsx` {#列表卡片组件:统一重复列表项的标题、元信息、标签和操作区}。
 - `src/components/ui/Toast.jsx` {#全局提示组件:通过 portal 显示成功、信息、警告和错误提示}。
+- `src/components/ui/ConfirmDialog.jsx` {#确认与决策弹窗:统一遮罩、焦点、Escape关闭和操作按钮样式；通过 `actions` 支持三项流程决策}。
+- `src/components/knowledge-selection/KnowledgeSelectionModals.jsx` {#共享知识选择弹窗:供文章创作和 Copilot 选择知识条目或已解析文件}。
+- `src/components/ai-workflow/` {#AI工作流共享组件:提供Agent头像、任务状态、任务过程、紧凑表单、标题选择、产物卡片和预览}。
 
-当前仍分散在业务页面、后续适合抽取的高频结构：
+当前仍分散在部分业务页面、后续适合迁移到共享组件的高频结构：
 
-- 确认、删除、放弃更改弹窗。
+- 各业务页局部实现的确认、删除、放弃更改弹窗。
 - 表单字段、文本域、下拉、多选、标签输入。
 - 搜索栏、筛选按钮、筛选弹层、应用/清除筛选。
 - 空状态、无匹配状态、预览空状态。
@@ -30,7 +33,7 @@
 
 ### P0
 
-- `ConfirmDialog` {#确认弹窗候选组件:统一删除、放弃更改、离开页面和危险操作确认}：重复面最广，优先替换各页面局部 `ConfirmDialog`、`DeleteDialog`、`DiscardDialog`、`UnsavedDialog`。
+- 将各页面局部 `ConfirmDialog`、`DeleteDialog`、`DiscardDialog`、`UnsavedDialog` 逐步迁移到共享 `ConfirmDialog`，避免一次性扩大重构范围。
 - `FormField` {#表单字段候选组件:统一 label、required、hint、error、disabled 和字段容器布局}：先支持 input、select、textarea，再扩展自定义 children。
 - `StatusBadge` {#状态标签候选组件:统一 success、info、warning、error、neutral 状态色和尺寸}：先覆盖文章状态、任务状态、资料处理状态、文件来源状态。
 - `EmptyState` {#空状态候选组件:统一空列表、筛选无结果、预览空和资料空的图标、标题、说明和操作按钮}：替代页面内临时空状态区块。
@@ -107,6 +110,7 @@
 - Toast 固定在视口顶部居中，短文案保持单行，长文案最多两行。
 - Toast 不使用边框，以语义背景色、语义图标色和轻量阴影表达状态。
 - 支持类型为 `success`、`info`、`warning`、`error`。
+- Toast 支持单个操作按钮和多个文字操作按钮；多操作用于未保存退出、流程分支等提示，按钮文案必须短，避免承载复杂表单。
 
 ## Layout Helpers
 
@@ -120,6 +124,29 @@
 - 必填、错误、禁用、只读状态必须在字段旁可见。
 - 多选字段必须支持选中、取消选中、标签移除和键盘触发。
 - 表单保存失败时优先展示字段级错误，必要时滚动到第一个错误字段。
+- AI工作流内嵌表单使用34px紧凑控件，与文章创作任务表单保持同一视觉密度；其他业务表单继续遵循44px默认点击高度。
+
+## AI Workflow
+
+- Agent头像统一为40px圆形；研究、策略、内容运营和评估使用角色字母，Copilot使用当前会话区的 `Bot` 小机器人图标。
+- Agent普通回复使用无气泡内容；用户消息使用黑色字母头像和黑底白字气泡。
+- 任务和会话列表必须共用 `TaskStatusIcon`：进行中蓝色旋转圆环、等待黄色时钟、完成绿色对号、失败或中断红色警告、取消黑色静态圆环。
+- 任务状态图标使用16px固定槽位，与任务名称第一行垂直居中。
+- 任务过程只展示公开执行摘要，不展示模型隐藏推理。
+- `ArtifactCard` 宽度跟随父容器；消息内最大520px，右侧栏使用全部可用宽度。
+- 具体结构和状态文案以 `docs/ai-workflow-ui-components.md` 为准。
+- 顶部会话重命名在标题区域完成，侧栏重命名保留行内编辑；两者必须更新同一会话记录。
+- 会话删除等不可逆操作必须使用共享 `ConfirmDialog`，确认前不得执行中止或删除副作用。
+
+## Copilot Composer
+
+- Copilot 输入区使用悬浮卡片，不使用页面级顶部分割线；默认最小高度 152px、圆角 24px，并与消息列保持相同最大宽度。
+- 文本框高度在 72px 到 160px 之间自动增长，超过后内部滚动。
+- Enter、Shift+Enter、Cmd+Enter 和 Ctrl+Enter 都不发送消息；只有点击右下角圆形发送按钮才提交。
+- 发送和停止共用 40px 圆形按钮位置，分别使用 `ArrowUp` 和实心 `Square` 图标。
+- 左下角加号通过轻量菜单打开知识条目或知识文件选择弹窗；后续 Skill、Plugin、MCP 和 Agent 入口继续复用该菜单层级。
+- 已选知识以可移除附件标签显示，单轮最多 8 项；发送后清空，历史消息只显示附件元数据。
+- 当前模型仅作为只读文本显示，不使用伪下拉控件。
 
 ## Icons
 

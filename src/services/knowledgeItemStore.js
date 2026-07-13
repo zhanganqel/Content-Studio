@@ -1,5 +1,6 @@
 const storageKeyPrefix = 'content-studio-knowledge-items:v2';
 
+// 知识字段类型决定表格输入控件、校验和单元格归一化方式。
 export const knowledgeFieldTypes = [
   'shortText',
   'longText',
@@ -92,6 +93,7 @@ const presetTypes = [
   },
 ];
 
+// 系统 ID 字段由数据层生成，页面只读展示。
 function systemIdField() {
   return {
     id: 'knowledgeId',
@@ -105,6 +107,7 @@ function systemIdField() {
   };
 }
 
+// 字段工厂统一补齐表格列宽、必填状态和 AI 语义角色。
 function field(key, label, type, options = {}) {
   return {
     id: key,
@@ -137,6 +140,7 @@ function slugify(value, fallback = 'field') {
   return slug || fallback;
 }
 
+// 标签字段支持数组、逗号和换行输入，保存前统一压缩为空值过滤后的数组。
 function compactTags(values) {
   if (Array.isArray(values)) {
     return values.map((value) => String(value).trim()).filter(Boolean);
@@ -178,6 +182,7 @@ function createRow(type, index, cells) {
   };
 }
 
+// demo 知识项按业务类型映射到预设表结构。
 function createRowsForProject(project) {
   const rows = Object.fromEntries(presetTypes.map((type) => [type.id, []]));
   const sourceItems = project?.demoProject?.knowledgeItems ?? project?.knowledgeItems ?? [];
@@ -293,6 +298,7 @@ function inferCaseIndustry(title) {
   return 'Industrial Manufacturing';
 }
 
+// 创建默认草稿时复制预设类型，避免页面修改原始配置。
 function createDefaultDraft(project) {
   return {
     types: clone(presetTypes),
@@ -300,6 +306,7 @@ function createDefaultDraft(project) {
   };
 }
 
+// 读取知识条目草稿时归一化类型和行，缺失数据回退到项目默认草稿。
 export function getKnowledgeItemDraft(project) {
   if (typeof window === 'undefined') {
     return createDefaultDraft(project);
@@ -335,6 +342,7 @@ export function createBlankRow() {
   };
 }
 
+// 自定义知识类型根据首个字段作为名称字段，并自动插入系统 ID 字段。
 export function createCustomKnowledgeType({ description, fields, name }) {
   const timestamp = Date.now();
   const id = `custom-${slugify(name, 'knowledge-type')}-${timestamp}`;
@@ -366,6 +374,7 @@ export function createCustomKnowledgeType({ description, fields, name }) {
   };
 }
 
+// 新增字段需要避开已有 key，保证表格单元格不会互相覆盖。
 export function createCustomField(rawField, existingFields) {
   const baseKey = slugify(rawField.label, 'field');
   const usedKeys = new Set(existingFields.map((item) => item.key));
@@ -390,6 +399,7 @@ export function createCustomField(rawField, existingFields) {
   };
 }
 
+// 下一个知识 ID 基于当前类型已有行递增生成。
 export function getNextKnowledgeId(type, rows) {
   const prefix = `ki-${type.prefix}-`;
   const max = rows.reduce((currentMax, row) => {
@@ -401,6 +411,7 @@ export function getNextKnowledgeId(type, rows) {
   return `${prefix}${String(max + 1).padStart(3, '0')}`;
 }
 
+// 保存单元格前按字段类型归一化，保证表格编辑和 AI 读取结构一致。
 export function normalizeCellValue(value, fieldType) {
   if (fieldType === 'tags' || fieldType === 'multiSelect') {
     return compactTags(value);
@@ -425,6 +436,7 @@ function getDefaultFieldWidth(fieldType) {
   }[fieldType] ?? 220;
 }
 
+// 草稿归一化补齐缺失行集合，避免新建类型后页面读取空 rows。
 function normalizeDraft(data, project) {
   const fallback = project ? createDefaultDraft(project) : { types: clone(presetTypes), rows: {} };
   const types = Array.isArray(data?.types) ? data.types : fallback.types;

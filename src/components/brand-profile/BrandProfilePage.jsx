@@ -35,10 +35,12 @@ function isValidUrl(value) {
   }
 }
 
+// 品牌档案通过 JSON 比较判断是否有未保存改动。
 function valuesEqual(a, b) {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
+// 当前只校验链接字段，文本内容允许用户逐步补充。
 function validateProfile(data, t) {
   const errors = {};
 
@@ -59,10 +61,12 @@ function validateProfile(data, t) {
   return errors;
 }
 
+// 标签保存前去除首尾空格，避免同一标签出现多个空白版本。
 function normalizeTag(value) {
   return value.trim();
 }
 
+// 字段提示通过 hover 和 focus 展示，不占用表单主空间。
 function InfoHint({ text }) {
   return (
     <span className="group relative inline-flex">
@@ -80,6 +84,7 @@ function InfoHint({ text }) {
   );
 }
 
+// 表单分区统一标题、图标和提示说明。
 function SectionShell({ children, title, hint, icon: Icon, tone = 'blue', className = '' }) {
   const iconClass = {
     blue: 'bg-blue-50 text-blue-600',
@@ -183,6 +188,7 @@ function Tag({ children, disabled, onRemove, t }) {
   );
 }
 
+// 标签输入同时服务普通标签和 URL 列表，URL 模式会先校验链接格式。
 function TagInput({
   disabled,
   error,
@@ -209,6 +215,7 @@ function TagInput({
       return;
     }
 
+    // URL 列表只允许保存合法 http/https 链接。
     if (validateAsUrl && !isValidUrl(nextValue)) {
       setInputError(t.brandProfile.validation.invalidLink);
       return;
@@ -315,6 +322,7 @@ function MarketMultiSelect({ disabled, onChange, placeholder, t, testId, values 
   const ref = useRef(null);
 
   useEffect(() => {
+    // 市场下拉点击外部关闭，避免编辑多个区域时浮层残留。
     function handleClickOutside(event) {
       if (ref.current && !ref.current.contains(event.target)) {
         setOpen(false);
@@ -326,6 +334,7 @@ function MarketMultiSelect({ disabled, onChange, placeholder, t, testId, values 
   }, []);
 
   function toggleValue(value) {
+    // 已选市场再次点击即移除，保持标签和下拉选项状态一致。
     if (values.includes(value)) {
       onChange(values.filter((item) => item !== value));
       return;
@@ -460,6 +469,7 @@ function ConfirmDialog({ onContinue, onDiscard, t }) {
 }
 
 export default function BrandProfilePage({ project, t }) {
+  // savedData 是已保存版本，draftData 是当前编辑草稿。
   const [savedData, setSavedData] = useState(() => getBrandProfileDraft(project));
   const [draftData, setDraftData] = useState(savedData);
   const [editing, setEditing] = useState(false);
@@ -468,6 +478,7 @@ export default function BrandProfilePage({ project, t }) {
   const [toast, setToast] = useState(null);
 
   useEffect(() => {
+    // 切换项目时重新读取品牌档案，并退出编辑态。
     const nextData = getBrandProfileDraft(project);
     setSavedData(nextData);
     setDraftData(nextData);
@@ -490,6 +501,7 @@ export default function BrandProfilePage({ project, t }) {
   const fields = copy.fields;
 
   function updateField(field, value) {
+    // 字段修改后清除对应错误，避免用户修正后仍看到旧错误。
     setDraftData((current) => ({ ...current, [field]: value }));
 
     if (errors[field]) {
@@ -503,6 +515,7 @@ export default function BrandProfilePage({ project, t }) {
   }
 
   function handleSave() {
+    // 校验通过后写入当前项目缓存，并用保存结果同步草稿。
     const nextErrors = validateProfile(draftData, t);
     setErrors(nextErrors);
 
@@ -518,6 +531,7 @@ export default function BrandProfilePage({ project, t }) {
   }
 
   function handleCancel() {
+    // 有未保存改动时先确认，避免直接退出编辑导致草稿丢失。
     if (hasChanges) {
       setShowDiscardDialog(true);
       return;
@@ -586,6 +600,7 @@ export default function BrandProfilePage({ project, t }) {
         }
       >
         <div className="grid gap-8 xl:grid-cols-[minmax(360px,0.9fr)_minmax(620px,1.8fr)]">
+        {/* 基础信息：定义品牌主体、行业和核心市场 */}
         <SectionShell
           hint={copy.sections.basicInfo.hint}
           icon={Building2}
@@ -647,6 +662,7 @@ export default function BrandProfilePage({ project, t }) {
           </div>
         </SectionShell>
 
+        {/* 品牌事实：承载公司介绍、资质和核心优势 */}
         <SectionShell
           hint={copy.sections.brandFacts.hint}
           icon={FileText}
@@ -698,6 +714,7 @@ export default function BrandProfilePage({ project, t }) {
           </div>
         </SectionShell>
 
+        {/* 参考链接：供文章生成和品牌事实核验使用 */}
         <SectionShell
           hint={copy.sections.referenceLinks.hint}
           icon={LinkIcon}
@@ -738,6 +755,7 @@ export default function BrandProfilePage({ project, t }) {
           </div>
         </SectionShell>
 
+        {/* 品牌风格：约束后续生成内容的定位和表达边界 */}
         <SectionShell
           hint={copy.sections.brandStyle.hint}
           icon={Palette}

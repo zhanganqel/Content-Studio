@@ -41,6 +41,7 @@ const agentRoleConfig = {
   },
 };
 
+// 根据角色标题推断展示身份，兼容中文和英文任务流文案。
 function getAgentRole(agentTitle = '') {
   if (agentTitle.includes('用户') || /\buser\b/i.test(agentTitle)) return 'user';
   if (agentTitle.includes('SEO') || /strategist/i.test(agentTitle)) return 'strategist';
@@ -53,6 +54,7 @@ function getAgentRole(agentTitle = '') {
   return 'writer';
 }
 
+// 统一返回头像首字母、显示名和头像样式。
 export function getAgentDisplay(agentTitle, locale = 'zh-CN') {
   const role = getAgentRole(agentTitle);
   const config = agentRoleConfig[role];

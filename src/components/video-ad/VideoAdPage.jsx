@@ -7,6 +7,7 @@ export default function VideoAdPage({ onOpenVideoGeneration, t }) {
   const copy = t.videoAd;
 
   return (
+    /* 视频广告模块当前提供进入视频生成占位页的入口。 */
     <div className={`mx-auto max-w-[1600px] ${adaptivePageLayout.pageStack}`}>
       <PageHeader
         actions={

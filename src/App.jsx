@@ -9,10 +9,15 @@ import BlogArticleEditor from './components/blog-article/BlogArticleEditor.jsx';
 import CopilotWorkbenchPage from './components/copilot/CopilotWorkbenchPage.jsx';
 import KnowledgeFilePreviewPage from './components/knowledge-assets/KnowledgeFilePreviewPage.jsx';
 import KnowledgeSourcePreviewPage from './components/knowledge-assets/KnowledgeSourcePreviewPage.jsx';
+import ConfirmDialog from './components/ui/ConfirmDialog.jsx';
 import VideoGenerationPage from './components/video-ad/VideoGenerationPage.jsx';
 import { navSections, projects, searchScopes, userMenuItems } from './data/navigation.js';
 import { defaultLocale, messages } from './i18n/messages.js';
-import { createContentDemoData, getAiCreationTasks } from './services/blogArticleAiStore.js';
+import {
+  convertCollaborativeTaskToAuto,
+  createContentDemoData,
+  getAiCreationTasks,
+} from './services/blogArticleAiStore.js';
 import {
   getAiTaskArticleContext,
   migrateAiTaskArticleRuleStorage,
@@ -27,6 +32,7 @@ import {
 const localeStorageKey = 'content-studio-locale';
 const aiPlanningSessionStorageKey = 'content-studio-active-ai-planning-session';
 
+// 初始化界面语言，未知语言回退到默认语言包。
 function getInitialLocale() {
   if (typeof window === 'undefined') {
     return defaultLocale;
@@ -36,6 +42,7 @@ function getInitialLocale() {
   return messages[storedLocale] ? storedLocale : defaultLocale;
 }
 
+// 读取文章 AI 创作当前会话，用于刷新后恢复到对应阶段页面。
 function readAiPlanningSession() {
   if (typeof window === 'undefined') {
     return null;
@@ -49,6 +56,7 @@ function readAiPlanningSession() {
   }
 }
 
+// 保存文章 AI 创作会话，记录当前项目、任务和阶段。
 function writeAiPlanningSession(session) {
   if (typeof window === 'undefined') {
     return;
@@ -57,6 +65,7 @@ function writeAiPlanningSession(session) {
   window.localStorage.setItem(aiPlanningSessionStorageKey, JSON.stringify(session));
 }
 
+// 清除文章 AI 创作会话，避免关闭后再次进入旧阶段。
 function clearAiPlanningSession() {
   if (typeof window === 'undefined') {
     return;
@@ -65,6 +74,7 @@ function clearAiPlanningSession() {
   window.localStorage.removeItem(aiPlanningSessionStorageKey);
 }
 
+// 解析外部预览链接参数，支持资料来源和文件预览独立打开。
 function readExternalView() {
   if (typeof window === 'undefined') return null;
 
@@ -82,6 +92,7 @@ function readExternalView() {
   };
 }
 
+// 外部预览优先使用 URL 中的项目，否则进入默认项目。
 function getInitialProjectId(externalView) {
   if (externalView?.projectId && projects.some((project) => project.id === externalView.projectId)) {
     return externalView.projectId;
@@ -90,12 +101,19 @@ function getInitialProjectId(externalView) {
   return projects[0].id;
 }
 
+// 自动创作任务使用自动流程，其余任务进入协作式创作流程。
 function getTaskCreateMode(task) {
   const stage = task?.stage ?? '';
   return task?.mode === 'auto' || stage.startsWith('auto') ? 'auto' : 'collaborative';
 }
 
+// 未保存协同任务以 savedArticleId 判断，避免创建任务后误写入文章列表。
+function isUnsavedCollaborativeTask(task) {
+  return Boolean(task && getTaskCreateMode(task) === 'collaborative' && !task?.content?.savedArticleId);
+}
+
 export default function App() {
+  // 顶层状态负责当前项目、导航、浮层页面和文章 AI 创作阶段分发。
   const [externalView] = useState(readExternalView);
   const [locale, setLocale] = useState(getInitialLocale);
   const [activeProjectId, setActiveProjectId] = useState(() => getInitialProjectId(externalView));
@@ -114,6 +132,7 @@ export default function App() {
   const [blogAiOutlineContext, setBlogAiOutlineContext] = useState(null);
   const [blogAiContentContext, setBlogAiContentContext] = useState(null);
   const [blogArticleNotice, setBlogArticleNotice] = useState(null);
+  const [blogAiExitPrompt, setBlogAiExitPrompt] = useState(null);
   const [blogEditorArticle, setBlogEditorArticle] = useState(null);
   const [copilotOpen, setCopilotOpen] = useState(false);
   const [videoGenerationOpen, setVideoGenerationOpen] = useState(false);
@@ -133,6 +152,7 @@ export default function App() {
   );
   const sidebarWidth = sidebarCollapsed ? collapsedSidebarWidth : expandedSidebarWidth;
 
+  // 文章草稿规则迁移需要跟随当前项目执行，保证旧缓存可以被新页面读取。
   migrateAiTaskArticleRuleStorage(activeProject);
 
   useEffect(() => {
@@ -151,6 +171,7 @@ export default function App() {
       return;
     }
 
+    // 刷新页面后根据缓存任务恢复到策划、大纲、正文或自动创作页面。
     const session = readAiPlanningSession();
     if (!session || session.projectId !== activeProject.id) {
       return;
@@ -251,7 +272,9 @@ export default function App() {
   }, []);
 
   const openBlogAiCreate = useCallback((mode = 'collaborative') => {
+    // 新建任务会重置其他文章创作阶段，避免多个阶段页面同时持有上下文。
     setActiveItemId('blog-article');
+    setBlogAiExitPrompt(null);
     setBlogAiCreateMode(mode);
     setBlogAiRecreateContext(null);
     setBlogAiCreateOpen(true);
@@ -265,10 +288,12 @@ export default function App() {
     (task) => {
       if (!task) return;
 
+      // 重新创作使用最新任务快照，避免从列表传入的旧对象覆盖缓存中的更新。
       const latestTask = getAiCreationTasks(activeProject.id).find((item) => item.id === task.id) ?? task;
       const mode = getTaskCreateMode(latestTask);
 
       setActiveItemId('blog-article');
+      setBlogAiExitPrompt(null);
       setBlogAiCreateMode(mode);
       setBlogAiRecreateContext({
         mode,
@@ -291,6 +316,7 @@ export default function App() {
     (task) => {
       if (!task) return;
 
+      // 打开历史任务时重新取最新任务，保证阶段、产物和文章上下文一致。
       const latestTask = getAiCreationTasks(activeProject.id).find((item) => item.id === task.id) ?? task;
       const article = getAiTaskArticleContext(activeProject, latestTask);
 
@@ -305,6 +331,7 @@ export default function App() {
           : 'planning';
 
       setActiveItemId('blog-article');
+      setBlogAiExitPrompt(null);
       setBlogAiCreateOpen(false);
       setBlogAiAutoContext({ article, task: latestTask });
       setBlogAiPlanningContext(null);
@@ -321,7 +348,96 @@ export default function App() {
     [activeProject],
   );
 
+  function exitArticleCreationFlow() {
+    // 退出流程只回到博客文章页，不删除任务，也不创建文章。
+    setActiveItemId('blog-article');
+    clearAiPlanningSession();
+    setBlogAiCreateOpen(false);
+    setBlogAiAutoContext(null);
+    setBlogAiPlanningContext(null);
+    setBlogAiOutlineContext(null);
+    setBlogAiContentContext(null);
+    setBlogAiRecreateContext(null);
+  }
+
+  function getLatestAiTask(task) {
+    return getAiCreationTasks(activeProject.id).find((item) => item.id === task?.id) ?? task;
+  }
+
+  function requestCollaborativeExitPrompt({ article, task }) {
+    const latestTask = getLatestAiTask(task);
+
+    if (!isUnsavedCollaborativeTask(latestTask)) {
+      return false;
+    }
+
+    setBlogAiExitPrompt({
+      article,
+      id: Date.now(),
+      task: latestTask,
+    });
+    return true;
+  }
+
+  function handleAutoFinishCollaborativeTask() {
+    const prompt = blogAiExitPrompt;
+    if (!prompt?.task) return;
+
+    const latestTask = getLatestAiTask(prompt.task);
+    const nextTask = convertCollaborativeTaskToAuto(activeProject.id, latestTask.id) ?? {
+      ...latestTask,
+      errorMessage: '',
+      mode: 'auto',
+      stage: 'auto-generating',
+    };
+    setBlogAiExitPrompt(null);
+    setBlogArticleNotice({
+      id: Date.now(),
+      message: t.blogArticle.aiCreation.toast.convertedToAuto,
+      targetTab: 'tasks',
+      taskId: nextTask.id,
+      type: 'success',
+    });
+    exitArticleCreationFlow();
+  }
+
+  function renderCollaborativeExitPromptDialog() {
+    return blogAiExitPrompt ? (
+      <ConfirmDialog
+        key={blogAiExitPrompt.id}
+        actions={[
+          {
+            key: 'auto-finish',
+            label: t.blogArticle.aiCreation.actions.autoFinish,
+            onClick: handleAutoFinishCollaborativeTask,
+            variant: 'neutral',
+          },
+          {
+            key: 'exit',
+            label: t.blogArticle.aiCreation.actions.exit,
+            onClick: () => {
+              setBlogAiExitPrompt(null);
+              exitArticleCreationFlow();
+            },
+            variant: 'danger',
+          },
+          {
+            key: 'continue',
+            label: t.blogArticle.aiCreation.actions.continueTask,
+            onClick: () => setBlogAiExitPrompt(null),
+            variant: 'primary',
+          },
+        ]}
+        message={t.blogArticle.aiCreation.toast.unsavedExitPrompt}
+        onCancel={() => setBlogAiExitPrompt(null)}
+        testId="blog-article-collaborative-exit-dialog"
+        title={t.blogArticle.aiCreation.dialog.exitTitle}
+      />
+    ) : null;
+  }
+
   if (externalView?.view === 'knowledge-source-preview') {
+    // 外部来源预览不渲染主应用框架，只展示独立预览页。
     const task = getAiCreationTasks(activeProject.id).find((item) => item.id === externalView.taskId);
     const sourceBlock = task
       ? createContentDemoData(task, activeProject).referenceBlocks.find(
@@ -370,6 +486,7 @@ export default function App() {
         onCreated={({ article, mode, task }) => {
           setBlogAiCreateOpen(false);
           setBlogAiRecreateContext(null);
+          // 自动创作直接进入自动流程，协作式创作进入策划阶段。
           if (mode === 'auto') {
             setBlogAiPlanningContext(null);
             setBlogAiOutlineContext(null);
@@ -427,117 +544,158 @@ export default function App() {
 
   if (blogAiPlanningContext) {
     return (
-      <BlogArticleAiPlanningPage
-        article={blogAiPlanningContext.article}
-        locale={locale}
-        onBack={() => {
-          clearAiPlanningSession();
-          setBlogAiPlanningContext(null);
-          setBlogAiCreateMode('collaborative');
-          setBlogAiRecreateContext(null);
-          setBlogAiCreateOpen(true);
-        }}
-        onClose={() => {
-          setActiveItemId('blog-article');
-          clearAiPlanningSession();
-          setBlogAiPlanningContext(null);
-          setBlogArticleNotice({
-            id: Date.now(),
-            articleId: blogAiPlanningContext.article.id,
-            message: '文章创作任务已创建，文章策划已保存',
-            type: 'success',
-          });
-        }}
-        onGenerateOutline={({ article, task }) => {
-          writeAiPlanningSession({
-            articleId: article.id,
-            projectId: activeProject.id,
-            stage: 'outline',
-            taskId: task.id,
-          });
-          setBlogAiPlanningContext(null);
-          setBlogAiOutlineContext({ article, task });
-        }}
-        project={activeProject}
-        t={t}
-        task={blogAiPlanningContext.task}
-      />
+      <>
+        <BlogArticleAiPlanningPage
+          article={blogAiPlanningContext.article}
+          locale={locale}
+          onBack={() => {
+            clearAiPlanningSession();
+            setBlogAiPlanningContext(null);
+            setBlogAiCreateMode('collaborative');
+            setBlogAiRecreateContext(null);
+            setBlogAiCreateOpen(true);
+          }}
+          onClose={() => {
+            if (
+              requestCollaborativeExitPrompt({
+                article: blogAiPlanningContext.article,
+                task: blogAiPlanningContext.task,
+              })
+            ) {
+              return;
+            }
+
+            setActiveItemId('blog-article');
+            clearAiPlanningSession();
+            setBlogAiPlanningContext(null);
+            setBlogArticleNotice({
+              id: Date.now(),
+              articleId: blogAiPlanningContext.article.id,
+              message: '文章创作任务已创建，文章策划已保存',
+              type: 'success',
+            });
+          }}
+          onGenerateOutline={({ article, task }) => {
+            writeAiPlanningSession({
+              articleId: article.id,
+              projectId: activeProject.id,
+              stage: 'outline',
+              taskId: task.id,
+            });
+            setBlogAiPlanningContext(null);
+            setBlogAiOutlineContext({ article, task });
+          }}
+          project={activeProject}
+          t={t}
+          task={blogAiPlanningContext.task}
+        />
+        {renderCollaborativeExitPromptDialog()}
+      </>
     );
   }
 
   if (blogAiOutlineContext) {
     return (
-      <BlogArticleAiOutlinePage
-        article={blogAiOutlineContext.article}
-        locale={locale}
-        onBack={() => {
-          const latestTask =
-            getAiCreationTasks(activeProject.id).find((item) => item.id === blogAiOutlineContext.task.id) ??
-            blogAiOutlineContext.task;
-          writeAiPlanningSession({
-            articleId: blogAiOutlineContext.article.id,
-            projectId: activeProject.id,
-            stage: 'planning',
-            taskId: latestTask.id,
-          });
-          setBlogAiOutlineContext(null);
-          setBlogAiPlanningContext({ article: blogAiOutlineContext.article, task: latestTask });
-        }}
-        onClose={() => {
-          setActiveItemId('blog-article');
-          clearAiPlanningSession();
-          setBlogAiOutlineContext(null);
-          setBlogArticleNotice({
-            id: Date.now(),
-            articleId: blogAiOutlineContext.article.id,
-            message: '文章创作任务已创建，标题大纲已保存',
-            type: 'success',
-          });
-        }}
-        onGenerateContent={({ article, task }) => {
-          writeAiPlanningSession({
-            articleId: article.id,
-            projectId: activeProject.id,
-            stage: 'content',
-            taskId: task.id,
-          });
-          setBlogAiOutlineContext(null);
-          setBlogAiContentContext({ article, task });
-        }}
-        project={activeProject}
-        t={t}
-        task={blogAiOutlineContext.task}
-      />
+      <>
+        <BlogArticleAiOutlinePage
+          article={blogAiOutlineContext.article}
+          locale={locale}
+          onBack={() => {
+            // 从大纲返回策划时重新读取任务，保留大纲页已保存的最新状态。
+            const latestTask =
+              getAiCreationTasks(activeProject.id).find((item) => item.id === blogAiOutlineContext.task.id) ??
+              blogAiOutlineContext.task;
+            writeAiPlanningSession({
+              articleId: blogAiOutlineContext.article.id,
+              projectId: activeProject.id,
+              stage: 'planning',
+              taskId: latestTask.id,
+            });
+            setBlogAiOutlineContext(null);
+            setBlogAiPlanningContext({ article: blogAiOutlineContext.article, task: latestTask });
+          }}
+          onClose={() => {
+            if (
+              requestCollaborativeExitPrompt({
+                article: blogAiOutlineContext.article,
+                task: blogAiOutlineContext.task,
+              })
+            ) {
+              return;
+            }
+
+            setActiveItemId('blog-article');
+            clearAiPlanningSession();
+            setBlogAiOutlineContext(null);
+            setBlogArticleNotice({
+              id: Date.now(),
+              articleId: blogAiOutlineContext.article.id,
+              message: '文章创作任务已创建，标题大纲已保存',
+              type: 'success',
+            });
+          }}
+          onGenerateContent={({ article, task }) => {
+            writeAiPlanningSession({
+              articleId: article.id,
+              projectId: activeProject.id,
+              stage: 'content',
+              taskId: task.id,
+            });
+            setBlogAiOutlineContext(null);
+            setBlogAiContentContext({ article, task });
+          }}
+          project={activeProject}
+          t={t}
+          task={blogAiOutlineContext.task}
+        />
+        {renderCollaborativeExitPromptDialog()}
+      </>
     );
   }
 
   if (blogAiContentContext) {
     return (
-      <BlogArticleAiContentPage
-        article={blogAiContentContext.article}
-        locale={locale}
-        onBack={() => {
-          const latestTask =
-            getAiCreationTasks(activeProject.id).find((item) => item.id === blogAiContentContext.task.id) ??
-            blogAiContentContext.task;
-          writeAiPlanningSession({
-            articleId: blogAiContentContext.article.id,
-            projectId: activeProject.id,
-            stage: 'outline',
-            taskId: latestTask.id,
-          });
-          setBlogAiContentContext(null);
-          setBlogAiOutlineContext({ article: blogAiContentContext.article, task: latestTask });
-        }}
-        onSaveAndEdit={(savedArticle) => {
-          clearAiPlanningSession();
-          setBlogAiContentContext(null);
-          setBlogEditorArticle(savedArticle);
-        }}
-        project={activeProject}
-        t={t}
-        task={blogAiContentContext.task}
-      />
+      <>
+        <BlogArticleAiContentPage
+          article={blogAiContentContext.article}
+          locale={locale}
+          onBack={() => {
+            // 从正文返回大纲时重新读取任务，保留正文页已保存的最新状态。
+            const latestTask =
+              getAiCreationTasks(activeProject.id).find((item) => item.id === blogAiContentContext.task.id) ??
+              blogAiContentContext.task;
+            writeAiPlanningSession({
+              articleId: blogAiContentContext.article.id,
+              projectId: activeProject.id,
+              stage: 'outline',
+              taskId: latestTask.id,
+            });
+            setBlogAiContentContext(null);
+            setBlogAiOutlineContext({ article: blogAiContentContext.article, task: latestTask });
+          }}
+          onClose={() => {
+            if (
+              requestCollaborativeExitPrompt({
+                article: blogAiContentContext.article,
+                task: blogAiContentContext.task,
+              })
+            ) {
+              return;
+            }
+
+            exitArticleCreationFlow();
+          }}
+          onSaveAndEdit={(savedArticle) => {
+            clearAiPlanningSession();
+            setBlogAiContentContext(null);
+            setBlogEditorArticle(savedArticle);
+          }}
+          project={activeProject}
+          t={t}
+          task={blogAiContentContext.task}
+        />
+        {renderCollaborativeExitPromptDialog()}
+      </>
     );
   }
 
@@ -545,6 +703,7 @@ export default function App() {
     return (
       <CopilotWorkbenchPage
         activeProject={activeProject}
+        locale={locale}
         projects={projects}
         t={t}
         userMenuItems={localizedUserMenuItems}

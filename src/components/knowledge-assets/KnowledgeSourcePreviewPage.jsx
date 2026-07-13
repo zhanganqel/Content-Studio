@@ -1,5 +1,6 @@
 import { ArrowLeft, FileText } from 'lucide-react';
 
+// 文章创作引用来源的独立预览页，只展示单个来源文本块。
 export default function KnowledgeSourcePreviewPage({ block, project }) {
   return (
     <div className="min-h-screen bg-[#F7F8FB] text-[#303133]">

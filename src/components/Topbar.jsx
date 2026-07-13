@@ -16,6 +16,7 @@ const menuIcons = {
   logout: LogOut,
 };
 
+// 顶栏承载全局搜索、搜索范围下拉、Copilot 入口和用户菜单。
 export default function Topbar({
   searchQuery,
   searchScope,
@@ -33,6 +34,7 @@ export default function Topbar({
   const userRef = useRef(null);
 
   useEffect(() => {
+    // 下拉菜单使用外部点击统一关闭，避免搜索范围和用户菜单互相残留。
     function handleClickOutside(event) {
       if (scopeRef.current && !scopeRef.current.contains(event.target)) {
         setScopeMenuOpen(false);
@@ -61,6 +63,7 @@ export default function Topbar({
     >
       <div className="flex w-full items-center justify-end gap-5">
         <div className="flex w-full max-w-[520px] items-center rounded-full border border-slate-200 bg-white shadow-sm">
+          {/* 搜索范围和输入框共用同一个搜索状态，由 App 统一持有 */}
           <div ref={scopeRef} className="relative">
             <button
               data-testid="search-scope-button"
@@ -118,6 +121,7 @@ export default function Topbar({
           {t.topbar.copilot}
         </button>
 
+        {/* 用户菜单当前只负责展示入口，不在前端模拟账户切换逻辑 */}
         <div ref={userRef} className="relative">
           <button
             data-testid="user-menu-button"

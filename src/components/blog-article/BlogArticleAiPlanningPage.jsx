@@ -32,6 +32,7 @@ function getArtifactIcon(type) {
   return FileText;
 }
 
+// 已完成任务直接恢复完整播放状态，未完成任务从第一个步骤开始。
 function getInitialPlaybackState(workflow, task) {
   const alreadyCompleted = task?.stage === 'planning-completed' || task?.stage?.startsWith('outline');
 
@@ -145,6 +146,7 @@ function ArtifactCard({ artifact, onClick, selected }) {
 }
 
 function groupWorkflowTasks(tasks) {
+  // 连续相同角色的任务合并展示，减少左侧流程重复头像。
   return tasks.reduce((groups, task) => {
     const lastGroup = groups[groups.length - 1];
 
@@ -678,6 +680,7 @@ function UnsavedDialog({ copy, onClose, onDiscard }) {
 }
 
 export default function BlogArticleAiPlanningPage({ article, locale, onBack, onClose, onGenerateOutline, project, t, task }) {
+  // 策划页用播放状态控制左侧任务流，并把策划产物保存回当前任务。
   const copy = t.blogArticle.aiCreation;
   const demoData = useMemo(() => createPlanningDemoData(task, project), [project, task]);
   const workflow = demoData.workflow;
@@ -704,6 +707,7 @@ export default function BlogArticleAiPlanningPage({ article, locale, onBack, onC
   const currentTask = workflow[currentTaskIndex];
 
   useEffect(() => {
+    // 首次进入时把当前播放快照写回任务，刷新后可以恢复阶段。
     updateAiCreationTask(project.id, task.id, {
       stage: isComplete ? 'planning-completed' : isStopped ? 'planning-stopped' : 'planning',
       planning: {
@@ -726,6 +730,7 @@ export default function BlogArticleAiPlanningPage({ article, locale, onBack, onC
   }, [toast]);
 
   useEffect(() => {
+    // 未停止且未完成时，按节奏逐条展示思考文本和产物卡片。
     if (isStopped || isComplete || !currentTask) {
       return undefined;
     }
@@ -791,6 +796,7 @@ export default function BlogArticleAiPlanningPage({ article, locale, onBack, onC
   ]);
 
   useEffect(() => {
+    // 用户没有手动离开底部时，任务流自动跟随最新步骤。
     const container = workflowRef.current;
     if (!container || !autoScrollEnabled) return;
 
@@ -803,6 +809,7 @@ export default function BlogArticleAiPlanningPage({ article, locale, onBack, onC
   }, [autoScrollEnabled, completedTaskIds, currentTaskIndex, visibleArtifactIds, visibleThinkingCounts]);
 
   function handleWorkflowScroll() {
+    // 距离底部较远说明用户正在查看历史步骤，暂停自动滚动。
     const container = workflowRef.current;
     if (!container) return;
 
@@ -811,6 +818,7 @@ export default function BlogArticleAiPlanningPage({ article, locale, onBack, onC
   }
 
   function executePendingAction(action) {
+    // 待执行动作统一从这里分发，便于未保存确认后继续原动作。
     if (!action) return;
 
     if (action.type === 'select-artifact') {
@@ -834,6 +842,7 @@ export default function BlogArticleAiPlanningPage({ article, locale, onBack, onC
   }
 
   function requestAction(action) {
+    // 正在编辑策划方案时，所有离开或切换动作先进入确认流程。
     if (strategyDirty) {
       setPendingAction(action);
       return;
@@ -847,6 +856,7 @@ export default function BlogArticleAiPlanningPage({ article, locale, onBack, onC
   }
 
   function handleStopTask() {
+    // 停止任务会保留已完成步骤和当前策划内容。
     if (isStopped || isComplete) return;
 
     setIsStopped(true);
@@ -871,11 +881,13 @@ export default function BlogArticleAiPlanningPage({ article, locale, onBack, onC
   }
 
   function handleRegenerate() {
+    // 重新生成先清空策划阶段状态，再刷新页面进入初始播放。
     resetAiPlanningTask(project.id, task.id);
     window.location.reload();
   }
 
   function handleSaveStrategy() {
+    // 策划方案保存后同步任务 planning payload，供大纲阶段读取。
     const nextContent = strategyDraft.trim();
     if (!nextContent) {
       setToast({
@@ -920,6 +932,7 @@ export default function BlogArticleAiPlanningPage({ article, locale, onBack, onC
   }
 
   function goToOutline() {
+    // 进入大纲前最后一次持久化策划阶段结果。
     if (!isComplete || isStopped) return;
 
     const nextTask = updateAiCreationTask(project.id, task.id, {

@@ -8,6 +8,7 @@ function valuesEqual(a, b) {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
+// 编辑器用本地草稿和已保存草稿比较，判断关闭前是否需要确认。
 function StatusBadge({ copy, status }) {
   const classes = {
     draft: 'bg-slate-100 text-slate-600 ring-slate-200',
@@ -50,6 +51,7 @@ function ConfirmDialog({
 }
 
 export default function BlogArticleEditor({ article, onClose, project, t }) {
+  // draft 是当前编辑内容，savedDraft 是最近一次保存后的内容。
   const copy = t.blogArticle;
   const [draft, setDraft] = useState(article);
   const [savedDraft, setSavedDraft] = useState(article);
@@ -74,6 +76,7 @@ export default function BlogArticleEditor({ article, onClose, project, t }) {
   }
 
   function saveArticle() {
+    // 保存时补齐标题、更新时间和更新人，再写入文章草稿列表。
     const updatedArticle = {
       ...draft,
       title: draft.title.trim() || copy.untitledTitle,
@@ -88,6 +91,7 @@ export default function BlogArticleEditor({ article, onClose, project, t }) {
   }
 
   function requestClose() {
+    // 有未保存改动时先确认，避免直接返回丢失正文草稿。
     if (hasChanges) {
       setShowDiscardDialog(true);
       return;

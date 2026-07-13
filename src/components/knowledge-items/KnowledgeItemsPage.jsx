@@ -58,14 +58,17 @@ const toneClasses = {
   slate: 'bg-slate-100 text-slate-500 ring-slate-300',
 };
 
+// 表格状态使用深拷贝，避免草稿直接修改原始缓存对象。
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+// 知识条目用 JSON 比较判断是否存在未保存变更。
 function valuesEqual(a, b) {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
+// 空 URL 允许保存，非空 URL 必须是 http 或 https。
 function isValidUrl(value) {
   if (!value) return true;
 
@@ -77,6 +80,7 @@ function isValidUrl(value) {
   }
 }
 
+// 预设类型使用本地化名称，自定义类型显示为文件表名称。
 function getDisplayTypeName(type, copy) {
   if (type.preset) {
     return copy.presetTypes[type.id]?.name ?? type.id;
@@ -101,6 +105,7 @@ function getFieldLabel(field, type, copy) {
   return `${label}${field.required ? '*' : ''}`;
 }
 
+// 单元格展示时把数组压缩为逗号文本，供表格输入统一使用。
 function getCellValue(row, field) {
   if (field.key === 'knowledgeId') {
     return row.knowledgeId ?? '';
@@ -114,6 +119,7 @@ function getCellValue(row, field) {
   return value ?? '';
 }
 
+// 草稿行填写后，系统 ID 在保存前显示为待生成文案。
 function getDisplayCellValue(row, field, type, copy) {
   if (row.draft && field.key === 'knowledgeId' && rowHasAnyValue(row, type)) {
     return copy.generatedAfterSave;
@@ -122,6 +128,7 @@ function getDisplayCellValue(row, field, type, copy) {
   return getCellValue(row, field);
 }
 
+// 生成类 Excel 的列名，用于表头辅助识别。
 function getColumnName(index) {
   let current = index + 1;
   let name = '';
@@ -135,6 +142,7 @@ function getColumnName(index) {
   return name;
 }
 
+// 必填视图只展示系统字段和必填字段，便于快速补齐关键内容。
 function getVisibleFields(type, viewMode) {
   if (viewMode === 'required') {
     return type.fields.filter((field) => field.readOnly || field.required);
@@ -149,6 +157,7 @@ function rowHasAnyValue(row, type) {
     .some((field) => String(getCellValue(row, field)).trim());
 }
 
+// 表格底部追加空草稿行，方便连续录入新知识条目。
 function ensureDisplayRows(rows, count = blankRowCount) {
   const nextRows = clone(rows);
 
@@ -159,6 +168,7 @@ function ensureDisplayRows(rows, count = blankRowCount) {
   return nextRows;
 }
 
+// 保存前只比较真实行和已填写的草稿行，忽略空白占位行。
 function getComparisonRows(rows, type) {
   return rows
     .filter((row) => !row.draft || rowHasAnyValue(row, type))
@@ -169,6 +179,7 @@ function getComparisonRows(rows, type) {
     }));
 }
 
+// 保存前校验必填和 URL，并把草稿行转换为正式行。
 function validateAndNormalizeRows(rows, type, copy) {
   const errors = {};
   const normalizedRows = [];
@@ -268,6 +279,7 @@ function KnowledgeTypePanel({
   onToggleGroup,
   types,
 }) {
+  // 类型面板把预设类型和自定义类型分组展示。
   const presetTypes = types.filter((type) => type.preset);
   const customTypes = types.filter((type) => !type.preset);
 
@@ -361,6 +373,7 @@ function TypeGroup({ activeTypeId, copy, expanded, label, onSelectType, onToggle
 }
 
 function SheetToolbar({ copy, editing, fieldView, onFieldViewChange }) {
+  // 表格工具条展示当前编辑状态，并切换全部字段或必填字段视图。
   const fieldViewOptions = ['all', 'required'];
 
   return (
@@ -391,6 +404,7 @@ function SheetToolbar({ copy, editing, fieldView, onFieldViewChange }) {
 }
 
 function FormulaRow({ canEdit, coordinate, copy, fieldLabel, onChange, value }) {
+  // 公式行展示当前选中单元格，编辑态下可直接修改单元格值。
   return (
     <div className="flex h-10 items-center border-b border-slate-200 bg-white text-sm text-slate-400">
       <span className="flex h-full w-28 flex-none items-center border-r border-slate-200 px-5 font-semibold text-slate-500">
@@ -422,6 +436,7 @@ function KnowledgeTable({
   rows,
   type,
 }) {
+  // 表格内部维护字段视图和选中单元格，行数据由页面状态传入。
   const [fieldView, setFieldView] = useState('all');
   const [selectedCell, setSelectedCell] = useState(null);
   const visibleRows = useMemo(() => (editing ? rows : ensureRowsForBrowsing(rows)), [editing, rows]);
@@ -440,6 +455,7 @@ function KnowledgeTable({
     selectedField && type ? getFieldLabel(selectedField, type, copy).replace(/\*$/, '') : '';
 
   useEffect(() => {
+    // 当前选中单元格被筛掉或删除时，回退到第一行第一列。
     const selectedExists =
       selectedCell &&
       visibleRows.some((row) => row.id === selectedCell.rowId) &&
@@ -451,6 +467,7 @@ function KnowledgeTable({
   }, [selectedCell, type.id, visibleFields, visibleRows]);
 
   useEffect(() => {
+    // 外部聚焦知识条目时，自动选中对应行的首列。
     if (focusRowId && visibleFields[0] && visibleRows.some((row) => row.id === focusRowId)) {
       setSelectedCell({ fieldKey: visibleFields[0].key, rowId: focusRowId });
     }
@@ -576,6 +593,7 @@ function KnowledgeTable({
 }
 
 function ensureRowsForBrowsing(rows) {
+  // 浏览态也补足空行，保持表格视觉高度稳定。
   const nextRows = clone(rows);
   while (nextRows.length < 12) {
     nextRows.push(createBlankRow());
@@ -643,6 +661,7 @@ function KnowledgeTypeDrawer({
   onSave,
   sidebarWidth,
 }) {
+  // 新建类型抽屉同时配置类型信息和字段列表。
   return (
     <div
       className="fixed bottom-0 right-0 top-0 z-40 bg-slate-950/40 transition-[left] duration-200"
@@ -857,6 +876,7 @@ function FieldDialog({ copy, data, errors, onCancel, onChange, onSave }) {
 }
 
 function createDrawerField({ primary = false } = {}) {
+  // 主字段固定为必填短文本，用作自定义类型的名称字段。
   return {
     id: `field-${Date.now()}-${Math.random().toString(16).slice(2)}`,
     label: '',
@@ -868,6 +888,7 @@ function createDrawerField({ primary = false } = {}) {
 }
 
 function validateFieldList(fields, copy) {
+  // 字段列表校验名称、类型、首字段约束和重名。
   const errors = {};
   const names = new Set();
 
@@ -906,6 +927,7 @@ function validateFieldList(fields, copy) {
 }
 
 export default function KnowledgeItemsPage({ focusItemId = '', project, sidebarWidth = 300, t }) {
+  // draft 是已保存表格草稿，editRows 是当前编辑态的临时行集合。
   const [draft, setDraft] = useState(() => getKnowledgeItemDraft(project));
   const [activeTypeId, setActiveTypeId] = useState(() => getKnowledgeItemDraft(project).types[0]?.id);
   const [editing, setEditing] = useState(false);
@@ -929,6 +951,7 @@ export default function KnowledgeItemsPage({ focusItemId = '', project, sidebarW
   const copy = t.knowledgeItems;
 
   useEffect(() => {
+    // 切换项目时重新读取知识条目草稿，并退出编辑状态。
     const nextDraft = getKnowledgeItemDraft(project);
     setDraft(nextDraft);
     setActiveTypeId(nextDraft.types[0]?.id);
@@ -939,6 +962,7 @@ export default function KnowledgeItemsPage({ focusItemId = '', project, sidebarW
   }, [project]);
 
   useEffect(() => {
+    // 外部传入知识项 ID 时，切换到对应预设类型并聚焦行。
     if (!focusItemId) return;
 
     const focusedItem = project?.demoProject?.knowledgeItems?.find((item) => item.id === focusItemId);
@@ -976,6 +1000,7 @@ export default function KnowledgeItemsPage({ focusItemId = '', project, sidebarW
   const hasUnsavedTableChanges = editing && !valuesEqual(rowsForComparison, activeRows);
 
   function persist(nextDraft, message) {
+    // 所有类型、字段和行变更都通过 persist 写入当前项目草稿。
     const saved = saveKnowledgeItemDraft(project.id, nextDraft);
     setDraft(saved);
     if (message) setToast({ id: Date.now(), message, type: 'success' });
@@ -983,6 +1008,7 @@ export default function KnowledgeItemsPage({ focusItemId = '', project, sidebarW
   }
 
   function selectType(typeId) {
+    // 编辑未保存时禁止直接切换类型，先让用户确认是否丢弃。
     if (editing && hasUnsavedTableChanges) {
       setShowDiscardDialog(true);
       return;
@@ -1002,6 +1028,7 @@ export default function KnowledgeItemsPage({ focusItemId = '', project, sidebarW
   }
 
   function startEditing() {
+    // 进入编辑态时追加空白草稿行，方便直接新增内容。
     setEditing(true);
     setEditRows(ensureDisplayRows(activeRows));
     setCellErrors({});
@@ -1029,6 +1056,7 @@ export default function KnowledgeItemsPage({ focusItemId = '', project, sidebarW
   }
 
   function updateCell(rowId, fieldKey, value) {
+    // 单元格修改后清除该格错误，避免修正后仍显示旧校验状态。
     setEditRows((current) =>
       current.map((row) =>
         row.id === rowId
@@ -1054,6 +1082,7 @@ export default function KnowledgeItemsPage({ focusItemId = '', project, sidebarW
   }
 
   function saveRows() {
+    // 保存行数据前先校验并生成草稿行 ID。
     const result = validateAndNormalizeRows(editRows, activeType, copy);
     if (Object.keys(result.errors).length) {
       setCellErrors(result.errors);
@@ -1136,6 +1165,7 @@ export default function KnowledgeItemsPage({ focusItemId = '', project, sidebarW
   }
 
   function saveCustomType() {
+    // 自定义类型保存后立即切换到新类型，方便继续录入数据。
     const errors = {
       ...validateFieldList(drawerDraft.fields, copy),
     };
@@ -1186,6 +1216,7 @@ export default function KnowledgeItemsPage({ focusItemId = '', project, sidebarW
   }
 
   function saveField() {
+    // 自定义字段保存时检查重名，避免新字段覆盖已有单元格数据。
     const errors = {};
     const normalizedName = fieldDraft.label.trim().toLowerCase();
     const existingNames = new Set(activeType.fields.map((field) => field.label.trim().toLowerCase()));
@@ -1213,6 +1244,7 @@ export default function KnowledgeItemsPage({ focusItemId = '', project, sidebarW
   }
 
   function confirmDeleteField() {
+    // 删除字段会同步删除所有行中的对应单元格值。
     if (!deleteFieldTarget) return;
 
     const editableFieldCount = activeType.fields.filter((field) => !field.readOnly).length;

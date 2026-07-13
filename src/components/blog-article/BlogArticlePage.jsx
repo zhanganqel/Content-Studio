@@ -50,6 +50,7 @@ const emptyAdvancedFilters = {
 
 const taskStatusValues = ['generating', 'success', 'stopped', 'failed'];
 
+// 高级筛选默认值统一定义，清空筛选时复用同一结构。
 function hasAdvancedFilterValue(filters) {
   return (
     filters.audiencePersonaId !== 'all' ||
@@ -60,6 +61,7 @@ function hasAdvancedFilterValue(filters) {
   );
 }
 
+// AI 任务中的文章类型可能带中文说明，列表筛选只比较标准类型名。
 function normalizeArticleType(value) {
   return String(value ?? '').replace(/（.*$/, '').trim();
 }
@@ -103,6 +105,7 @@ function getTaskUpdatedBy(task) {
   return task?.updatedBy || getTaskInput(task).updatedBy || 'Angel';
 }
 
+// 根据任务 stage 推断当前展示阶段，自动流程单独归类。
 function getTaskFlowStage(task) {
   const stage = task?.stage ?? '';
   if (task?.mode === 'auto' || stage.startsWith('auto')) return 'auto';
@@ -111,6 +114,7 @@ function getTaskFlowStage(task) {
   return 'planning';
 }
 
+// 任务状态由 stage 和 errorMessage 共同决定，供历史任务列表展示。
 function getTaskGenerationStatus(task) {
   const stage = task?.stage ?? '';
   if (task?.errorMessage || stage === 'failed' || stage.endsWith('-failed')) return 'failed';
@@ -119,6 +123,7 @@ function getTaskGenerationStatus(task) {
   return 'generating';
 }
 
+// 生成进度按阶段粗略映射，不表示真实模型进度。
 function getTaskProgress(task) {
   const stage = task?.stage ?? '';
   if (stage === 'content-completed') return 100;
@@ -140,6 +145,7 @@ function getTaskStageLabel(task, copy) {
   return copy.taskList.stage.create;
 }
 
+// 文章搜索覆盖标题、受众、类型、更新人和关键词。
 function getArticleSearchText(article) {
   return [
     article.title,
@@ -153,6 +159,7 @@ function getArticleSearchText(article) {
     .toLowerCase();
 }
 
+// 任务搜索覆盖任务输入、关键词、文章类型、受众和更新人。
 function getTaskSearchText(task) {
   const input = getTaskInput(task);
   return [
@@ -247,6 +254,7 @@ function ConfirmDialog({
 }
 
 function CreationModeDialog({ copy, onCancel, onSelect }) {
+  // 创建模式决定后续进入协作式分阶段流程或自动创作流程。
   const modes = [
     {
       body: copy.creationMode.collaborativeBody,
@@ -328,6 +336,7 @@ function FilterToolbar({
   typeOptions,
   updatedByOptions,
 }) {
+  // 筛选工具栏同时服务文章列表和历史任务列表。
   return (
     <div className="flex flex-wrap items-center gap-3">
       <label className="relative block w-full sm:w-[360px]">
@@ -530,6 +539,7 @@ function ArticleCard({
 }
 
 function getTaskMeta(task, copy) {
+  // 任务摘要根据状态展示完成信息、停止原因、错误节点或当前进度。
   const status = getTaskGenerationStatus(task);
   const date = getTaskUpdatedAt(task);
 
@@ -552,70 +562,80 @@ function getTaskMeta(task, copy) {
 
 function TaskCard({
   copy,
+  highlighted = false,
   onDelete,
   onOpenProcess,
   onRecreate,
   onSaveAndEdit,
   onStop,
   onViewArticle,
+  setCardRef,
   task,
 }) {
+  // 历史任务的操作按钮由任务状态和是否已保存为文章共同决定。
   const status = getTaskGenerationStatus(task);
   const savedArticleId = getTaskSavedArticleId(task);
 
   return (
-    <ListCard
-      title={getTaskTitle(task)}
-      titleAriaLabel={getTaskTitle(task)}
-      onTitleClick={() => onOpenProcess?.(task)}
-      statusTag={<GenerationStatusBadge copy={copy} status={status} />}
-      actions={[
-        {
-          hidden: status === 'generating',
-          icon: Trash2,
-          key: 'delete',
-          label: copy.delete,
-          onClick: () => onDelete(task),
-          tone: 'danger',
-        },
-        {
-          hidden: status !== 'generating',
-          icon: CircleStop,
-          key: 'stop',
-          label: copy.taskList.actions.stop,
-          onClick: () => onStop(task),
-        },
-        {
-          hidden: status !== 'success' || Boolean(savedArticleId),
-          icon: Save,
-          key: 'saveAndEdit',
-          label: copy.taskList.actions.saveAndEdit,
-          onClick: () => onSaveAndEdit(task),
-        },
-        {
-          hidden: status !== 'success' || !savedArticleId,
-          icon: FileSearch,
-          key: 'viewArticle',
-          label: copy.taskList.actions.viewArticle,
-          onClick: () => onViewArticle(task),
-        },
-        {
-          hidden: status !== 'stopped' && status !== 'failed',
-          icon: RefreshCw,
-          key: 'recreate',
-          label: copy.taskList.actions.recreate,
-          onClick: () => onRecreate(task),
-        },
-        {
-          icon: History,
-          key: 'viewProcess',
-          label: copy.taskList.actions.viewProcess,
-          onClick: () => onOpenProcess?.(task),
-        },
-      ]}
-    >
-      <p className="text-base font-medium text-slate-500">{getTaskMeta(task, copy)}</p>
-    </ListCard>
+    <div ref={setCardRef} data-blog-article-task-id={task.id}>
+      <ListCard
+        className={
+          highlighted
+            ? '!border-blue-500 !bg-blue-50 shadow-[0_18px_34px_rgba(54,94,255,0.14)] ring-2 ring-blue-100'
+            : ''
+        }
+        title={getTaskTitle(task)}
+        titleAriaLabel={getTaskTitle(task)}
+        onTitleClick={() => onOpenProcess?.(task)}
+        statusTag={<GenerationStatusBadge copy={copy} status={status} />}
+        actions={[
+          {
+            hidden: status === 'generating',
+            icon: Trash2,
+            key: 'delete',
+            label: copy.delete,
+            onClick: () => onDelete(task),
+            tone: 'danger',
+          },
+          {
+            hidden: status !== 'generating',
+            icon: CircleStop,
+            key: 'stop',
+            label: copy.taskList.actions.stop,
+            onClick: () => onStop(task),
+          },
+          {
+            hidden: status !== 'success' || Boolean(savedArticleId),
+            icon: Save,
+            key: 'saveAndEdit',
+            label: copy.taskList.actions.saveAndEdit,
+            onClick: () => onSaveAndEdit(task),
+          },
+          {
+            hidden: status !== 'success' || !savedArticleId,
+            icon: FileSearch,
+            key: 'viewArticle',
+            label: copy.taskList.actions.viewArticle,
+            onClick: () => onViewArticle(task),
+          },
+          {
+            hidden: status !== 'stopped' && status !== 'failed',
+            icon: RefreshCw,
+            key: 'recreate',
+            label: copy.taskList.actions.recreate,
+            onClick: () => onRecreate(task),
+          },
+          {
+            icon: History,
+            key: 'viewProcess',
+            label: copy.taskList.actions.viewProcess,
+            onClick: () => onOpenProcess?.(task),
+          },
+        ]}
+      >
+        <p className="text-base font-medium text-slate-500">{getTaskMeta(task, copy)}</p>
+      </ListCard>
+    </div>
   );
 }
 
@@ -643,6 +663,7 @@ export default function BlogArticlePage({
   project,
   t,
 }) {
+  // 页面同时管理正式文章列表和 AI 历史任务列表。
   const copy = t.blogArticle;
   const [activeTab, setActiveTab] = useState('articles');
   const [articles, setArticles] = useState(() => getBlogArticleDrafts(project));
@@ -662,11 +683,14 @@ export default function BlogArticlePage({
   const [creationModeOpen, setCreationModeOpen] = useState(false);
   const [toast, setToast] = useState(null);
   const [articleFocus, setArticleFocus] = useState({ id: '', token: 0 });
+  const [taskFocus, setTaskFocus] = useState({ id: '', token: 0 });
   const articleFilterRef = useRef(null);
   const taskFilterRef = useRef(null);
   const articleCardRefs = useRef(new Map());
+  const taskCardRefs = useRef(new Map());
 
   useEffect(() => {
+    // 切换项目时重新读取文章和任务，并清空所有筛选与弹窗。
     setActiveTab('articles');
     setArticles(getBlogArticleDrafts(project));
     setTasks(getAiCreationTasks(project.id));
@@ -684,10 +708,13 @@ export default function BlogArticlePage({
     setTaskDeleteTarget(null);
     setCreationModeOpen(false);
     setArticleFocus({ id: '', token: 0 });
+    setTaskFocus({ id: '', token: 0 });
     articleCardRefs.current.clear();
+    taskCardRefs.current.clear();
   }, [project]);
 
   useEffect(() => {
+    // AI 创作页返回的通知会触发列表刷新并展示 toast。
     if (!creationNotice) {
       return;
     }
@@ -699,6 +726,16 @@ export default function BlogArticlePage({
       message: creationNotice.message,
       type: creationNotice.type ?? 'success',
     });
+    if (creationNotice.targetTab === 'tasks' && creationNotice.taskId) {
+      setActiveTab('tasks');
+      setTaskSearchQuery('');
+      setTaskStatusFilter('all');
+      setTaskAdvancedFilters({ ...emptyAdvancedFilters });
+      setDraftTaskAdvancedFilters({ ...emptyAdvancedFilters });
+      setArticleFilterOpen(false);
+      setTaskFilterOpen(false);
+      setTaskFocus({ id: creationNotice.taskId, token: creationNotice.id });
+    }
     onCreationNoticeConsumed?.(creationNotice.id);
   }, [creationNotice, onCreationNoticeConsumed, project]);
 
@@ -712,6 +749,7 @@ export default function BlogArticlePage({
   }, [toast]);
 
   useEffect(() => {
+    // 两个高级筛选弹层共用外部点击关闭逻辑。
     function handleClickOutside(event) {
       if (articleFilterOpen && articleFilterRef.current && !articleFilterRef.current.contains(event.target)) {
         setArticleFilterOpen(false);
@@ -730,6 +768,7 @@ export default function BlogArticlePage({
   }, [articleFilterOpen, taskFilterOpen]);
 
   const articleAudienceOptions = useMemo(() => {
+    // 文章受众筛选合并项目默认画像和文章中已有画像。
     const personas = project?.demoProject?.audiencePersonas ?? [];
     const seen = new Set();
     const options = [{ value: 'all', label: copy.filters.allAudiences }];
@@ -755,6 +794,7 @@ export default function BlogArticlePage({
   }, [articles, copy.filters.allAudiences, project]);
 
   const taskAudienceOptions = useMemo(() => {
+    // 任务受众筛选合并项目默认画像和历史任务中的画像。
     const personas = project?.demoProject?.audiencePersonas ?? [];
     const seen = new Set();
     const options = [{ value: 'all', label: copy.filters.allAudiences }];
@@ -828,6 +868,7 @@ export default function BlogArticlePage({
     Boolean(taskSearchQuery.trim()) || taskStatusFilter !== 'all' || hasTaskAdvancedFilters;
 
   const filteredArticles = useMemo(() => {
+    // 文章列表同时应用关键词、状态和高级筛选。
     const query = articleSearchQuery.trim().toLowerCase();
 
     return articles.filter((article) => {
@@ -858,6 +899,7 @@ export default function BlogArticlePage({
   }, [articleAdvancedFilters, articleSearchQuery, articleStatusFilter, articles]);
 
   const filteredTasks = useMemo(() => {
+    // 历史任务同时应用关键词、任务状态和高级筛选。
     const query = taskSearchQuery.trim().toLowerCase();
 
     return tasks.filter((task) => {
@@ -886,6 +928,7 @@ export default function BlogArticlePage({
   }, [taskAdvancedFilters, taskSearchQuery, taskStatusFilter, tasks]);
 
   useEffect(() => {
+    // 从任务跳转到已保存文章时，滚动并短暂高亮目标卡片。
     if (!articleFocus.id || activeTab !== 'articles') {
       return undefined;
     }
@@ -908,7 +951,32 @@ export default function BlogArticlePage({
     };
   }, [activeTab, articleFocus, filteredArticles]);
 
+  useEffect(() => {
+    // 自动完成返回任务列表时，滚动并短暂高亮被转换的任务卡片。
+    if (!taskFocus.id || activeTab !== 'tasks') {
+      return undefined;
+    }
+
+    const target = taskCardRefs.current.get(taskFocus.id);
+    if (!target) {
+      return undefined;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+    const timer = window.setTimeout(() => {
+      setTaskFocus((current) => (current.token === taskFocus.token ? { id: '', token: current.token } : current));
+    }, 2600);
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+    };
+  }, [activeTab, filteredTasks, taskFocus]);
+
   function persist(nextArticles, message, type = 'success') {
+    // 文章增删复制都通过 persist 写入当前项目缓存。
     const saved = saveBlogArticleDrafts(project.id, nextArticles);
     setArticles(saved);
 
@@ -920,6 +988,7 @@ export default function BlogArticlePage({
   }
 
   function refreshTasks(message, type = 'success') {
+    // 任务状态变化后重新读取缓存，避免列表展示旧状态。
     setTasks(getAiCreationTasks(project.id));
 
     if (message) {
@@ -1031,6 +1100,7 @@ export default function BlogArticlePage({
   }
 
   function stopTask(task) {
+    // 停止任务按当前流程阶段写入 stopped stage，并保留阶段 payload。
     const flowStage = getTaskFlowStage(task);
     const nextStage = flowStage === 'auto' ? 'auto-stopped' : `${flowStage}-stopped`;
     const payloadStage = flowStage === 'auto' ? 'content' : flowStage;
@@ -1051,6 +1121,7 @@ export default function BlogArticlePage({
   }
 
   function saveTaskAndEdit(task) {
+    // 任务保存为文章后进入编辑器，历史任务会记录已保存文章 ID。
     const { article: nextArticle } = saveAiTaskAsBlogArticle(project, task);
 
     setArticles(getBlogArticleDrafts(project));
@@ -1060,6 +1131,7 @@ export default function BlogArticlePage({
   }
 
   function viewSavedArticle(task) {
+    // 查看已保存文章会切回文章列表，清空筛选后定位目标文章。
     const savedArticleId = getTaskSavedArticleId(task);
     if (!savedArticleId) {
       return;
@@ -1088,6 +1160,7 @@ export default function BlogArticlePage({
   }
 
   function switchTab(tab) {
+    // 切换标签页时重新读取对应缓存，保证页面展示最新数据。
     if (tab === 'articles') {
       setArticles(getBlogArticleDrafts(project));
     }
@@ -1101,6 +1174,7 @@ export default function BlogArticlePage({
     setTaskFilterOpen(false);
   }
 
+  // 当前标签页决定筛选工具栏绑定文章状态还是任务状态。
   const activeFilterToolbar =
     activeTab === 'articles' ? (
       <FilterToolbar
@@ -1276,12 +1350,20 @@ export default function BlogArticlePage({
                     <TaskCard
                       key={task.id}
                       copy={copy}
+                      highlighted={taskFocus.id === task.id}
                       onDelete={setTaskDeleteTarget}
                       onOpenProcess={onOpenAiTask}
                       onRecreate={recreateTask}
                       onSaveAndEdit={saveTaskAndEdit}
                       onStop={stopTask}
                       onViewArticle={viewSavedArticle}
+                      setCardRef={(node) => {
+                        if (node) {
+                          taskCardRefs.current.set(task.id, node);
+                        } else {
+                          taskCardRefs.current.delete(task.id);
+                        }
+                      }}
                       task={task}
                     />
                   ))}

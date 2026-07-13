@@ -1,9 +1,11 @@
+// Vite 将本地文档转换为可下载或预览的资源 URL。
 const fileModules = import.meta.glob('../../../demo-data/rejin-cnc/file/*.{docx,xlsx,pdf}', {
   eager: true,
   import: 'default',
   query: '?url',
 });
 
+// Rejin CNC 的演示文件资料元数据。
 const rawRejinCncFileLibrary = [
   {
     id: 'rejin-cnc-introduce',
@@ -98,9 +100,11 @@ const rawRejinCncFileLibrary = [
 ];
 
 function resolveFileUrl(localPath) {
+  // 优先使用构建后的资源 URL，缺失时保留原路径便于排查。
   return fileModules[`../../../${localPath}`] ?? localPath;
 }
 
+// 页面和 AI 创作流程读取的文件资料库。
 export const rejinCncFileLibrary = rawRejinCncFileLibrary.map((file) => ({
   ...file,
   url: resolveFileUrl(file.localPath),

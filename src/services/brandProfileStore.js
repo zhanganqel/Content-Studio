@@ -1,6 +1,7 @@
 const storageKeyPrefix = 'content-studio-brand-profile:';
 const storageSchemaVersion = 2;
 
+// 目标市场选项作为品牌档案表单的固定候选值。
 export const marketOptions = [
   'United States',
   'Canada',
@@ -25,6 +26,7 @@ export const marketOptions = [
   'Global',
 ];
 
+// 品牌档案按项目隔离存储，并通过版本号控制 demo 数据刷新。
 function getStorageKey(projectId) {
   return `${storageKeyPrefix}${projectId}`;
 }
@@ -40,6 +42,7 @@ function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+// schemaVersion 变化时刷新 demo 品牌档案，避免旧缓存盖住新版默认内容。
 function shouldRefreshDemoBrandProfile(project, schemaVersion) {
   return Boolean(project?.demoProject) && schemaVersion !== storageSchemaVersion;
 }

@@ -40,6 +40,12 @@ import {
 } from '../../services/blogArticleAiStore.js';
 import { listChunks, listFiles } from '../../services/fileLibraryApi.js';
 import { getKnowledgeItemDraft } from '../../services/knowledgeItemStore.js';
+import { getKnowledgeSelectionData } from '../../services/knowledgeSelectionData.js';
+import {
+  createKnowledgeSelectionLabels,
+  KnowledgeFileSelectionModal,
+  KnowledgeItemSelectionModal,
+} from '../knowledge-selection/KnowledgeSelectionModals.jsx';
 
 const targetRegionOptions = [
   'Global',
@@ -183,6 +189,7 @@ function getRowValue(row, field) {
   return getDisplayValue(row.cells?.[field.key]);
 }
 
+// 从知识表草稿中拉平所有可选知识条目，供创建任务时选择。
 function flattenKnowledgeItems(draft) {
   return draft.types.flatMap((type) => {
     const rows = draft.rows[type.id] ?? [];
@@ -238,6 +245,7 @@ function KnowledgeTypeIcon({ selected, type }) {
   );
 }
 
+// 创建任务默认值来自品牌档案、受众画像、知识条目、知识资料和内容种子。
 function getInitialForm({ brandProfile, knowledgeFiles, knowledgeItems, personas, project }) {
   const seed = project?.demoProject?.contentSeeds?.find((item) => item.type === 'blog');
   const defaultPersona =
@@ -304,6 +312,7 @@ function getIdsFromItems(items) {
   return Array.isArray(items) ? items.map((item) => item?.id).filter(Boolean) : [];
 }
 
+// 重新创作会复用原任务输入，并保留当前项目可用的默认知识选择。
 function getInitialFormWithRecreateContext(defaultForm, recreateContext) {
   const input = recreateContext?.taskInput;
   if (!input || typeof input !== 'object') {
@@ -1303,14 +1312,25 @@ export default function BlogArticleAiCreateTaskPage({
   recreateContext,
   t,
 }) {
+  // 创建页只收集任务输入，真正的生成过程由后续阶段页面负责展示。
   const copy = t.blogArticle.aiCreation;
   const isAutoMode = mode === 'auto';
   const selectedLabel = (count) => (locale === 'en-US' ? `${count} selected` : `已选择 ${count} 项`);
+  const knowledgeSelectionLabels = useMemo(
+    () => createKnowledgeSelectionLabels(locale, {
+      cancel: copy.actions.cancel,
+      confirm: copy.actions.confirm,
+      knowledgeFiles: copy.fields.knowledgeAssets,
+      knowledgeItems: copy.fields.knowledgeItems,
+    }),
+    [copy, locale],
+  );
   const brandProfile = useMemo(() => getBrandProfileDraft(project), [project]);
   const personas = useMemo(() => getAudiencePersonaDrafts(project), [project]);
-  const knowledgeDraft = useMemo(() => getKnowledgeItemDraft(project), [project]);
-  const knowledgeItems = useMemo(() => flattenKnowledgeItems(knowledgeDraft), [knowledgeDraft]);
-  const knowledgeFiles = useMemo(() => listFiles(project).map((file) => getKnowledgeFileOption(project, file)), [project]);
+  const knowledgeSelectionData = useMemo(() => getKnowledgeSelectionData(project), [project]);
+  const knowledgeDraft = useMemo(() => ({ types: knowledgeSelectionData.types }), [knowledgeSelectionData.types]);
+  const knowledgeItems = knowledgeSelectionData.items;
+  const knowledgeFiles = knowledgeSelectionData.files;
   const initialForm = useMemo(
     () =>
       getInitialFormWithRecreateContext(
@@ -1328,6 +1348,7 @@ export default function BlogArticleAiCreateTaskPage({
   const [modelOpen, setModelOpen] = useState(false);
 
   useEffect(() => {
+    // 项目或重新创作上下文变化时，重置表单和脏数据基准。
     const normalizedInitialForm = {
       ...initialForm,
       articleLanguage: normalizeArticleLanguage(initialForm.articleLanguage),
@@ -1346,11 +1367,13 @@ export default function BlogArticleAiCreateTaskPage({
     : aiReferenceSearchAnalyses;
 
   function updateField(field, value) {
+    // 字段更新后清除对应错误，语言字段统一压缩为 EN/CN。
     setForm((current) => ({ ...current, [field]: field === 'articleLanguage' ? normalizeArticleLanguage(value) : value }));
     setErrors((current) => ({ ...current, [field]: undefined }));
   }
 
   function validate() {
+    // 校验失败时滚动到首个错误字段，减少长表单定位成本。
     const nextErrors = {};
     const requiredFields = [
       ['targetRegion', copy.fields.targetRegion],
@@ -1393,6 +1416,7 @@ export default function BlogArticleAiCreateTaskPage({
   }
 
   function handleBack() {
+    // 表单有改动时先确认离开，避免任务输入草稿丢失。
     if (hasDirtyChanges) {
       setLeaveConfirmOpen(true);
       return;
@@ -1402,11 +1426,13 @@ export default function BlogArticleAiCreateTaskPage({
   }
 
   function handleAnalyze() {
+    // 参考文章分析当前使用本地模拟延迟，后续可替换为真实检索。
     setAnalyzing(true);
     window.setTimeout(() => setAnalyzing(false), 650);
   }
 
   function toggleReference(result) {
+    // 搜索结果重复点击会从参考文章列表中移除。
     const exists = form.referenceArticles.some((item) => item.url === result.url);
     updateField(
       'referenceArticles',
@@ -1425,6 +1451,7 @@ export default function BlogArticleAiCreateTaskPage({
   }
 
   function updateReferenceUrlList(urls) {
+    // 手动输入 URL 时尽量保留已有标题和来源标记。
     updateField(
       'referenceArticles',
       urls.map((url, index) => ({
@@ -1437,6 +1464,7 @@ export default function BlogArticleAiCreateTaskPage({
   }
 
   function handleCreateTask() {
+    // 创建任务时固化当前选中的受众、知识条目和资料快照。
     if (!validate()) {
       return;
     }
@@ -1823,9 +1851,9 @@ export default function BlogArticleAiCreateTaskPage({
       </footer>
 
       {modal === 'knowledge' ? (
-        <KnowledgeModal
-          copy={copy}
+        <KnowledgeItemSelectionModal
           items={knowledgeItems}
+          labels={knowledgeSelectionLabels}
           locale={locale}
           onClose={() => setModal(null)}
           onConfirm={(ids) => {
@@ -1837,9 +1865,9 @@ export default function BlogArticleAiCreateTaskPage({
         />
       ) : null}
       {modal === 'asset' ? (
-        <KnowledgeFileModal
-          copy={copy}
+        <KnowledgeFileSelectionModal
           files={knowledgeFiles}
+          labels={knowledgeSelectionLabels}
           locale={locale}
           onClose={() => setModal(null)}
           onConfirm={(ids) => {

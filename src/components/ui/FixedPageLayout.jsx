@@ -1,3 +1,4 @@
+// 固定页面布局用于顶部控制区不滚动、主体区域独立滚动的管理页。
 export default function FixedPageLayout({
   bodyClassName = '',
   children,
@@ -6,6 +7,7 @@ export default function FixedPageLayout({
   header,
   scrollRef,
 }) {
+  // 外层控制整体高度，body 区域单独承担滚动，避免页面双滚动条。
   const classes = [
     'mx-auto flex h-full min-h-0 max-w-[1600px] flex-col',
     className,

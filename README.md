@@ -106,7 +106,7 @@ studio/
 │   ├── README.md
 │   ├── component-guidelines.md
 │   ├── local-codex-service.md
-│   └── seo-geo-copilot-routing-plan.md
+│   └── ai-workflow-ui-components.md
 ├── demo-data/
 │   ├── gowe-group/
 │   └── rejin-cnc/
@@ -143,7 +143,9 @@ studio/
 - `docs/DESIGN.md` {#设计系统规范:定义颜色、字号、组件、图标、Figma 和开发一致性规则}。
 - `docs/component-guidelines.md` {#组件规范:说明共享 UI 组件的适用边界和新增规则}。
 - `docs/local-codex-service.md` {#前后端联调说明:记录 backend 启动、接口、环境变量和排障方式}。
-- `docs/seo-geo-copilot-routing-plan.md` {#SEO/GEO 路由规划:说明 Copilot 任务路由、上下文和外部数据 Provider 规划}。
+- `/Users/zhangqiqi/Desktop/content-studio-backend/docs/copilot-event-architecture.md` {#Copilot任务项、工作流与SSE事件的全局架构说明}。
+- `/Users/zhangqiqi/Desktop/content-studio-backend/docs/sse-events.md` {#后端SSE事件、发送方、消费方和顺序说明}。
+- `/Users/zhangqiqi/Desktop/content-studio-backend/docs/blog-article/blog-article-routing-events.md` {#博客任务、工作流与路由文档索引}。
 - `scripts/build-gowe-group-demo.mjs` {#GOWE 演示数据构建脚本:生成 GOWE Group 前端 demo 数据入口}。
 - `scripts/collect-rejin-cnc-images.mjs` {#Rejin 图片素材采集脚本:整理 Rejin CNC 演示图片资源}。
 

@@ -1,6 +1,7 @@
 import { goweGroupAssetLibrary } from './goweGroupAssetLibrary.js';
 import { goweGroupFileLibrary } from './goweGroupFileLibrary.js';
 
+// GOWE 的完整演示项目数据，驱动品牌档案、知识库和内容创作默认内容。
 export const goweGroupProject = {
   "id": "gowe-group",
   "name": "GOWE Group",

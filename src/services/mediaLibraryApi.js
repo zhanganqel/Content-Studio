@@ -5,6 +5,7 @@ const imageExtensions = new Set(['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg']);
 const videoExtensions = new Set(['mp4', 'webm', 'mov']);
 const uploadedMediaBlobStore = new Map();
 
+// 媒体库支持项目对象和项目 ID 两种入参，页面调用可以保持简洁。
 function getProjectId(projectOrId) {
   return typeof projectOrId === 'string' ? projectOrId : projectOrId?.id ?? 'default';
 }
@@ -64,6 +65,7 @@ function getAssetType(fileType) {
   return videoExtensions.has(fileType) ? 'video' : 'image';
 }
 
+// 上传文件的 blob 只保存在当前浏览器会话，元数据写入 localStorage。
 function normalizeMediaAsset(asset, projectId, state, source = 'demo') {
   const tags = state.tagOverrides[asset.id] ?? asset.tags ?? [];
   const uploadedBlob = source === 'uploaded' ? uploadedMediaBlobStore.get(asset.id) : null;
@@ -80,6 +82,7 @@ function normalizeMediaAsset(asset, projectId, state, source = 'demo') {
   };
 }
 
+// 列表由 demo 媒体和当前会话仍可访问的上传媒体合并得到。
 export function listMediaAssets(projectOrId) {
   const projectId = getProjectId(projectOrId);
   const state = readState(projectId);
@@ -93,6 +96,7 @@ export function listMediaAssets(projectOrId) {
   return [...demoAssets, ...uploadedAssets];
 }
 
+// 上传时校验文件类型和大小，并为浏览器预览创建 object URL。
 export async function uploadMediaFiles(projectOrId, files) {
   const projectId = getProjectId(projectOrId);
   const state = readState(projectId);
@@ -145,6 +149,7 @@ export async function uploadMediaFiles(projectOrId, files) {
   return uploaded;
 }
 
+// 标签覆盖只写入本地状态，不修改原始 demo 媒体数据。
 export function updateMediaAssetTags(projectOrId, assetId, tags) {
   const projectId = getProjectId(projectOrId);
   const state = readState(projectId);
@@ -153,6 +158,7 @@ export function updateMediaAssetTags(projectOrId, assetId, tags) {
   return listMediaAssets(projectOrId).find((asset) => asset.id === assetId) ?? null;
 }
 
+// 只能删除上传媒体，demo 媒体通过保护错误阻止误删。
 export function deleteUploadedMediaAsset(projectOrId, assetId) {
   const projectId = getProjectId(projectOrId);
   const state = readState(projectId);

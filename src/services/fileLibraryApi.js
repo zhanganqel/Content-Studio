@@ -9,6 +9,7 @@ const allowedExtensions = new Set(['docx', 'xlsx', 'xls', 'pdf', 'txt', 'md']);
 const uploadedBlobStore = new Map();
 let pdfjsLibPromise = null;
 
+// 文件处理状态供资料库列表、分块页和预览页共用。
 export const fileProcessingStatuses = {
   pending: 'pending',
   processing: 'processing',
@@ -28,6 +29,7 @@ function getStorageKey(projectId) {
   return `${storagePrefix}:v${storageVersion}:${projectId}`;
 }
 
+// 文件库状态保存上传文件、标签覆盖、处理状态和分块内容。
 function readState(projectId) {
   if (typeof window === 'undefined') {
     return createEmptyState();
@@ -80,6 +82,7 @@ function inferCategory(fileType) {
   return 'text';
 }
 
+// 文件元数据归一化后，demo 文件和上传文件可以共用列表卡片。
 function normalizeFile(file, projectId, state, source = 'demo') {
   const tags = state.tagOverrides[file.id] ?? file.tags ?? [];
   const storedStatus = state.statuses[file.id];
@@ -101,6 +104,7 @@ function normalizeFile(file, projectId, state, source = 'demo') {
   };
 }
 
+// 文件列表由 demo 文件和当前浏览器会话仍可访问的上传文件组成。
 export function listFiles(projectOrId) {
   const projectId = getProjectId(projectOrId);
   const state = readState(projectId);
@@ -112,6 +116,7 @@ export function listFiles(projectOrId) {
   return [...demoFiles, ...uploadedFiles];
 }
 
+// 上传文件只保存元数据到 localStorage，原始文件保存在内存 Map 中。
 export async function uploadFiles(projectOrId, files) {
   const projectId = getProjectId(projectOrId);
   const state = readState(projectId);
@@ -164,6 +169,7 @@ function isValidHttpUrl(value) {
   }
 }
 
+// 网页解析入口保留校验和错误码，实际解析服务接入后替换当前占位错误。
 export async function parseWebPage(projectOrId, url) {
   getProjectId(projectOrId);
   const normalizedUrl = String(url ?? '').trim();
@@ -177,6 +183,7 @@ export async function parseWebPage(projectOrId, url) {
   });
 }
 
+// 文件标签使用覆盖表保存，不直接修改 demo 文件。
 export function updateFileTags(projectOrId, fileId, tags) {
   const projectId = getProjectId(projectOrId);
   const state = readState(projectId);
@@ -185,6 +192,7 @@ export function updateFileTags(projectOrId, fileId, tags) {
   return listFiles(projectOrId).find((file) => file.id === fileId) ?? null;
 }
 
+// 只能删除上传文件，demo 文件通过保护错误阻止误删。
 export function deleteUploadedFile(projectOrId, fileId) {
   const projectId = getProjectId(projectOrId);
   const state = readState(projectId);
@@ -201,6 +209,7 @@ export function deleteUploadedFile(projectOrId, fileId) {
   writeState(projectId, state);
 }
 
+// 文件处理先标记 processing，再抽取文本并写入分块；失败时保留可浏览的兜底分块。
 export async function processFile(projectOrId, fileId, options = {}) {
   const projectId = getProjectId(projectOrId);
   const state = readState(projectId);
@@ -237,6 +246,7 @@ export async function reprocessFile(projectOrId, fileId) {
   return processFile(projectOrId, fileId, { preserveOnFailure: true });
 }
 
+// 分块列表优先使用本地处理结果，未处理时使用 seed 分块兜底。
 export function listChunks(projectOrId, fileId) {
   const projectId = getProjectId(projectOrId);
   const state = readState(projectId);
@@ -248,6 +258,7 @@ export function listChunks(projectOrId, fileId) {
   return file ? createSeedChunks(file) : [];
 }
 
+// 保存单个分块后把文件状态置为 chunked，确保列表状态和内容一致。
 export function saveChunk(projectOrId, fileId, chunkId, patch) {
   const projectId = getProjectId(projectOrId);
   const state = readState(projectId);
@@ -281,6 +292,7 @@ export function saveChunks(projectOrId, fileId, chunks) {
   return state.chunks[fileId];
 }
 
+// PDF.js 只在需要处理 PDF 时懒加载，避免初始化页面时加载 worker。
 async function getPdfjsLib() {
   if (!pdfjsLibPromise) {
     pdfjsLibPromise = import('pdfjs-dist').then((module) => {
@@ -292,6 +304,7 @@ async function getPdfjsLib() {
   return pdfjsLibPromise;
 }
 
+// 根据文件类型抽取纯文本，后续统一交给分块逻辑处理。
 async function extractTextFromFile(file) {
   const blob = await loadBlob(file);
   const arrayBuffer = await blob.arrayBuffer();
@@ -335,6 +348,7 @@ async function extractTextFromFile(file) {
   return new TextDecoder('utf-8').decode(arrayBuffer);
 }
 
+// 上传文件从内存读取，demo 文件通过 URL 拉取原始内容。
 async function loadBlob(file) {
   if (file.source === 'uploaded') {
     const uploadedFile = uploadedBlobStore.get(file.id);
@@ -357,6 +371,7 @@ async function loadBlob(file) {
   return await response.blob();
 }
 
+// 将抽取文本按段落聚合成长度稳定的知识分块。
 function buildChunks(file, text) {
   const normalizedText = String(text ?? '').replace(/\r/g, '').trim();
   if (!normalizedText) {
@@ -382,6 +397,7 @@ function buildChunks(file, text) {
   return chunks.map((chunkText, index) => createChunk(file, chunkText, index));
 }
 
+// 原始文件未解析前提供 seed 分块，保证演示页面可浏览。
 function createSeedChunks(file) {
   const sourceUrls = (file.sourceUrls ?? []).join('\n');
   const seedText = [

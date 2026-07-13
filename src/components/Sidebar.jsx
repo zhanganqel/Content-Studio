@@ -20,6 +20,7 @@ const sectionIcons = {
   'growth-dashboard': ChartNoAxesCombined,
 };
 
+// 根据项目名称生成缩写，供折叠侧栏的项目入口展示。
 function getProjectInitials(name = '') {
   const words = name
     .replace(/[^a-zA-Z0-9\s]/g, ' ')
@@ -37,6 +38,7 @@ function getProjectInitials(name = '') {
     .toUpperCase();
 }
 
+// 折叠侧栏只显示图标时，用 tooltip 保留入口含义。
 function SidebarIconTooltip({ children, label }) {
   return (
     <span className="group relative inline-flex">
@@ -48,6 +50,7 @@ function SidebarIconTooltip({ children, label }) {
   );
 }
 
+// 侧栏负责项目切换、导航展开、折叠态浮层和语言设置入口。
 export default function Sidebar({
   activeItemId,
   activeProject,
@@ -72,6 +75,7 @@ export default function Sidebar({
   const sectionMenuCloseTimerRef = useRef(null);
 
   useEffect(() => {
+    // 项目菜单和设置菜单都通过外部点击关闭，避免浮层残留。
     function handleClickOutside(event) {
       if (projectMenuRef.current && !projectMenuRef.current.contains(event.target)) {
         setProjectMenuOpen(false);
@@ -87,6 +91,7 @@ export default function Sidebar({
   }, []);
 
   useEffect(() => {
+    // 切换折叠状态时关闭所有临时浮层，保证新布局从稳定状态开始。
     setProjectMenuOpen(false);
     setSettingsOpen(false);
     setHoveredSectionId(null);
@@ -184,6 +189,7 @@ export default function Sidebar({
         ref={projectMenuRef}
         className={`relative ${sidebarCollapsed ? 'mb-6 flex justify-center' : 'mb-7'}`}
       >
+        {/* 项目切换器在展开态展示项目描述，折叠态只展示项目缩写 */}
         <button
           data-testid={sidebarCollapsed ? 'collapsed-project-switcher' : 'project-switcher'}
           className={
@@ -266,6 +272,7 @@ export default function Sidebar({
 
             if (sidebarCollapsed) {
               return (
+                /* 折叠态通过悬浮菜单展示二级导航，避免侧栏宽度变化。 */
                 <section
                   key={section.id}
                   className="relative flex justify-center"
@@ -338,6 +345,7 @@ export default function Sidebar({
             }
 
             return (
+              /* 展开态直接展示可折叠分组和二级导航项。 */
               <section key={section.id}>
                 <button
                   data-testid={`nav-section-${section.id}`}
@@ -392,6 +400,7 @@ export default function Sidebar({
       </nav>
 
       <div ref={settingsRef} className={`relative mt-7 ${sidebarCollapsed ? 'flex justify-center' : ''}`}>
+        {/* 设置菜单当前只承载界面语言选择 */}
         {settingsOpen ? (
           <div
             className={`absolute z-50 rounded-lg border border-slate-700 bg-slate-900 p-3 shadow-menu ${

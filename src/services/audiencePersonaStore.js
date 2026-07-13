@@ -1,6 +1,7 @@
 const storageKeyPrefix = 'content-studio-audience-personas:';
 const storageSchemaVersion = 3;
 
+// 画像表单选项集中维护，页面只负责渲染和保存。
 export const organizationTypeOptions = [
   'B2B Company',
   'Distributor',
@@ -67,6 +68,7 @@ function getStorageKey(projectId) {
   return `${storageKeyPrefix}${projectId}`;
 }
 
+// 保存画像时写入 schemaVersion，默认数据变化后可触发刷新。
 function serializePersonas(personas) {
   return JSON.stringify({
     schemaVersion: storageSchemaVersion,
@@ -78,6 +80,7 @@ function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
+// demo 画像字段不足时使用统一兜底结构，保证表单字段完整。
 function fallbackPersonaFromDemo(persona, index) {
   return {
     id: persona.id ?? `persona-${index + 1}`,
@@ -101,6 +104,7 @@ function fallbackPersonaFromDemo(persona, index) {
   };
 }
 
+// 根据项目 demo 数据生成默认画像，并用模板补齐业务细节。
 function getDemoPersonas(project) {
   const demoPersonas = project?.demoProject?.audiencePersonas ?? [];
 
@@ -279,6 +283,7 @@ function getDemoPersonas(project) {
     },
   };
 
+  // 先以 demo 数据为底，再用项目模板覆盖更完整的画像字段。
   const mapped = demoPersonas.map((persona, index) => ({
     ...fallbackPersonaFromDemo(persona, index),
     ...(templates[persona.id] ?? {}),
@@ -295,6 +300,7 @@ function getDemoPersonas(project) {
     'project-engineering-manager',
     'infrastructure-developer-epc-lead',
   ];
+  // 默认只展示前四个优先画像，避免初始列表过长。
   const selectedPersonas = preferredOrder
     .map((id) => mapped.find((persona) => persona.id === id))
     .filter(Boolean);
@@ -302,6 +308,7 @@ function getDemoPersonas(project) {
   return (selectedPersonas.length ? selectedPersonas : mapped).slice(0, 4);
 }
 
+// 识别旧版中文自动生成画像，用于一次性迁移到新版 demo 画像。
 function isLegacyGeneratedPersonaSet(personas) {
   if (!Array.isArray(personas) || personas.length !== 3) {
     return false;
@@ -323,6 +330,7 @@ function isLegacyGeneratedPersonaSet(personas) {
   );
 }
 
+// 旧缓存为空或命中旧版生成规则时，重新注入当前项目默认画像。
 function shouldMigrateLegacyPersonas(personas, project) {
   if (isLegacyGeneratedPersonaSet(personas)) {
     return true;
@@ -331,6 +339,7 @@ function shouldMigrateLegacyPersonas(personas, project) {
   return Boolean(project?.demoProject) && personas.length === 0;
 }
 
+// schemaVersion 变化或默认画像数量不足时刷新 demo 画像。
 function shouldRefreshDemoPersonas(personas, project, schemaVersion) {
   if (!project?.demoProject) {
     return false;
@@ -339,6 +348,7 @@ function shouldRefreshDemoPersonas(personas, project, schemaVersion) {
   return schemaVersion !== storageSchemaVersion || personas.length < 3;
 }
 
+// 创建空画像草稿，供新建抽屉和复制流程复用。
 export function createEmptyAudiencePersona() {
   return {
     id: '',
@@ -363,6 +373,7 @@ export function createDefaultAudiencePersonas(project) {
   return getDemoPersonas(project);
 }
 
+// 读取画像草稿时兼容旧数组格式，并处理 demo 默认数据刷新。
 export function getAudiencePersonaDrafts(project) {
   if (typeof window === 'undefined') {
     return createDefaultAudiencePersonas(project);
@@ -409,6 +420,7 @@ export function getAudiencePersonaDrafts(project) {
   }
 }
 
+// 保存画像草稿只影响当前项目的 localStorage key。
 export function saveAudiencePersonaDrafts(projectId, personas) {
   if (typeof window === 'undefined') {
     return personas;

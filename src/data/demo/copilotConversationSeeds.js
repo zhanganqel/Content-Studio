@@ -1,11 +1,16 @@
-export const copilotDemoSeedVersion = 1;
+// 种子版本用于判断默认 Copilot 会话是否需要刷新。
+import { rejinCopilotUiDemoSeed } from './rejinCopilotUiDemoSeed.js';
 
+export const copilotDemoSeedVersion = 3;
+
+// Rejin CNC 默认会话 ID，保持消息、产物和来源之间可关联。
 const rejinConversationIds = {
   article: 'rejin-cnc-demo-conv-article',
   cluster: 'rejin-cnc-demo-conv-keywords',
   planning: 'rejin-cnc-demo-conv-planning',
 };
 
+// Rejin CNC 默认产物 ID，供消息引用和右侧产物面板使用。
 const rejinArtifactIds = {
   draft: 'rejin-cnc-demo-artifact-draft',
   keyword: 'rejin-cnc-demo-artifact-keywords',
@@ -13,6 +18,7 @@ const rejinArtifactIds = {
   revision: 'rejin-cnc-demo-artifact-revision',
 };
 
+// Rejin CNC 默认消息 ID，保证历史对话顺序稳定。
 const rejinMessageIds = {
   articleAssistantDraft: 'rejin-cnc-demo-message-article-assistant-draft',
   articleAssistantOutline: 'rejin-cnc-demo-message-article-assistant-outline',
@@ -28,6 +34,7 @@ const rejinMessageIds = {
   planningUserTwo: 'rejin-cnc-demo-message-planning-user-two',
 };
 
+// Rejin CNC 项目的默认 Copilot 会话、消息和产物数据。
 const rejinSeed = {
   artifacts: [
     {
@@ -409,18 +416,21 @@ Position 5-axis CNC machining as a setup-reduction and geometry-access solution 
   ],
 };
 
+// GOWE 项目的默认会话 ID。
 const goweConversationIds = {
   article: 'gowe-group-demo-conv-article',
   cluster: 'gowe-group-demo-conv-keywords',
   planning: 'gowe-group-demo-conv-planning',
 };
 
+// GOWE 项目的默认产物 ID。
 const goweArtifactIds = {
   draft: 'gowe-group-demo-artifact-draft',
   keyword: 'gowe-group-demo-artifact-keywords',
   outline: 'gowe-group-demo-artifact-outline',
 };
 
+// GOWE 项目的默认 Copilot 会话、消息和产物数据。
 const goweSeed = {
   artifacts: [
     {
@@ -613,10 +623,17 @@ A suitable ringlock scaffolding solution starts with project requirements and en
 
 const seedByProject = {
   'gowe-group': goweSeed,
-  'rejin-cnc': rejinSeed,
+  'rejin-cnc': {
+    artifacts: [...rejinSeed.artifacts, ...rejinCopilotUiDemoSeed.artifacts],
+    conversations: [...rejinSeed.conversations, ...rejinCopilotUiDemoSeed.conversations],
+    messages: [...rejinSeed.messages, ...rejinCopilotUiDemoSeed.messages],
+    runs: [...rejinSeed.runs, ...rejinCopilotUiDemoSeed.runs],
+    sources: [...rejinSeed.sources, ...rejinCopilotUiDemoSeed.sources],
+  },
 };
 
 export function getCopilotConversationSeed(projectId) {
+  // 返回深拷贝，避免默认种子被页面状态修改。
   const seed = seedByProject[projectId];
   return seed ? JSON.parse(JSON.stringify(seed)) : null;
 }

@@ -1,3 +1,4 @@
+// 只截取修订目标需要的产物字段，避免把完整会话状态传给后端。
 export function createTargetArtifactSnapshot(artifact) {
   if (!artifact) return undefined;
 
