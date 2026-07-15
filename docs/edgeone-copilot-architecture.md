@@ -84,6 +84,8 @@ idle -> running -> completed
 
 ## 环境与部署
 
+- `@openai/agents`{OpenAI Agent 编排 SDK}固定为 `0.11.4`，与 EdgeOne OpenAI Agents 官方模板验证版本保持一致。只有本地与生产环境的 Agent 流式响应都通过后，才能升级该依赖。
+
 服务端环境变量只配置在 EdgeOne 项目或本地忽略的 `.env` {-本地服务端密钥文件}：
 
 - `AI_GATEWAY_API_KEY` {-模型网关密钥}。

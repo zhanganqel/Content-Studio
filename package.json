@@ -11,7 +11,7 @@
     "typecheck:edgeone": "tsc --noEmit -p tsconfig.edgeone.json"
   },
   "dependencies": {
-    "@openai/agents": "^0.11.4",
+    "@openai/agents": "0.11.4",
     "@vitejs/plugin-react": "^5.0.0",
     "lucide-react": "^0.475.0",
     "mammoth": "^1.12.0",
