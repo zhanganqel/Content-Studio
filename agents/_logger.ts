@@ -1,6 +1,4 @@
-/**
- * Shared logger factory — private module (starts with _), not mapped as a route.
- */
+// 私有日志模块不会映射为公开路由。
 export function createLogger(tag: string) {
   return {
     log(...args: unknown[]) {

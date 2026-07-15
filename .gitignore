@@ -1,41 +1,15 @@
-# Dependencies
-node_modules/
-.venv/
-
-# Build outputs
-dist/
-
-# EdgeOne generated files
-.edgeone/
-.edgeone.zip
-
-# Environment variables
-.env
-agents-python/.env
-agents-python/chat/.env
-
-# OS
+node_modules
+dist
 .DS_Store
-Thumbs.db
+.env
+.env.*
+!.env.example
+*.local
+.vite
+.tmp
+.pnpm-store
 
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-.codegraph
-
-# Internal planning docs
-plan/
-
-# Python
-__pycache__/
-*.py[cod]
-*.egg-info/
-
-# Local backups
-agents-backup/
-
-# AI assistant local instructions
-CLAUDE.md
-AGENTS.md
+# Tencent Cloud EdgeOne
+.env
+.edgeone/*
+.tef_dist/*

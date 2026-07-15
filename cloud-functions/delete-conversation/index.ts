@@ -1,24 +1,4 @@
-/**
- * Delete-conversation handler — EdgeOne Makers Node Function
- * =========================================================
- *
- * File path cloud-functions/delete-conversation/index.ts maps to
- * **POST /delete-conversation**.
- *
- * Permanently deletes an entire conversation via
- * `context.agent.store.deleteConversation({ conversationId })`. Removes the
- * message index, conversation metadata and the global conversation index —
- * irreversible.
- *
- * Requires `user_id` (or `userId`) so we don't accidentally delete a
- * conversation that doesn't belong to the requesting browser.
- *
- * Following the official EdgeOne Makers Node Functions docs:
- *   - export `onRequestPost` for POST handlers
- *   - read JSON body via `await context.request.json()`
- *   - return a `Response` object
- *   https://pages.edgeone.ai/document/node-functions
- */
+// 删除指定浏览器用户下的 EdgeOne 会话及其消息索引。
 
 import { createLogger } from '../_logger';
 

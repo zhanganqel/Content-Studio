@@ -1,24 +1,5 @@
 /**
- * History handler — EdgeOne Makers Node Function
- * ==============================================
- *
- * File path cloud-functions/history/index.ts maps to **POST /history**.
- *
- * Reads conversation history from `context.agent.store.getMessages()` and
- * returns it to the frontend for restoring the chat window after a page
- * refresh.
- *
- * The chat handler writes a user-index copy for the sidebar, while the
- * OpenAI Agents SDK session writes the same user input for model memory.
- * This handler normalizes SDK records, merges same-run assistant fragments,
- * and folds adjacent duplicate bubbles so refresh rehydrates one visible
- * user message per turn.
- *
- * Following the official EdgeOne Makers Node Functions docs:
- *   - export `onRequestPost` for POST handlers
- *   - read JSON body via `await context.request.json()`
- *   - return a `Response` object
- *   https://pages.edgeone.ai/document/node-functions
+ * 从 EdgeOne 会话存储恢复消息，并合并同一运行的助手分片和相邻重复消息。
  */
 
 import { createLogger } from '../_logger';
@@ -66,17 +47,17 @@ function getConversationId(context: any, body: Record<string, unknown>): string 
   const fromBody = body.conversation_id ?? body.conversationId;
   if (typeof fromBody === 'string' && fromBody.trim()) return fromBody.trim();
 
-  // Backwards-compat: also accept the makers-conversation-id header used by /chat.
+  // 兼容 /chat 使用的会话绑定请求头。
   try {
     const headerValue = context?.request?.headers?.get?.('makers-conversation-id');
     if (typeof headerValue === 'string' && headerValue.trim()) return headerValue.trim();
   } catch {
-    /* noop */
+    // 请求头不可读时回退到请求体。
   }
   return '';
 }
 
-// ── Content extraction ──────────────────────────────────────
+// 统一提取不同消息结构中的文本内容。
 
 function contentToText(content: unknown): string {
   if (typeof content === 'string') return content;
@@ -171,7 +152,6 @@ function dedupeAdjacent(messages: FrontendMessage[]): FrontendMessage[] {
   return deduped;
 }
 
-// ── Handler ─────────────────────────────────────────────────
 
 export async function onRequestPost(context: any): Promise<Response> {
   const requestStartTime = Date.now();

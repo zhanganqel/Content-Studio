@@ -1,18 +1,6 @@
 /**
- * Stop handler — EdgeOne Makers
- * ========================================
- *
- * File path agents/chat/stop.ts maps to **POST /chat/stop**
- *
- * Aborts the active agent run for the given conversationId.
- * The runtime sets the AbortSignal on the target conversation,
- * which breaks the for-await loop in index.ts and releases
- * the upstream LLM connection.
- *
- * IMPORTANT: The stop request must NOT carry the same
- * `makers-conversation-id` header as the chat request,
- * otherwise the runtime overwrites the chat's signal.
- * The target conversation_id is passed only via request body.
+ * 中止指定会话的活动 Agent 运行。
+ * 停止请求只通过请求体传递 conversation_id，不能携带会话绑定请求头。
  */
 
 import { createLogger } from '../_logger';

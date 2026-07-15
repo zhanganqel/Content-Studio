@@ -1,29 +1,4 @@
-/**
- * Conversations handler — EdgeOne Makers Node Function
- * ===================================================
- *
- * File path cloud-functions/conversations/index.ts maps to **POST /conversations**.
- *
- * Lists conversations belonging to the requesting user (`eo-uuid`).
- * Calls `context.agent.store.listConversations({ userId, limit, order, after, before })`,
- * then normalizes the runtime result into a stable shape for the frontend:
- *
- * Response:
- *   {
- *     conversations: ConversationSummary[],
- *     nextCursor?: string,
- *     previousCursor?: string,
- *   }
- *
- * NOTE: The frontend MUST send `user_id` (or `userId`). Without a user namespace
- * we refuse to leak conversations across users and return 400.
- *
- * Following the official EdgeOne Makers Node Functions docs:
- *   - export `onRequestPost` for POST handlers
- *   - read JSON body via `await context.request.json()`
- *   - return a `Response` object
- *   https://pages.edgeone.ai/document/node-functions
- */
+// 按用户命名空间读取 EdgeOne 会话列表，并归一化分页结果。
 
 import { createLogger } from '../_logger';
 
@@ -98,10 +73,7 @@ function timestampOf(value: unknown): number | undefined {
   return undefined;
 }
 
-/**
- * Best-effort string extraction from a message `content` field.
- * Handles plain strings, arrays of {text}, and nested {text}/{content} objects.
- */
+// 兼容字符串、数组和嵌套对象形式的消息正文。
 function messageContentToText(content: unknown): string {
   if (typeof content === 'string') return content;
   if (Array.isArray(content)) {
@@ -126,12 +98,7 @@ function messageContentToText(content: unknown): string {
 
 const TITLE_SNIPPET_MAX = 8;
 
-/**
- * Build a conversation title from the first user question (ChatGPT-style — no prefix).
- * - Trims whitespace and collapses internal runs to a single space.
- * - Truncates to TITLE_SNIPPET_MAX characters with an ellipsis when needed.
- * - Falls back to `New chat` when no user message exists yet.
- */
+// 缺少服务端标题时用首条用户消息生成短标题。
 function buildTitleFromFirstMessage(firstQuestion: string): string {
   const cleaned = firstQuestion.replace(/\s+/g, ' ').trim();
   if (!cleaned) return 'New chat';
@@ -139,11 +106,7 @@ function buildTitleFromFirstMessage(firstQuestion: string): string {
   return `${cleaned.slice(0, TITLE_SNIPPET_MAX)}...`;
 }
 
-/**
- * Try to extract the first user question text from a conversation summary returned
- * by the runtime. EdgeOne `listConversations` may already include a first-message
- * field — using it avoids an extra getMessages round-trip.
- */
+// 优先复用会话摘要中的首条用户消息，减少额外查询。
 function pickFirstQuestionFromSummary(item: Record<string, unknown>): string {
   const candidates = [
     item.firstUserMessage,
@@ -165,10 +128,7 @@ function normalizeConversation(raw: unknown, injectedFirstQuestion?: string): No
   const id = pickString(item, 'id', 'conversationId', 'conversation_id');
   if (!id) return null;
 
-  // Title priority:
-  //   1. explicit `title`/`name`/`subject` from the runtime
-  //   2. first user question (already on the summary or fetched separately)
-  //   3. fallback "New chat"
+  // 标题依次使用显式标题、首条用户消息和默认文案。
   const explicitTitle = pickString(item, 'title', 'name', 'subject');
   const firstQuestion =
     injectedFirstQuestion?.trim() ||
@@ -259,9 +219,7 @@ export async function onRequestPost(context: any): Promise<Response> {
 
     const items = pickList(result);
 
-    // First pass: normalize what we already have from listConversations.
-    // Some runtimes return summaries without a `title`/`firstUserMessage`,
-    // so we may need to look up the first user message per-conversation.
+    // 先归一化列表摘要，缺少标题时再读取首条消息。
     const firstPass = items
       .map((raw): { raw: Record<string, unknown>; normalized: NormalizedConversation | null } => ({
         raw: raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {},
@@ -269,8 +227,7 @@ export async function onRequestPost(context: any): Promise<Response> {
       }))
       .filter(entry => entry.normalized !== null) as Array<{ raw: Record<string, unknown>; normalized: NormalizedConversation }>;
 
-    // Identify which conversations still have a fallback "New chat" title and
-    // therefore need a getMessages lookup to recover the first user question.
+    // 只为仍使用默认标题的会话补充首条消息查询。
     const needsFirstMessage = firstPass.filter(entry => entry.normalized.title === 'New chat');
 
     if (needsFirstMessage.length > 0) {
@@ -293,7 +250,7 @@ export async function onRequestPost(context: any): Promise<Response> {
             }
           }
         } catch (e) {
-          // Non-fatal — keep the fallback title.
+          // 标题补全失败不影响会话列表返回。
           logger.error(`[conversations] failed to fetch first message for ${entry.normalized.id}:`, e);
         }
       }));
@@ -301,13 +258,7 @@ export async function onRequestPost(context: any): Promise<Response> {
 
     const normalized = firstPass.map(entry => entry.normalized);
 
-    // Dedupe by id — the user_conversation_index can carry multiple
-    // entries for the same conversationId (one per appended user message,
-    // since agents/chat writes a user-indexed copy on every turn). The
-    // runtime's listConversations does not collapse them, so the sidebar
-    // would otherwise render N rows for the same thread. Keep the FIRST
-    // occurrence so the runtime's intended ordering (driven by `order=`
-    // and pagination cursors) is preserved.
+    // 会话索引可能按每轮用户消息产生重复项，按 ID 保留排序后的首项。
     const seenIds = new Set<string>();
     const conversations: NormalizedConversation[] = [];
     for (const conv of normalized) {

@@ -1,118 +1,63 @@
-/**
- * SSE streaming helper — private module (starts with _), not mapped as a route.
- *
- * Wraps the boilerplate around `new ReadableStream(...)` + abort handling +
- * `done` / `error` framing so handlers only need to `yield` business events.
- *
- * Usage:
- *   return sseResponse(async function* () {
- *     yield { event: 'text_delta', data: { delta: '...' } };
- *     yield { event: 'tool_called', data: { tool: 'get_weather' } };
- *   }, { signal: context.request.signal });
- */
-
-export interface SseEvent {
-  event?: string;
-  data: unknown;
-  id?: string;
-  retry?: number;
+export interface ContentStudioSseEvent extends Record<string, unknown> {
+  type: string;
 }
 
 export interface SseResponseOptions {
-  /** Name of the terminal frame; set false to disable. Default: 'done'. */
-  doneEvent?: string | false;
-  /** Name of the error frame; set false to swallow errors. Default: 'error'. */
-  errorEvent?: string | false;
-  /** Cancel signal — typically `context.request.signal`. */
+  logger?: { error: (...args: unknown[]) => void; log: (...args: unknown[]) => void };
   signal?: AbortSignal;
-  /** Extra response headers, merged on top of the SSE defaults. */
-  headers?: Record<string, string>;
-  /** Optional logger for abort traces. */
-  logger?: { log: (...a: unknown[]) => void; error: (...a: unknown[]) => void };
 }
 
 const SSE_HEADERS: Record<string, string> = {
-  'Content-Type': 'text/event-stream; charset=utf-8',
   'Cache-Control': 'no-cache, no-transform',
   Connection: 'keep-alive',
+  'Content-Type': 'text/event-stream; charset=utf-8',
   'X-Accel-Buffering': 'no',
 };
 
-function encodeFrame(encoder: TextEncoder, evt: SseEvent): Uint8Array {
-  const lines: string[] = [];
-  if (evt.event) lines.push(`event: ${evt.event}`);
-  if (evt.id) lines.push(`id: ${evt.id}`);
-  if (evt.retry != null) lines.push(`retry: ${evt.retry}`);
-  lines.push(`data: ${JSON.stringify(evt.data)}`);
-  return encoder.encode(lines.join('\n') + '\n\n');
+function encodeFrame(encoder: TextEncoder, event: ContentStudioSseEvent) {
+  return encoder.encode(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
 }
 
-/**
- * Wrap an async generator of `SseEvent` into a streaming SSE `Response`.
- *
- * Responsibilities handled here:
- *   - Encode events into SSE wire format and pump into `Response.body`
- *   - Honor `AbortSignal` and break the loop cleanly
- *   - Emit terminal `done` frame and (on failure) `error` frame
- *   - Standard SSE response headers
- */
 export function sseResponse(
-  generator: () => AsyncGenerator<SseEvent, void, unknown>,
+  generator: () => AsyncGenerator<ContentStudioSseEvent, void, unknown>,
   options: SseResponseOptions = {},
-): Response {
-  const { doneEvent = 'done', errorEvent = 'error', signal, headers, logger } = options;
-
+) {
+  const { logger, signal } = options;
   const encoder = new TextEncoder();
-  let stopped = false;
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
-      const enqueue = (evt: SseEvent) => controller.enqueue(encodeFrame(encoder, evt));
-      const iter = generator();
+      const enqueue = (event: ContentStudioSseEvent) => controller.enqueue(encodeFrame(encoder, event));
+      const iterator = generator();
+      let outcome: 'cancelled' | 'completed' | 'error' = 'completed';
+
       try {
-        let next = await iter.next();
+        let next = await iterator.next();
         while (!next.done) {
           if (signal?.aborted) {
-            stopped = true;
+            outcome = 'cancelled';
             break;
           }
           enqueue(next.value);
-          next = await iter.next();
+          next = await iterator.next();
         }
-      } catch (e: unknown) {
-        const err = e as Error & {
-          status?: number;
-          error?: unknown;
-          response?: unknown;
-          cause?: unknown;
-        };
-        if (err?.name === 'AbortError' || signal?.aborted) {
-          stopped = true;
+      } catch (error) {
+        const normalized = error instanceof Error ? error : new Error(String(error));
+        if (normalized.name === 'AbortError' || signal?.aborted) {
+          outcome = 'cancelled';
           logger?.log('[stream] aborted by user');
         } else {
-          logger?.error('[stream] error:', err?.message, err?.stack);
-          if (errorEvent) {
-            enqueue({
-              event: errorEvent,
-              data: {
-                message: String(err?.message ?? e),
-                name: err?.name || 'Error',
-                stack: err?.stack,
-                status: err?.status,
-                detail: err?.error ?? err?.response,
-                cause: err?.cause,
-              },
-            });
-          }
+          outcome = 'error';
+          logger?.error('[stream] failed:', normalized.message);
+          enqueue({ code: 'edgeone_agent_error', content: normalized.message, type: 'error_message' });
         }
       } finally {
-        // Best-effort: ask the generator to clean up upstream resources.
         try {
-          await iter.return?.(undefined);
+          await iterator.return?.(undefined);
         } catch {
-          /* ignore */
+          // 上游流清理失败不影响响应关闭。
         }
-        if (doneEvent) enqueue({ event: doneEvent, data: { stopped } });
+        enqueue({ outcome, type: 'done' });
         controller.close();
       }
     },
@@ -121,8 +66,5 @@ export function sseResponse(
     },
   });
 
-  return new Response(stream, {
-    status: 200,
-    headers: { ...SSE_HEADERS, ...(headers ?? {}) },
-  });
+  return new Response(stream, { headers: SSE_HEADERS, status: 200 });
 }
