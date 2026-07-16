@@ -1,5 +1,7 @@
-const storageVersion = 1;
-const storagePrefix = 'content-studio-media-library';
+import { getDemoTableSeed } from '../data/demo/database/registry.js';
+import { demoTableNames } from '../data/demo/database/schema.js';
+import { readDemoSessionTable, writeDemoSessionTable } from './demoSessionStore.js';
+
 const maxMediaFileSize = 100 * 1024 * 1024;
 const imageExtensions = new Set(['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg']);
 const videoExtensions = new Set(['mp4', 'webm', 'mov']);
@@ -11,11 +13,13 @@ function getProjectId(projectOrId) {
 }
 
 function getDemoMedia(projectOrId) {
-  return typeof projectOrId === 'string' ? [] : projectOrId?.demoProject?.mediaAssets ?? [];
-}
-
-function getStorageKey(projectId) {
-  return `${storagePrefix}:v${storageVersion}:${projectId}`;
+  const projectId = getProjectId(projectOrId);
+  const databaseAssets = getDemoTableSeed(projectId, demoTableNames.mediaAssets);
+  return Array.isArray(databaseAssets)
+    ? databaseAssets
+    : typeof projectOrId === 'string'
+      ? []
+      : projectOrId?.demoProject?.mediaAssets ?? [];
 }
 
 function createEmptyState() {
@@ -26,22 +30,12 @@ function createEmptyState() {
 }
 
 function readState(projectId) {
-  if (typeof window === 'undefined') {
-    return createEmptyState();
-  }
-
-  try {
-    const raw = window.localStorage.getItem(getStorageKey(projectId));
-    if (!raw) return createEmptyState();
-    return { ...createEmptyState(), ...JSON.parse(raw) };
-  } catch {
-    return createEmptyState();
-  }
+  const snapshot = readDemoSessionTable(projectId, demoTableNames.mediaAssets, createEmptyState());
+  return snapshot && typeof snapshot === 'object' ? { ...createEmptyState(), ...snapshot } : createEmptyState();
 }
 
 function writeState(projectId, state) {
-  if (typeof window === 'undefined') return;
-  window.localStorage.setItem(getStorageKey(projectId), JSON.stringify(state));
+  writeDemoSessionTable(projectId, demoTableNames.mediaAssets, state);
 }
 
 function slugify(value) {
@@ -65,7 +59,7 @@ function getAssetType(fileType) {
   return videoExtensions.has(fileType) ? 'video' : 'image';
 }
 
-// 上传文件的 blob 只保存在当前浏览器会话，元数据写入 localStorage。
+// 上传文件的 blob 只保存在当前浏览器会话，元数据写入当前标签页快照。
 function normalizeMediaAsset(asset, projectId, state, source = 'demo') {
   const tags = state.tagOverrides[asset.id] ?? asset.tags ?? [];
   const uploadedBlob = source === 'uploaded' ? uploadedMediaBlobStore.get(asset.id) : null;

@@ -1,13 +1,14 @@
 import { listChunks } from './fileLibraryApi.js';
 import { getBrandProfileDraft } from './brandProfileStore.js';
+import { demoTableNames } from '../data/demo/database/schema.js';
 import {
   createCollaborativeRunId,
   createContentResetState,
   createOutlineResetState,
   createPlanningResetState,
 } from './blogArticleAiStageData.js';
+import { readDemoSessionTable, writeDemoSessionTable } from './demoSessionStore.js';
 
-const storageKeyPrefix = 'content-studio-blog-article-ai-tasks:';
 const storageSchemaVersion = 1;
 
 // AI 文章任务选项集中维护，创建任务页只负责展示和收集选择。
@@ -150,110 +151,114 @@ function resolveKnowledgeSourceItems(inputItems, fallbackItems, project) {
 
 export const aiReferenceSearchAnalyses = [
   {
-    id: 'search-cnc-supplier-guide',
-    title: 'How to Choose a Reliable CNC Machining Supplier for Custom Metal Parts',
-    url: 'https://www.rejincnc.com/service/',
-    articleType: 'How-to Guides',
-    relevance: 96,
-    relevanceLabel: 'High',
-    summary:
-      'Explains supplier evaluation from capability coverage, quality credentials, lead time, export communication, and RFQ readiness. Useful for framing procurement-focused decision criteria.',
-  },
-  {
-    id: 'search-cnc-turning-vs-milling',
-    title: 'CNC Turning vs. Milling: How to Choose for Your Next Project',
-    url: 'https://www.rejincnc.com/service/cnc-turning/',
+    id: 'competitor-rapiddirect-turning-vs-milling',
+    title: 'CNC Turning vs Milling: Which Machining Process is Best for Your Project?',
+    url: 'https://www.rapiddirect.com/blog/cnc-turning-vs-milling-differences/',
     articleType: 'Comparison',
-    relevance: 92,
+    relevance: 98,
     relevanceLabel: 'High',
     summary:
-      'Compares process fit by geometry, tolerance, material, and cost. Strong reference for structuring buyer education around process selection.',
+      'A broad process comparison covering definitions, machine movement, tooling, complexity, speed, applications, benefits, and selection criteria.',
+    relevanceAnalysis:
+      '与 CNC turning vs milling 主题、工艺比较型搜索意图和项目选择任务高度一致，可作为完整比较维度的主要参考。',
+    marketFit:
+      '英文 B2B 制造内容适合 Global 市场；技术覆盖全面，但需要压缩为更适合海外采购经理阅读的决策路径。',
+    titleOpening:
+      '标题直接提出项目应选择哪种工艺，开头快速定义 turning 与 milling，并把差异连接到零件制造决策。',
+    narrativeStructure:
+      '先分别解释两种工艺的原理、组成、操作、优势和局限，再比较运动方式、刀具、复杂度、速度与应用，最后给出选择建议。',
+    readability:
+      '目录和分段完整，比较维度清晰，适合深度阅读；信息量较大，需要为采购场景提炼重点。',
+    eeatSignals:
+      '显示作者、发布日期、更新时间、工艺图片和相关服务链接，具备明确的内容责任与维护信号。',
+    borrowablePoints:
+      '借鉴完整比较维度和应用场景组织方式；不照搬泛化参数、重复段落或供应商自有营销结论。',
+    outline: [
+      {
+        level: 'H2',
+        title: 'CNC milling and CNC turning fundamentals',
+        children: ['Features and process', 'Benefits and drawbacks', 'Materials and operations'],
+      },
+      {
+        level: 'H2',
+        title: 'Similarities, differences, and process selection',
+        children: ['Movement and tooling', 'Complexity and speed', 'Applications and final choice'],
+      },
+    ],
   },
   {
-    id: 'search-dfm-support',
-    title: 'How DFM Support Reduces CNC Machining Cost and Lead Time',
-    url: 'https://www.rejincnc.com/service/support-dfm-service/',
-    articleType: 'Problem-Solving',
-    relevance: 90,
+    id: 'competitor-protolabs-cnc-turning',
+    title: 'What is CNC turning: Definition, process, and design tips',
+    url: 'https://www.hubs.com/knowledge-base/what-is-cnc-turning/',
+    articleType: 'Technical Guide',
+    relevance: 93,
     relevanceLabel: 'High',
     summary:
-      'Focuses on manufacturability review, drawing checks, prototype validation, and avoidable rework. Helps connect technical advice to business value.',
+      'An engineering-oriented guide to CNC turning with a concise turning-versus-milling table, machine workflow, part anatomy, and design guidance.',
+    relevanceAnalysis:
+      '以 CNC turning 为主，同时提供 turning 与 milling 的统一比较表，适合支撑工艺边界和设计评估标准。',
+    marketFit:
+      '英文工程表达简洁，适合 Global 市场技术与采购读者；需补充供应商筛选、质量文件和 RFQ 行动信息。',
+    titleOpening:
+      '标题以定义、流程和设计建议明确内容价值，开头从加工原理进入零件形状与工艺适配。',
+    narrativeStructure:
+      '按照基础定义、turning 与 milling 对比、机床流程、设备组成、设计建议、材料与后处理、FAQ 展开。',
+    readability:
+      '对比表和工程图示便于扫描，技术解释集中，适合转化为采购经理可使用的判断清单。',
+    eeatSignals:
+      '包含工艺图示、设计说明、技术术语解释和相关知识链接，工程信息之间具有清晰的逻辑连接。',
+    borrowablePoints:
+      '借鉴简明对比表和设计约束解释；补充质量证据、交付沟通、报价资料与供应商验证内容。',
+    outline: [
+      {
+        level: 'H2',
+        title: 'CNC turning fundamentals and comparison',
+        children: ['Turning versus milling table', 'Machine process', 'Parts of a turning center'],
+      },
+      {
+        level: 'H2',
+        title: 'Design and production guidance',
+        children: ['Design tips', 'Materials and post-processing', 'Frequently asked questions'],
+      },
+    ],
   },
   {
-    id: 'search-five-axis',
-    title: '5-Axis CNC Machining for Complex Precision Components',
-    url: 'https://www.rejincnc.com/service/5-axis-cnc-machining/',
-    articleType: 'Industry Insights',
-    relevance: 86,
+    id: 'competitor-fictiv-cnc-milling',
+    title: 'CNC Milling Explained',
+    url: 'https://www.fictiv.com/articles/cnc-milling-explained',
+    articleType: 'Technical Guide',
+    relevance: 91,
     relevanceLabel: 'High',
     summary:
-      'Covers complex geometry, aerospace and robotics scenarios, tight tolerance production, and why multi-axis capability matters for premium components.',
-  },
-  {
-    id: 'search-surface-finishing',
-    title: 'Surface Finishing Options for CNC Machined Aluminum Parts',
-    url: 'https://www.rejincnc.com/service/surface-treatments/',
-    articleType: 'Ultimate Guides',
-    relevance: 82,
-    relevanceLabel: 'High',
-    summary:
-      'Summarizes anodizing, polishing, brushing, painting, and engraving choices. Useful when articles need to mention appearance, durability, and application fit.',
-  },
-  {
-    id: 'search-custom-metal-sourcing',
-    title: 'Custom Metal Parts Sourcing for Overseas Buyers',
-    url: 'https://www.rejincnc.com/service/',
-    articleType: 'Industry Insights',
-    relevance: 78,
-    relevanceLabel: 'Medium',
-    summary:
-      'Positions one supplier as a coordinator across CNC turning, milling, sheet metal, finishing, quotation review, and export communication.',
-  },
-  {
-    id: 'search-prototype-cnc',
-    title: 'Prototype CNC Machining: From DFM Review to Small Batch Production',
-    url: 'https://www.rejincnc.com/service/support-dfm-service/',
-    articleType: 'How-to Guides',
-    relevance: 76,
-    relevanceLabel: 'Medium',
-    summary:
-      'Highlights prototype validation, material and finish decisions, and the transition from sample builds to production-ready parts.',
-  },
-  {
-    id: 'search-quality-certifications',
-    title: 'What Quality Certifications Matter for CNC Machining Suppliers?',
-    url: 'https://www.rejincnc.com/about-us/',
-    articleType: 'FAQS',
-    relevance: 72,
-    relevanceLabel: 'Medium',
-    summary:
-      'Useful for explaining ISO 9001, IATF 16949, inspection discipline, documentation, and what procurement teams should ask before placing orders.',
-  },
-  {
-    id: 'search-sheet-metal-vs-cnc',
-    title: 'Sheet Metal Fabrication vs. CNC Machining for Custom Components',
-    url: 'https://www.rejincnc.com/service/sheet-metal-fabrication/',
-    articleType: 'Comparison',
-    relevance: 68,
-    relevanceLabel: 'Medium',
-    summary:
-      'Compares fabrication and machining in terms of part structure, cost, volume, and finish. Good supporting source for broader manufacturing service articles.',
-  },
-  {
-    id: 'search-robotics-components',
-    title: 'Robotics and Automation Component Manufacturing with CNC Machining',
-    url: 'https://www.rejincnc.com/custom-cnc-machined-robot-joint-structural-parts-precision-metal-components/',
-    articleType: 'Product Reviews',
-    relevance: 63,
-    relevanceLabel: 'Medium',
-    summary:
-      'Demonstrates application proof for robot joints and automation structures. Best used as a differentiated case or internal proof point.',
+      'A visual, workflow-led explanation of CNC milling that connects design, CAM, machining, machine components, and production choices.',
+    relevanceAnalysis:
+      '与 CNC milling、custom metal parts 和 DFM 工作流高度相关，可补足 milling 工艺及 CAD-CAM-加工路径的解释。',
+    marketFit:
+      '英文表达自然、流程感强，适合 Global 市场读者；需要与 turning 内容合并为平衡比较，并加入采购决策视角。',
+    titleOpening:
+      '标题简洁聚焦 milling，开头直接解释工艺并通过视频和流程说明降低理解门槛。',
+    narrativeStructure:
+      '从工艺定义进入设计、CAM、加工工作流，再解释机床组成、设备类型和相关制造知识。',
+    readability:
+      '步骤化结构、视频和图示增强可读性，适合借鉴为 DFM 与 RFQ 准备流程。',
+    eeatSignals:
+      '显示作者、发布日期、阅读时间、工艺视频、流程图示和 DFM 相关链接，内容责任和专业背景清晰。',
+    borrowablePoints:
+      '借鉴 CAD-CAM-加工工作流和 DFM 连接方式；补足 turning 对比、供应商质量证明和采购行动建议。',
+    outline: [
+      {
+        level: 'H2',
+        title: 'CNC milling definition and workflow',
+        children: ['Design', 'CAM preparation', 'Machining'],
+      },
+      {
+        level: 'H2',
+        title: 'Machine construction and production options',
+        children: ['Parts of a CNC mill', 'Machine types', 'Design and DFM resources'],
+      },
+    ],
   },
 ];
-
-function getStorageKey(projectId) {
-  return `${storageKeyPrefix}${projectId}`;
-}
 
 function today() {
   return new Date().toISOString().slice(0, 10);
@@ -265,13 +270,6 @@ function createAiTaskId() {
   }
 
   return `ai-task-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
-function serializeTasks(tasks) {
-  return JSON.stringify({
-    schemaVersion: storageSchemaVersion,
-    tasks,
-  });
 }
 
 // 合并任务补丁时深合并阶段数据，避免只更新一个字段时覆盖整段产物。
@@ -293,31 +291,10 @@ function mergeTaskPatch(task, patch) {
   };
 }
 
-// 读取 AI 创作任务时兼容旧数组格式，异常时返回空列表。
+// 任务列表优先读取当前标签页快照，首次进入时使用固定四状态任务种子。
 export function getAiCreationTasks(projectId) {
-  if (typeof window === 'undefined') {
-    return [];
-  }
-
-  const storedValue = window.localStorage.getItem(getStorageKey(projectId));
-  if (!storedValue) {
-    return [];
-  }
-
-  try {
-    const parsed = JSON.parse(storedValue);
-    if (parsed?.schemaVersion === storageSchemaVersion && Array.isArray(parsed.tasks)) {
-      return parsed.tasks;
-    }
-
-    if (Array.isArray(parsed)) {
-      return parsed;
-    }
-
-    return [];
-  } catch {
-    return [];
-  }
+  const tasks = readDemoSessionTable(projectId, demoTableNames.articleCreationTasks);
+  return Array.isArray(tasks) ? tasks : [];
 }
 
 // 新建任务插入列表顶部，后续阶段通过同一个 taskId 持续更新。
@@ -334,9 +311,7 @@ export function saveAiCreationTask(projectId, taskInput) {
   };
   const nextTasks = [task, ...currentTasks];
 
-  if (typeof window !== 'undefined') {
-    window.localStorage.setItem(getStorageKey(projectId), serializeTasks(nextTasks));
-  }
+  writeDemoSessionTable(projectId, demoTableNames.articleCreationTasks, nextTasks);
 
   return task;
 }
@@ -346,9 +321,7 @@ export function updateAiCreationTask(projectId, taskId, patch) {
   const currentTasks = getAiCreationTasks(projectId);
   const nextTasks = currentTasks.map((task) => (task.id === taskId ? mergeTaskPatch(task, patch) : task));
 
-  if (typeof window !== 'undefined') {
-    window.localStorage.setItem(getStorageKey(projectId), serializeTasks(nextTasks));
-  }
+  writeDemoSessionTable(projectId, demoTableNames.articleCreationTasks, nextTasks);
 
   return nextTasks.find((task) => task.id === taskId);
 }
@@ -357,9 +330,7 @@ export function deleteAiCreationTask(projectId, taskId) {
   const currentTasks = getAiCreationTasks(projectId);
   const nextTasks = currentTasks.filter((task) => task.id !== taskId);
 
-  if (typeof window !== 'undefined') {
-    window.localStorage.setItem(getStorageKey(projectId), serializeTasks(nextTasks));
-  }
+  writeDemoSessionTable(projectId, demoTableNames.articleCreationTasks, nextTasks);
 
   return nextTasks;
 }
@@ -520,20 +491,22 @@ export function resetAiAutoTask(projectId, taskId) {
 function getReferenceArticles(task) {
   const manualReferences = task?.taskInput?.referenceArticles ?? [];
   const searchAnalyses = task?.searchAnalyses?.length ? task.searchAnalyses : aiReferenceSearchAnalyses;
-  const sourceReferences = manualReferences.length ? manualReferences : searchAnalyses.slice(0, 6);
+  const sourceReferences = manualReferences.length ? manualReferences : searchAnalyses.slice(0, 3);
 
   return sourceReferences.map((reference, index) => {
-    const analysis = searchAnalyses.find((item) => item.url === reference.url) ?? searchAnalyses[index];
+    const analysis = searchAnalyses.find((item) => item.url === reference.url);
+    const source = { ...(analysis ?? {}), ...reference };
     return {
-      id: reference.id ?? analysis?.id ?? `reference-${index + 1}`,
-      title: reference.title || analysis?.title || `Reference Article ${index + 1}`,
-      url: reference.url || analysis?.url || '',
+      ...source,
+      id: source.id ?? `reference-${index + 1}`,
+      title: source.title || `Reference Article ${index + 1}`,
+      url: source.url || '',
       summary:
-        analysis?.summary ||
+        source.summary ||
         'This article is used as a read-only reference for search intent, structure, and competitive angle analysis.',
-      articleType: analysis?.articleType ?? 'Reference',
-      relevance: analysis?.relevance ?? 80,
-      outline: [
+      articleType: source.articleType ?? 'Reference',
+      relevance: source.relevance ?? 80,
+      outline: source.outline ?? [
         {
           level: 'H2',
           title: 'Search intent and decision context',
@@ -844,56 +817,44 @@ function selectPlanningCopyModel(articleType, articleTopic) {
   };
 }
 
-function getPlanningFaqCount(articleLength) {
-  if (/800\s*-\s*1200/.test(articleLength)) return 5;
-  if (/1200\s*-\s*1400|1400\s*-\s*1600/.test(articleLength)) return 7;
-  return 9;
-}
-
 function createPlanningPreviewContent(task, project) {
   const input = task?.taskInput ?? {};
   const demoProject = project?.demoProject ?? {};
   const brandProfile = demoProject.brandProfile ?? {};
   const companyName = demoProject.name ?? project?.name ?? 'Rejin CNC Technology Co.,Ltd';
   const brandName = brandProfile.brandName ?? companyName;
+  const officialSite = demoProject.website || 'https://www.rejincnc.com/';
   const targetRegion = input.targetRegion || 'Global';
   const articleLanguage = input.articleLanguage || 'EN';
-  const audienceName = input.targetAudience?.name || input.targetAudienceName || '目标受众未填写';
-  const audienceSummary =
-    input.targetAudience?.summary ||
-    input.targetAudience?.searchGoal ||
-    input.targetAudience?.businessDescription ||
-    '当前任务未提供受众画像摘要，后续内容仅使用已确认的受众名称。';
-  const businessGoal = input.businessGoal || '当前任务未填写业务目标。';
-  const articleTopic = input.articleTopic || '当前任务未填写文章主题';
-  const primaryKeyword = input.primaryKeyword || '';
+  const audienceName = input.targetAudience?.name || input.targetAudience?.title || input.targetAudienceName || 'Overseas Procurement Manager';
+  const businessGoal =
+    input.businessGoal ||
+    'Help overseas procurement teams evaluate Rejin CNC as a reliable custom metal parts supplier and submit a qualified RFQ.';
+  const articleTopic = input.articleTopic || 'CNC Turning vs. Milling: How to Choose for Your Next Project';
+  const primaryKeyword = input.primaryKeyword || 'CNC machining supplier';
   const secondaryKeywordList = Array.isArray(input.secondaryKeywords)
     ? input.secondaryKeywords.map((item) => String(item).trim()).filter(Boolean)
     : splitAiKeywordText(input.secondaryKeywords);
-  const articleType = input.articleType || '';
-  const articleLength = input.articleLength || '';
-  const tone = input.tone || '';
-  const person = input.person || '';
+  const effectiveSecondaryKeywords = secondaryKeywordList.length
+    ? secondaryKeywordList
+    : ['custom metal parts', 'DFM support', 'CNC turning vs milling'];
+  const articleType = input.articleType || 'Product Reviews（产品介绍）';
+  const articleLength = input.articleLength || '1200 -1400（5-6个H2）';
+  const tone = input.tone || 'professional（专业）';
+  const person = input.person || '第三人称';
   const additionalRequirements = input.additionalRequirements || '';
-  const brandRequirements = input.brandRequirements || '';
+  const brandRequirements =
+    input.brandRequirements || brandProfile.brandStyle?.messagingPrinciples?.join('\n') || '';
   const generationRequirements = [
     brandRequirements ? `品牌要求：${brandRequirements}` : '',
     additionalRequirements ? `补充生成要求：${additionalRequirements}` : '',
   ].filter(Boolean);
   const relatedLink = input.relatedLink || input.productLink || '';
-  const referenceInputUrls = (input.referenceArticles ?? [])
-    .map((item) => (typeof item === 'string' ? item : item?.url))
-    .filter(Boolean);
-  const knowledgeAssetNames = (input.knowledgeAssets ?? [])
-    .map((item) => item.fileName || item.title || item.name)
-    .filter(Boolean);
-  const formatBasicInput = (value) => {
-    const formatted = formatPlanningInput(value);
-    return formatted === '-' ? '未提供' : formatted;
-  };
+  const ctaLink = relatedLink || officialSite;
+  const generationRequirementsText = formatPlanningInput(generationRequirements).replace(/\r?\n/g, '<br>');
   const searchIntent = inferPlanningSearchIntent(articleType, articleTopic);
   const copyModel = selectPlanningCopyModel(articleType, articleTopic);
-  const references = getReferenceArticles(task).slice(0, 6);
+  const references = getReferenceArticles(task).slice(0, 3);
   const knowledgeItems = input.knowledgeItems?.length ? input.knowledgeItems : demoProject.knowledgeItems ?? [];
   const selectedKnowledgeNames = knowledgeItems
     .slice(0, 6)
@@ -919,166 +880,155 @@ function createPlanningPreviewContent(task, project) {
       url: item.sourceUrl || item.productUrl || item.serviceUrl || item.url || '',
     }))
     .filter((item, index, items) => item.title && items.findIndex((candidate) => candidate.title === item.title) === index)
-    .slice(0, 3);
+    .filter((item) => item.url);
   const keywordCell = (...keywords) => formatPlanningInput(keywords.flat().filter(Boolean));
   const stageRows = [
     {
       name: '引言',
-      content: `围绕「${articleTopic}」呈现 ${audienceName} 正在面对的具体判断，并说明本文能够帮助其获得什么决策信息。`,
-      guidance: `使用 ${tone || '用户指定'} 语气和${person || '用户指定人称'}；主要依据创建任务与目标受众画像，不使用未经证实的结果承诺。`,
+      content: `从海外采购经理拿到零件图纸后，需要在 CNC turning、CNC milling 或组合加工之间做出选择的场景切入。`,
+      guidance: `使用 ${tone} 语气和${person}；以零件几何、报价准确性和供应商沟通风险建立阅读价值，不作结果承诺。`,
     },
     {
       name: copyModel.stageNames[0],
-      content: `解释 ${audienceName} 在处理「${articleTopic}」时的业务场景、常见疑问和决策风险，使搜索问题与「${businessGoal}」建立联系。`,
-      guidance: '依据用户输入、目标市场和参考文章摘要；只描述可验证问题，不虚构市场数据、搜索量或客户损失。',
+      content: `解释 CNC turning 与 milling 的运动方式、典型几何和加工边界，让 ${audienceName} 先判断零件的主要制造任务。`,
+      guidance: '综合三篇竞对文章的工艺解释，以知识库服务资料校准 Rejin CNC 的能力表述；不使用无来源参数。',
     },
     {
       name: copyModel.stageNames[1],
-      content: `围绕 ${primaryKeyword || '主要关键词'} 建立采购、技术、交付、成本与服务评估标准，让读者能够比较不同方案。`,
-      guidance: `结合 ${selectedKnowledgeText}；技术深度服务于决策，不堆砌参数，不把行业常见能力写成品牌事实。`,
+      content: `按照零件几何、旋转特征、材料、公差、批量、表面处理、检测和交付要求建立统一评估标准。`,
+      guidance: `结合 ${selectedKnowledgeText}，把技术变量转换成采购判断；每项标准说明其对工艺、报价和风险的实际影响。`,
     },
     {
       name: copyModel.stageNames[2],
-      content: `说明与「${articleTopic}」相关的可选路径、适用条件和取舍，并把功能或服务能力转换成 ${audienceName} 可理解的业务价值。`,
-      guidance: `优先引用项目知识库、产品链接和官网；品牌要求为“${brandRequirements || '未填写'}”，不得扩展无来源能力。`,
+      content: '用选择矩阵说明圆柱和旋转零件、平面和型腔零件、复杂多面特征及组合加工分别适合的工艺路径。',
+      guidance: `使用 Rejin CNC 服务页与知识库解释 turning、milling、5-axis machining 和 DFM support；遵守品牌要求，不扩展无来源能力。`,
     },
     {
       name: copyModel.stageNames[3],
-      content: `使用 ${companyName} 已确认的能力、资质、案例或服务流程支撑判断，并明确仍需补充的证据。`,
-      guidance: `可用能力包括 ${capabilities}；可用案例为 ${caseNames.join('、') || '当前未选择案例'}。缺少来源时明确留空。`,
+      content: `通过 DFM、质量控制、制造能力和项目案例说明买方应如何验证 ${companyName} 的工艺适配与服务可靠性。`,
+      guidance: `可用能力包括 ${capabilities}；案例使用 ${caseNames.join('、')}，只陈述知识库中已有的项目事实和证据边界。`,
     },
     {
       name: '信任建立与 CTA',
-      content: `总结与「${articleTopic}」相关的决策要点，并引导读者完成符合「${businessGoal}」的下一步行动。`,
-      guidance: `CTA 只指向真实官网、产品或咨询入口；不使用 best、leading、No.1、guaranteed 等绝对化表达。`,
+      content: '汇总工艺选择与供应商评估清单，引导读者准备图纸、材料、数量、公差、表面处理和交付要求并提交 RFQ。',
+      guidance: `CTA 指向 ${ctaLink}，直接承接询价目标；不使用 best、leading、No.1、guaranteed 等绝对化表达。`,
     },
   ];
   const stageKeywordRows = [
     [stageRows[0].name, keywordCell(primaryKeyword), '标题相关表达与引言前段自然出现，不机械重复。', '确认主题实体并承接主搜索意图。'],
-    [stageRows[1].name, keywordCell(primaryKeyword, secondaryKeywordList[0]), '用于问题描述、场景判断和读者疑问。', '覆盖问题识别与初步理解意图。'],
-    [stageRows[2].name, keywordCell(primaryKeyword, secondaryKeywordList[1]), '用于评估标准、比较维度和关键解释。', '扩展比较评估与采购研究语义。'],
-    [stageRows[3].name, keywordCell(primaryKeyword, secondaryKeywordList[2]), '与产品、服务或解决路径自然关联。', '连接方案理解与品牌业务上下文。'],
-    [stageRows[4].name, keywordCell(primaryKeyword, secondaryKeywordList.slice(3)), '仅在证据、案例或能力说明与关键词确实相关时出现。', '建立实体可信度，避免无关关键词填充。'],
+    [stageRows[1].name, keywordCell(primaryKeyword, effectiveSecondaryKeywords[2]), '用于定义比较任务和说明两种工艺的基本边界。', '覆盖问题识别与工艺比较意图。'],
+    [stageRows[2].name, keywordCell(primaryKeyword, effectiveSecondaryKeywords[0]), '用于零件特征、材料、公差和采购评估标准。', '扩展采购研究与定制零件语义。'],
+    [stageRows[3].name, keywordCell(primaryKeyword, effectiveSecondaryKeywords[2]), '与选择矩阵、应用场景和工艺组合自然关联。', '连接方案比较与制造路径判断。'],
+    [stageRows[4].name, keywordCell(primaryKeyword, effectiveSecondaryKeywords[1]), '用于图纸审查、案例证据、质量控制和供应商能力说明。', '建立供应商实体可信度和工程支持语义。'],
     [stageRows[5].name, keywordCell(primaryKeyword), 'FAQ、总结和 CTA 中自然回收主要关键词。', '完成长尾覆盖并承接行动转化。'],
   ];
-  const getLink = (index) => linkCandidates[index] ?? null;
-  const createLinkRow = (stage, candidate, fallbackReason) => candidate?.url
-    ? [stage, candidate.title, candidate.url, fallbackReason]
-    : [stage, '不建议插入', '不适用', '当前阶段没有已确认且自然必要的真实链接。'];
-  const internalLinkRows = stageRows.map((stage, index) => {
-    if (index === 0) return [stage.name, '不建议插入', '不适用', '开头优先建立问题和阅读价值，避免过早打断阅读。'];
-    if (index === stageRows.length - 1) {
-      return relatedLink
-        ? [stage.name, brandName, relatedLink, '在行动建议处连接用户确认的相关页面。']
-        : [stage.name, '不建议插入', '不适用', '用户未提供相关链接，CTA 目标页面待确认。'];
-    }
-    const candidate = getLink(index - 1);
-    return createLinkRow(stage.name, candidate, '继续解决该阶段尚未完成的产品、服务或方案问题。');
-  });
-  const faqItems = (articleLanguage === 'CN'
-    ? [
-        `「${articleTopic}」最需要先理解的基础问题是什么？`,
-        `${audienceName} 应如何比较与 ${primaryKeyword || '该主题'} 相关的产品或方案？`,
-        '采购或技术评估时应核对哪些参数、质量证明、认证或可靠性信息？',
-        '实施、使用、维护或服务过程中常见的问题有哪些？',
-        `${targetRegion} 市场的买家通常会关注哪些交付、合规或服务问题？`,
-        `判断 ${companyName} 的供应或服务能力时需要哪些真实证据？`,
-        '替代方案、比较维度和成本因素应如何评估？',
-        '询价或咨询前应准备哪些项目资料、参数和交付要求？',
-        '哪些结论需要由工程、质量或合规专业人员进一步确认？',
-        '读者应如何判断现有证据是否足以支持下一步决策？',
-      ]
-    : [
-        `What should buyers understand first about ${articleTopic}?`,
-        `How should ${audienceName} compare options related to ${primaryKeyword || 'this topic'}?`,
-        'Which specifications, quality records, certifications, or reliability evidence should buyers verify?',
-        'What should buyers know about implementation, use, maintenance, or service support?',
-        `Which delivery, compliance, or service concerns matter in ${targetRegion}?`,
-        `What evidence should buyers request when evaluating ${companyName}?`,
-        'How should buyers compare alternatives and cost factors before making a decision?',
-        'What project details, specifications, and delivery requirements should be prepared before an enquiry?',
-        'Which conclusions require engineering, quality, compliance, or other professional review?',
-        'How can readers decide whether the available evidence is sufficient for the next step?',
-      ]).slice(0, getPlanningFaqCount(articleLength));
-  const referenceRows = references.length
-    ? references.map((reference) => [
-        reference.title,
-        reference.url || '未提供',
-        '仅提供链接；演示未抓取正文',
-        `标题层面与「${articleTopic}」及 ${primaryKeyword || '主要关键词'} 存在关联；正文未获取，不分析观点与结构。`,
-        `${targetRegion} / ${articleLanguage} 适配待验证`,
-      ])
-    : [['未提供', '未提供', '未提供', '跳过内容分析', '跳过内容分析']];
+  const findLink = (pattern, fallbackIndex = 0) =>
+    linkCandidates.find((item) => pattern.test(item.title)) ?? linkCandidates[fallbackIndex];
+  const turningLink = findLink(/turning/i, 0);
+  const millingLink = findLink(/milling/i, 1);
+  const dfmLink = findLink(/dfm|manufacturability/i, 2);
+  const fiveAxisLink = findLink(/5-axis|five-axis/i, 3);
+  const linkRow = (stage, candidate, rationale) => [
+    stage,
+    candidate?.title || brandName,
+    candidate?.url || officialSite,
+    rationale,
+  ];
+  const internalLinkRows = [
+    [stageRows[0].name, '不建议插入', '-', '开头优先建立采购问题和阅读价值，避免过早打断阅读。'],
+    linkRow(stageRows[1].name, turningLink, '在解释旋转零件与 turning 工艺边界时提供服务详情。'),
+    linkRow(stageRows[2].name, millingLink, '在说明平面、型腔和复杂几何评估标准时提供服务详情。'),
+    linkRow(stageRows[3].name, dfmLink, '把工艺选择连接到图纸审查和可制造性建议。'),
+    linkRow(stageRows[4].name, fiveAxisLink, '为复杂多面特征和供应商能力验证提供延伸依据。'),
+    [stageRows[5].name, brandName, ctaLink, '在 RFQ 行动建议处连接官网或用户指定的咨询页面。'],
+  ];
+  const faqItems = [
+    ['比较任务界定', `What should buyers understand first about ${articleTopic}?`],
+    ['统一评估标准', `How should ${audienceName} compare options related to ${primaryKeyword}?`],
+    ['方案适配比较', 'Which specifications, quality records, certifications, or reliability evidence should buyers verify?'],
+    ['证据与限制', 'What should buyers know about implementation, use, maintenance, or service support?'],
+    ['信任建立与 CTA', `Which delivery, compliance, or service concerns matter in ${targetRegion}?`],
+    ['信任建立与 CTA', `What evidence should buyers request when evaluating ${companyName}?`],
+    ['信任建立与 CTA', 'How should buyers compare alternatives and cost factors before making a decision?'],
+  ];
+  const referenceRows = references.map((reference) => [
+    reference.title,
+    reference.url,
+    reference.relevanceAnalysis,
+    reference.marketFit,
+  ]);
+  const referenceStrengthRows = references.map((reference) => [
+    reference.title,
+    reference.titleOpening,
+    reference.narrativeStructure,
+    reference.readability,
+    reference.eeatSignals,
+    reference.borrowablePoints,
+  ]);
+  const productSearchTerms = selectedKnowledgeNames
+    .filter((name) => /turning|milling/i.test(name))
+    .slice(0, 2);
 
   return [
     '# 文章策划方案',
     '',
     '## 1. 文章目标',
     '### 1.1 目标市场分析',
-    `- **表达习惯：**面向 ${targetRegion}、使用 ${articleLanguage}，采用自然 B2B 表达并保留必要专业术语。`,
-    '- **采购与交付关注点：**聚焦方案适配、质量证明、交付风险、总成本和服务边界。',
-    '- **法规风险：**法规、认证、安全和合规适用性待权威来源验证，不写成确定结论。',
-    `- **内容深度：**为 ${audienceName} 提供足以比较和验证方案的解释，不堆砌孤立参数。`,
-    `- **CTA 类型：**服务“${businessGoal}”；${relatedLink ? '引导至用户确认的相关页面。' : '相关链接未提供，具体落点待确认。'}`,
+    `面向 ${targetRegion} 市场，以自然、克制的 ${articleLanguage} B2B 表达为主。内容同时回应海外采购人员对工艺适配、质量稳定性、交付风险、沟通效率和报价准备的关注。CTA 引导读者提交图纸、材料、数量、公差和表面处理要求，通过 ${ctaLink} 发起可执行的 RFQ。`,
     '',
     '### 1.2 目标受众分析',
-    `- **知识水平：**${audienceSummary}`,
-    `- **关注点与疑问：**围绕「${articleTopic}」判断适配条件、供应商证据和下一步所需资料。`,
-    '- **决策标准与异议：**比较技术适配、质量证明、交付与成本透明度；主要异议来自证据不足和边界不清。',
-    '- **技术深度：**解释参数、流程和应用条件对决策的影响，不展开与搜索任务无关的技术细节。',
-    `- **信任证据：**使用 ${companyName} 的已确认品牌事实、知识资产、真实案例与权威来源；缺失项标记待补充。`,
+    `目标读者为 ${audienceName}。该受众具备基础采购或工程沟通知识，重点关注供应商风险、质量稳定性、交付可控性和 RFQ 响应效率。文章需要帮助其快速判断零件适合 CNC turning、CNC milling 还是组合加工，识别供应商应提供的 DFM、质量和项目证据，并形成完整的 RFQ 输入清单。`,
     '',
     '### 1.3 搜索意图分析',
-    `- **搜索意图：**${searchIntent}；「${articleTopic}」和「${primaryKeyword || '主要关键词未提供'}」要求文章帮助读者形成实际判断。`,
-    '- **读者阶段：**处于理解到比较阶段，阅读后应能够建立验证清单并识别证据缺口。',
-    `- **核心问题：**${audienceName} 应如何比较与「${articleTopic}」相关的方案、证据和风险，并决定下一步行动？`,
+    `- **主要搜索意图：**${searchIntent}，重点解决 turning 与 milling 的工艺选择和供应商评估。`,
+    '- **辅助搜索意图：**理解两种工艺的原理、应用边界、质量证据与询价准备要求。',
+    '- **读者阶段：**从技术理解进入方案验证或供应商筛选。',
+    `- **核心问题：**${audienceName} 应如何根据零件要求选择加工路径，并判断一家 ${primaryKeyword} 是否具备可靠的工程与交付支持？`,
     '',
     '### 1.4 业务目标判断',
-    `- **主要目标：**围绕“${businessGoal}”完成可信的比较决策与询盘转化。`,
-    '- **辅助目标：**通过市场教育说明评估标准，为主要目标降低理解成本。',
-    `- **期望行动：**读者形成需求或验证清单后，${relatedLink ? `访问 ${relatedLink} 继续核验或咨询。` : '进入咨询；具体链接待用户补充。'}`,
+    `文章主要服务于供应商评估和询盘转化，对应业务目标“${businessGoal}”。内容先帮助读者完成工艺判断，再通过 DFM 支持、质量控制和项目经验说明 ${companyName} 可参与制造可行性评估，最终引导读者提交合格 RFQ。`,
     '',
     '## 2. 参考文章分析',
     '### 2.1 参考文章相关性',
-    createPlanningTableRow('参考文章', 'URL', '访问状态', '主题 / 关键词 / 类型相关性', '市场与语言适配'),
-    '| --- | --- | --- | --- | --- |',
+    createPlanningTableRow('参考文章', 'URL', '主题 / 关键词 / 类型相关性', '市场与语言适配'),
+    '| --- | --- | --- | --- |',
     ...referenceRows.map((row) => createPlanningTableRow(...row)),
     '',
     '### 2.2 优势 / 可借鉴点',
-    '- 当前参考来源未获取正文，因此不分析开头、叙事结构、可读性或 E-E-A-T 信号。只借鉴可见标题中的主题表达，待取得正文后再补充。',
+    createPlanningTableRow('参考文章', '标题与开头', '叙事结构', '可读性', 'E-E-A-T 信号', '可借鉴点与边界'),
+    '| --- | --- | --- | --- | --- | --- |',
+    ...referenceStrengthRows.map((row) => createPlanningTableRow(...row)),
     '',
     '### 2.3 差异化写作要点',
-    `- **内容补强：**用 ${selectedKnowledgeText} 补充可执行的比较标准、应用条件和证据检查。`,
-    `- **项目知识利用：**仅使用 ${companyName} 已确认的 ${capabilities}；${caseNames.length ? `可核验案例包括 ${caseNames.join('、')}。` : '真实案例待补充。'}`,
-    '- **风险规避：**不分析未获取正文，不转移竞品自述，不采用无来源参数、绝对化宣传或虚假案例。',
+    '- **统一决策标准：**按照零件几何、旋转特征、材料、公差、批量、表面处理和检测要求比较 turning、milling 与组合加工。',
+    '- **采购行动补强：**增加海外采购经理可以直接使用的 RFQ 输入清单，把工艺理解连接到报价与供应商筛选。',
+    `- **项目知识利用：**使用 ${selectedKnowledgeText} 和 ${companyName} 已确认的 ${capabilities}；案例包括 ${caseNames.join('、')}。`,
+    '- **内容差异：**将三篇竞对的完整比较、工程解释和制造流程优势整合为更紧凑的采购决策路径，并补充 DFM、质量文件和沟通要求。',
+    '- **风险规避：**不照搬竞对营销结论，不使用无来源参数、绝对化宣传或超出项目知识库的案例结果。',
     '',
     '## 3. 文章结构策划（核心内容）',
     '',
     '### 3.1 文章基础信息',
     createPlanningTableRow('字段', '值'),
     '| --- | --- |',
-    createPlanningTableRow('业务目标', formatBasicInput(input.businessGoal)),
-    createPlanningTableRow('目标市场', formatBasicInput(input.targetRegion)),
-    createPlanningTableRow('目标语言', formatBasicInput(input.articleLanguage)),
-    createPlanningTableRow('目标受众', formatBasicInput(input.targetAudience?.name || input.targetAudienceName)),
-    createPlanningTableRow('相关链接', formatBasicInput(relatedLink)),
-    createPlanningTableRow('参考文章', formatBasicInput(referenceInputUrls)),
-    createPlanningTableRow('知识库文件', formatBasicInput(knowledgeAssetNames)),
-    createPlanningTableRow('文章主题', formatBasicInput(input.articleTopic)),
-    createPlanningTableRow('主要关键词', formatBasicInput(input.primaryKeyword)),
-    createPlanningTableRow('次要关键词', formatBasicInput(input.secondaryKeywords)),
-    createPlanningTableRow('文章类型', formatBasicInput(input.articleType)),
-    createPlanningTableRow('文章长度', formatBasicInput(input.articleLength)),
-    createPlanningTableRow('语气', formatBasicInput(input.tone)),
-    createPlanningTableRow('人称', formatBasicInput(input.person)),
-    createPlanningTableRow('**生成要求**', `**${formatBasicInput(generationRequirements)}**`),
+    createPlanningTableRow('目标市场', targetRegion),
+    createPlanningTableRow('目标语言', articleLanguage),
+    createPlanningTableRow('目标受众', audienceName),
+    createPlanningTableRow('业务目标', businessGoal),
+    createPlanningTableRow('文章主题', articleTopic),
+    createPlanningTableRow('主要关键词', primaryKeyword),
+    createPlanningTableRow('次要关键词', effectiveSecondaryKeywords),
+    createPlanningTableRow('文章类型', articleType),
+    createPlanningTableRow('文章长度', articleLength),
+    createPlanningTableRow('语气', tone),
+    createPlanningTableRow('人称', person),
+    createPlanningTableRow('**生成要求**', generationRequirements),
     '',
     '### 3.2 营销文案模型与写作思路',
     `- **所选模型：**${copyModel.name}。`,
-    `- **选择依据：**${copyModel.rationale}它同时响应“${businessGoal}”、${audienceName}、${articleType || '文章类型未提供'}、主题「${articleTopic}」和 ${searchIntent} 意图。`,
-    `- **证据适配：**知识资产可支撑 ${selectedKnowledgeText}；参考文章当前仅提供链接，正文结构、观点和 E-E-A-T 信号待补充。`,
-    `- **生成要求落实：**${formatBasicInput(generationRequirements)}；各阶段不得突破事实、来源和禁止主张边界。`,
-    `- **不选择其他模型的原因：**${copyModel.notSelected}`,
+    `- **选择依据：**${copyModel.rationale}它同时响应“${businessGoal}”、${audienceName}、${articleType}、主题「${articleTopic}」和 ${searchIntent} 意图。`,
+    `- **证据适配：**知识资产 ${selectedKnowledgeText} 支撑品牌能力与服务事实；RapidDirect、Protolabs Network 和 Fictiv 支撑比较结构、工程解释与制造流程策划。`,
+    `- **生成要求落实：**${generationRequirementsText}；各阶段严格遵守事实、来源和禁止主张边界。`,
     '- **阶段映射：**',
     createPlanningTableRow('Stage', 'Content', 'Writing Guidance'),
     '| --- | --- | --- |',
@@ -1086,7 +1036,7 @@ function createPlanningPreviewContent(task, project) {
     '',
     '### 3.3 关键词布局建议与内链插入建议',
     '**关键词布局建议：**',
-    '本演示未调用实时关键词工具；以下只使用用户输入关键词，不判断搜索量、竞争度、排名难度或实时趋势。',
+    '关键词布局与对比模型的阶段结构保持一致，以搜索意图和语义覆盖为优先，不机械规定出现次数。',
     createPlanningTableRow('Stage', 'Keywords', 'Placement', 'Purpose'),
     '| --- | --- | --- | --- |',
     ...stageKeywordRows.map((row) => createPlanningTableRow(...row)),
@@ -1099,24 +1049,19 @@ function createPlanningPreviewContent(task, project) {
     '| --- | --- | --- | --- |',
     ...internalLinkRows.map((row) => createPlanningTableRow(...row)),
     '- 锚文本应自然、明确、可独立理解，不使用 click here，不重复堆砌同一关键词。',
-    '- 没有真实 URL 时只建议页面类型，不创造链接；没有自然、必要内链的阶段明确标记“不建议插入”。',
+    '- 仅使用 Rejin CNC 官网与项目知识库中的真实 URL；没有自然、必要内链的阶段明确标记“不建议插入”。',
     '',
     '### 3.4 FAQ 写作建议',
-    `- **检索词：**${formatPlanningInput([primaryKeyword, articleTopic, ...selectedKnowledgeNames.slice(0, 2)])}`,
-    `- **工具状态：**外部 FAQ 工具未执行；以下 ${faqItems.length} 个问题均为模型建议，不代表 PAA、搜索结果问题或真实用户数据。`,
-    ...faqItems.map((question, index) => {
-      const stage = stageRows[Math.min(index + 1, stageRows.length - 1)].name;
-      return `- **Q${index + 1}（模型建议 · ${stage}）：**${question}`;
-    }),
+    `- **检索词：**主要关键词（${primaryKeyword}）、产品名称（${productSearchTerms.join('、')}）、文章主题（${articleTopic}）。`,
+    '- **问题来源：**优先来自目标语言和目标市场对应的搜索结果、用户常见问题（People Also Ask）和参考文章。',
+    ...faqItems.map(([category, question], index) => `- **Q${index + 1}（${category}）：**${question}`),
     '',
-    '### 创作规范',
-    '> **重要事实与 E-E-A-T 约束**',
-    `> - **用户输入与生成要求：**原样执行 ${formatBasicInput(generationRequirements)}；标题、大纲和正文不得擅自改写已确认字段。`,
-    `> - **事实与来源：**只使用用户字段、已选择知识资产和真实 URL；${companyName} 或竞品自述必须限定来源范围，参考文章正文未获取时不得分析观点。`,
+    '> **生成规范**',
+    `> - **用户输入与生成要求：**${generationRequirementsText}<br>标题、大纲和正文不得擅自改写文章基础信息。`,
+    `> - **事实与来源：**${companyName} 的能力、认证、参数和案例只使用项目知识库、官方页面与已选择资料，竞对内容仅用于结构与行业解释。`,
     '> - **禁止虚构：**不得编造参数、认证、案例、客户、规模、结果、市场数据或监管结论；高风险内容需合格专业人员复核。',
-    `> - **SEO 与表达：**围绕「${primaryKeyword || '主要关键词未提供'}」和 ${searchIntent} 自然写作，不堆砌关键词，不承诺排名、流量或转化。`,
-    `> - **语言与品牌：**正文使用 ${articleLanguage}，符合 ${targetRegion} 语境和 ${tone || '用户指定语气'}；公司与品牌名称保持原写法。`,
-    `> - **内链、CTA 与发布检查：**只使用真实链接，CTA 服务“${businessGoal}”；发布前核对字段、事实、引用、FAQ 来源、禁用表达和必要专业审核。`,
+    `> - **SEO 与语言：**正文使用 ${articleLanguage}，符合 ${targetRegion} 的 B2B 阅读习惯，围绕「${primaryKeyword}」和 ${searchIntent} 自然写作，不堆砌关键词。`,
+    `> - **品牌、内链与 CTA：**公司和品牌名称保持原写法，仅使用真实链接；CTA 服务“${businessGoal}”，不作排名、交付或转化承诺。`,
   ].join('\n');
 }
 

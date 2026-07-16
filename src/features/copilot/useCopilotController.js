@@ -86,10 +86,12 @@ export function useCopilotController({ projectId, untitledLabel = 'New conversat
 
       if (!conversations.length) conversations = [createDraftConversation(projectId, untitledLabel)];
       conversations = sortConversations(conversations);
+      const preferredConversation = conversations.find((item) => item.id === preferences.activeConversationId);
+      const initialConversation = preferredConversation ?? conversations[0];
       dispatch({ conversations, model, type: 'load_project' });
-      setActiveConversationId(conversations[0].id);
-      if (conversations[0].persisted) {
-        await loadHistory(conversations[0].id, controller.signal).catch(() => {});
+      setActiveConversationId(initialConversation.id);
+      if (initialConversation.persisted) {
+        await loadHistory(initialConversation.id, controller.signal).catch(() => {});
       }
     }
 
@@ -106,22 +108,34 @@ export function useCopilotController({ projectId, untitledLabel = 'New conversat
   const selectConversation = useCallback((conversationId) => {
     setActiveConversationId(conversationId);
     const conversation = stateRef.current.conversations.find((item) => item.id === conversationId);
+    saveProjectUiPreferences(projectId, {
+      activeConversationId: conversationId,
+      pinnedIds: stateRef.current.conversations.filter((item) => item.pinned).map((item) => item.id),
+      titleOverrides: Object.fromEntries(stateRef.current.conversations.map((item) => [item.id, item.title])),
+    });
     if (conversation?.persisted) void loadHistory(conversationId).catch(() => {});
-  }, [loadHistory]);
+  }, [loadHistory, projectId]);
 
   const createConversation = useCallback((title = untitledLabel) => {
     const conversation = createDraftConversation(projectId, title);
     dispatch({ conversation, type: 'add_conversation' });
     setActiveConversationId(conversation.id);
-    return conversation.id;
-  }, [projectId, untitledLabel]);
-
-  const persistUiPreferences = useCallback((nextConversations) => {
+    const nextConversations = [conversation, ...stateRef.current.conversations];
     saveProjectUiPreferences(projectId, {
+      activeConversationId: conversation.id,
       pinnedIds: nextConversations.filter((item) => item.pinned).map((item) => item.id),
       titleOverrides: Object.fromEntries(nextConversations.map((item) => [item.id, item.title])),
     });
-  }, [projectId]);
+    return conversation.id;
+  }, [projectId, untitledLabel]);
+
+  const persistUiPreferences = useCallback((nextConversations, nextActiveConversationId = activeConversationId) => {
+    saveProjectUiPreferences(projectId, {
+      activeConversationId: nextActiveConversationId,
+      pinnedIds: nextConversations.filter((item) => item.pinned).map((item) => item.id),
+      titleOverrides: Object.fromEntries(nextConversations.map((item) => [item.id, item.title])),
+    });
+  }, [activeConversationId, projectId]);
 
   const renameConversation = useCallback((conversationId, title) => {
     const normalized = String(title || '').trim();
@@ -157,10 +171,13 @@ export function useCopilotController({ projectId, untitledLabel = 'New conversat
       const replacement = createDraftConversation(projectId, untitledLabel);
       dispatch({ conversation: replacement, type: 'add_conversation' });
       setActiveConversationId(replacement.id);
+      persistUiPreferences([replacement], replacement.id);
     } else if (activeConversationId === conversationId) {
       setActiveConversationId(remaining[0].id);
+      persistUiPreferences(remaining, remaining[0].id);
+    } else {
+      persistUiPreferences(remaining, activeConversationId);
     }
-    persistUiPreferences(remaining);
   }, [activeConversationId, persistUiPreferences, projectId, untitledLabel, userId]);
 
   const stopConversation = useCallback(async (conversationId) => {

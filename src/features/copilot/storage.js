@@ -1,7 +1,12 @@
+import { demoTableNames } from '../../data/demo/database/schema.js';
+import {
+  getDemoSessionId,
+  readDemoSessionTable,
+  writeDemoSessionTable,
+} from '../../services/demoSessionStore.js';
+
 const cleanupVersionKey = 'content-studio-edgeone-copilot:v2:cleanup';
-const userIdKey = 'content-studio-edgeone-copilot:v2:user-id';
 const sidebarKey = 'content-studio-edgeone-copilot:v2:sidebar-collapsed';
-const projectPreferencesPrefix = 'content-studio-edgeone-copilot:v2:project:';
 
 function canUseStorage() {
   return typeof window !== 'undefined' && Boolean(window.localStorage);
@@ -24,13 +29,7 @@ export function cleanupLegacyCopilotStorage() {
 
 export function getBrowserUserId() {
   cleanupLegacyCopilotStorage();
-  if (!canUseStorage()) return 'server';
-  let value = window.localStorage.getItem(userIdKey) || '';
-  if (!value) {
-    value = globalThis.crypto?.randomUUID?.() || `browser-${Date.now()}`;
-    window.localStorage.setItem(userIdKey, value);
-  }
-  return value;
+  return getDemoSessionId();
 }
 
 export function getProjectUserId(projectId) {
@@ -49,21 +48,16 @@ export function saveSidebarCollapsedPreference(collapsed) {
 
 export function getProjectUiPreferences(projectId) {
   cleanupLegacyCopilotStorage();
-  if (!canUseStorage()) return { pinnedIds: [], titleOverrides: {} };
-  try {
-    const value = JSON.parse(window.localStorage.getItem(`${projectPreferencesPrefix}${projectId}`) || '{}');
-    return {
-      pinnedIds: Array.isArray(value.pinnedIds) ? value.pinnedIds : [],
-      titleOverrides: value.titleOverrides && typeof value.titleOverrides === 'object'
-        ? value.titleOverrides
-        : {},
-    };
-  } catch {
-    return { pinnedIds: [], titleOverrides: {} };
-  }
+  const value = readDemoSessionTable(projectId, demoTableNames.copilotUi, {});
+  return {
+    activeConversationId: typeof value?.activeConversationId === 'string' ? value.activeConversationId : '',
+    pinnedIds: Array.isArray(value?.pinnedIds) ? value.pinnedIds : [],
+    titleOverrides: value?.titleOverrides && typeof value.titleOverrides === 'object'
+      ? value.titleOverrides
+      : {},
+  };
 }
 
 export function saveProjectUiPreferences(projectId, preferences) {
-  if (!canUseStorage()) return;
-  window.localStorage.setItem(`${projectPreferencesPrefix}${projectId}`, JSON.stringify(preferences));
+  writeDemoSessionTable(projectId, demoTableNames.copilotUi, preferences);
 }

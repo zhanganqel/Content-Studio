@@ -1,5 +1,6 @@
-const storageKeyPrefix = 'content-studio-audience-personas:';
-const storageSchemaVersion = 3;
+import { getDemoTableSeed } from '../data/demo/database/registry.js';
+import { demoTableNames } from '../data/demo/database/schema.js';
+import { readDemoSessionTable, writeDemoSessionTable } from './demoSessionStore.js';
 
 // 画像表单选项集中维护，页面只负责渲染和保存。
 export const organizationTypeOptions = [
@@ -64,18 +65,6 @@ export const expressionStyleOptions = [
   'enthusiastic',
 ];
 
-function getStorageKey(projectId) {
-  return `${storageKeyPrefix}${projectId}`;
-}
-
-// 保存画像时写入 schemaVersion，默认数据变化后可触发刷新。
-function serializePersonas(personas) {
-  return JSON.stringify({
-    schemaVersion: storageSchemaVersion,
-    personas,
-  });
-}
-
 function today() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -106,7 +95,10 @@ function fallbackPersonaFromDemo(persona, index) {
 
 // 根据项目 demo 数据生成默认画像，并用模板补齐业务细节。
 function getDemoPersonas(project) {
-  const demoPersonas = project?.demoProject?.audiencePersonas ?? [];
+  const databasePersonas = getDemoTableSeed(project?.id, demoTableNames.audiencePersonas);
+  const demoPersonas = Array.isArray(databasePersonas)
+    ? databasePersonas
+    : project?.demoProject?.audiencePersonas ?? [];
 
   if (!demoPersonas.length) {
     return [];
@@ -308,46 +300,6 @@ function getDemoPersonas(project) {
   return (selectedPersonas.length ? selectedPersonas : mapped).slice(0, 4);
 }
 
-// 识别旧版中文自动生成画像，用于一次性迁移到新版 demo 画像。
-function isLegacyGeneratedPersonaSet(personas) {
-  if (!Array.isArray(personas) || personas.length !== 3) {
-    return false;
-  }
-
-  const legacyNames = ['企业采购决策者', '初次了解访客', '技术评估用户'];
-  const legacyIds = [
-    'hardware-startup-founder',
-    'mechanical-engineer',
-    'overseas-procurement-manager',
-  ];
-
-  const names = personas.map((persona) => persona.name).sort();
-  const ids = personas.map((persona) => persona.id).sort();
-
-  return (
-    JSON.stringify(names) === JSON.stringify(legacyNames.sort()) &&
-    JSON.stringify(ids) === JSON.stringify(legacyIds.sort())
-  );
-}
-
-// 旧缓存为空或命中旧版生成规则时，重新注入当前项目默认画像。
-function shouldMigrateLegacyPersonas(personas, project) {
-  if (isLegacyGeneratedPersonaSet(personas)) {
-    return true;
-  }
-
-  return Boolean(project?.demoProject) && personas.length === 0;
-}
-
-// schemaVersion 变化或默认画像数量不足时刷新 demo 画像。
-function shouldRefreshDemoPersonas(personas, project, schemaVersion) {
-  if (!project?.demoProject) {
-    return false;
-  }
-
-  return schemaVersion !== storageSchemaVersion || personas.length < 3;
-}
-
 // 创建空画像草稿，供新建抽屉和复制流程复用。
 export function createEmptyAudiencePersona() {
   return {
@@ -373,61 +325,16 @@ export function createDefaultAudiencePersonas(project) {
   return getDemoPersonas(project);
 }
 
-// 读取画像草稿时兼容旧数组格式，并处理 demo 默认数据刷新。
+// 画像优先读取当前标签页快照，首次进入时使用固定数据库种子。
 export function getAudiencePersonaDrafts(project) {
-  if (typeof window === 'undefined') {
-    return createDefaultAudiencePersonas(project);
-  }
-
-  const stored = window.localStorage.getItem(getStorageKey(project.id));
-
-  if (!stored) {
-    return createDefaultAudiencePersonas(project);
-  }
-
-  try {
-    const parsed = JSON.parse(stored);
-
-    if (parsed && Array.isArray(parsed.personas)) {
-      if (shouldRefreshDemoPersonas(parsed.personas, project, parsed.schemaVersion)) {
-        const nextPersonas = createDefaultAudiencePersonas(project);
-        window.localStorage.setItem(getStorageKey(project.id), serializePersonas(nextPersonas));
-        return nextPersonas;
-      }
-
-      return parsed.personas;
-    }
-
-    if (!Array.isArray(parsed)) {
-      return createDefaultAudiencePersonas(project);
-    }
-
-    if (shouldMigrateLegacyPersonas(parsed, project)) {
-      const nextPersonas = createDefaultAudiencePersonas(project);
-      window.localStorage.setItem(getStorageKey(project.id), serializePersonas(nextPersonas));
-      return nextPersonas;
-    }
-
-    if (shouldRefreshDemoPersonas(parsed, project)) {
-      const nextPersonas = createDefaultAudiencePersonas(project);
-      window.localStorage.setItem(getStorageKey(project.id), serializePersonas(nextPersonas));
-      return nextPersonas;
-    }
-
-    return parsed;
-  } catch {
-    return createDefaultAudiencePersonas(project);
-  }
+  const fallback = createDefaultAudiencePersonas(project);
+  const personas = readDemoSessionTable(project.id, demoTableNames.audiencePersonas, fallback);
+  return Array.isArray(personas) ? personas : fallback;
 }
 
-// 保存画像草稿只影响当前项目的 localStorage key。
+// 保存画像草稿只影响当前标签页内的项目表。
 export function saveAudiencePersonaDrafts(projectId, personas) {
-  if (typeof window === 'undefined') {
-    return personas;
-  }
-
-  window.localStorage.setItem(getStorageKey(projectId), serializePersonas(personas));
-  return personas;
+  return writeDemoSessionTable(projectId, demoTableNames.audiencePersonas, personas);
 }
 
 export function createPersonaId(prefix = 'persona') {

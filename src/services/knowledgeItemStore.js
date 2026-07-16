@@ -1,4 +1,6 @@
-const storageKeyPrefix = 'content-studio-knowledge-items:v2';
+import { getDemoTableSeed } from '../data/demo/database/registry.js';
+import { demoTableNames } from '../data/demo/database/schema.js';
+import { readDemoSessionTable, writeDemoSessionTable } from './demoSessionStore.js';
 
 // 知识字段类型决定表格输入控件、校验和单元格归一化方式。
 export const knowledgeFieldTypes = [
@@ -122,10 +124,6 @@ function field(key, label, type, options = {}) {
   };
 }
 
-function getStorageKey(projectId) {
-  return `${storageKeyPrefix}:${projectId}`;
-}
-
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
@@ -185,7 +183,10 @@ function createRow(type, index, cells) {
 // demo 知识项按业务类型映射到预设表结构。
 function createRowsForProject(project) {
   const rows = Object.fromEntries(presetTypes.map((type) => [type.id, []]));
-  const sourceItems = project?.demoProject?.knowledgeItems ?? project?.knowledgeItems ?? [];
+  const databaseItems = getDemoTableSeed(project?.id, demoTableNames.knowledgeItems);
+  const sourceItems = Array.isArray(databaseItems)
+    ? databaseItems
+    : project?.demoProject?.knowledgeItems ?? project?.knowledgeItems ?? [];
 
   sourceItems.forEach((item) => {
     const typeId = getTypeId(item.type);
@@ -308,29 +309,14 @@ function createDefaultDraft(project) {
 
 // 读取知识条目草稿时归一化类型和行，缺失数据回退到项目默认草稿。
 export function getKnowledgeItemDraft(project) {
-  if (typeof window === 'undefined') {
-    return createDefaultDraft(project);
-  }
-
-  const storedValue = window.localStorage.getItem(getStorageKey(project.id));
-  if (!storedValue) {
-    return createDefaultDraft(project);
-  }
-
-  try {
-    const parsed = JSON.parse(storedValue);
-    return normalizeDraft(parsed, project);
-  } catch {
-    return createDefaultDraft(project);
-  }
+  const fallback = createDefaultDraft(project);
+  const snapshot = readDemoSessionTable(project.id, demoTableNames.knowledgeItems, fallback);
+  return normalizeDraft(snapshot, project);
 }
 
 export function saveKnowledgeItemDraft(projectId, data) {
   const normalized = normalizeDraft(data);
-  if (typeof window !== 'undefined') {
-    window.localStorage.setItem(getStorageKey(projectId), JSON.stringify(normalized));
-  }
-  return normalized;
+  return writeDemoSessionTable(projectId, demoTableNames.knowledgeItems, normalized);
 }
 
 export function createBlankRow() {

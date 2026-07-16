@@ -1,0 +1,52 @@
+import { createBlogArticleSeeds } from '../seedFactories.js';
+
+export const goweGroupBlogArticles = createBlogArticleSeeds({
+  companyName: 'GOWE Group',
+  idPrefix: 'gowe-group',
+  articles: [
+    {
+      slug: 'ringlock-buying-guide',
+      title: 'Ringlock Scaffolding Buying Guide for International Contractors',
+      summary: 'A buyer-oriented guide to system configuration, quality documentation, delivery, and supplier support.',
+      articleType: 'Ultimate Guide',
+      audienceId: 'international-contractor-procurement-manager',
+      audienceName: 'International Contractor Procurement Manager',
+      keywords: ['ringlock scaffolding', 'scaffolding supplier', 'contractor procurement'],
+      status: 'pending',
+      updatedAt: '2026-07-15',
+    },
+    {
+      slug: 'aluminium-formwork-cycle',
+      title: 'How Aluminium Formwork Supports Faster Floor Cycles',
+      summary: 'Explains planning, reuse, engineering support, and execution factors for repeatable floor construction.',
+      articleType: 'How-to Guide',
+      audienceId: 'project-engineering-manager',
+      audienceName: 'Project and Structural Engineering Manager',
+      keywords: ['aluminium formwork', 'floor cycle', 'construction planning'],
+      status: 'draft',
+      updatedAt: '2026-07-14',
+    },
+    {
+      slug: 'rental-vs-purchase',
+      title: 'Scaffolding Rental vs. Purchase: What Contractors Should Compare',
+      summary: 'Compares project duration, utilization, logistics, maintenance, and lifecycle support.',
+      articleType: 'Comparison',
+      audienceId: 'international-contractor-procurement-manager',
+      audienceName: 'International Contractor Procurement Manager',
+      keywords: ['scaffolding rental', 'scaffolding purchase', 'project cost'],
+      status: 'review',
+      updatedAt: '2026-07-11',
+    },
+    {
+      slug: 'certification-trust',
+      title: 'Why Certification Matters in Scaffolding Supplier Selection',
+      summary: 'Shows how contractors can review management systems, fabrication evidence, and applicable standards.',
+      articleType: 'Industry Insight',
+      audienceId: 'formwork-scaffolding-distributor',
+      audienceName: 'Formwork and Scaffolding Distributor',
+      keywords: ['scaffolding certification', 'supplier selection', 'EN 12811'],
+      status: 'published',
+      updatedAt: '2026-07-08',
+    },
+  ],
+});

@@ -1,5 +1,6 @@
-const storageKeyPrefix = 'content-studio-blog-articles:';
-const storageSchemaVersion = 1;
+import { getDemoTableSeed } from '../data/demo/database/registry.js';
+import { demoTableNames } from '../data/demo/database/schema.js';
+import { readDemoSessionTable, writeDemoSessionTable } from './demoSessionStore.js';
 
 export const articleStatusOptions = ['draft', 'review', 'pending', 'published'];
 
@@ -12,18 +13,6 @@ export const articleTypeOptions = [
   'News',
   'FAQ',
 ];
-
-// 文章草稿按项目隔离存储，避免不同 demo 项目的文章互相覆盖。
-function getStorageKey(projectId) {
-  return `${storageKeyPrefix}${projectId}`;
-}
-
-function serializeArticles(articles) {
-  return JSON.stringify({
-    schemaVersion: storageSchemaVersion,
-    articles,
-  });
-}
 
 function today() {
   return new Date().toISOString().slice(0, 10);
@@ -89,6 +78,9 @@ function articleFromSeed(seed, index, project) {
 }
 
 export function createDefaultBlogArticles(project) {
+  const databaseArticles = getDemoTableSeed(project?.id, demoTableNames.blogArticles);
+  if (Array.isArray(databaseArticles)) return databaseArticles;
+
   const seeds = project?.demoProject?.contentSeeds?.filter((seed) => seed.type === 'blog') ?? [];
   return seeds.map((seed, index) => articleFromSeed(seed, index, project));
 }
@@ -108,42 +100,13 @@ export function createBlankBlogArticle(title) {
   };
 }
 
-// 读取文章草稿时兼容旧数组格式，无法解析时回退到 demo 数据。
+// 文章列表优先读取当前标签页快照，首次进入时使用固定数据库种子。
 export function getBlogArticleDrafts(project) {
-  if (typeof window === 'undefined') {
-    return createDefaultBlogArticles(project);
-  }
-
-  const stored = window.localStorage.getItem(getStorageKey(project.id));
-
-  if (!stored) {
-    return createDefaultBlogArticles(project);
-  }
-
-  try {
-    const parsed = JSON.parse(stored);
-
-    if (parsed?.schemaVersion === storageSchemaVersion && Array.isArray(parsed.articles)) {
-      return parsed.articles;
-    }
-
-    if (Array.isArray(parsed)) {
-      return parsed;
-    }
-
-    return createDefaultBlogArticles(project);
-  } catch {
-    return createDefaultBlogArticles(project);
-  }
+  return readDemoSessionTable(project.id, demoTableNames.blogArticles, createDefaultBlogArticles(project));
 }
 
 export function saveBlogArticleDrafts(projectId, articles) {
-  if (typeof window === 'undefined') {
-    return articles;
-  }
-
-  window.localStorage.setItem(getStorageKey(projectId), serializeArticles(articles));
-  return articles;
+  return writeDemoSessionTable(projectId, demoTableNames.blogArticles, articles);
 }
 
 // 保存或插入文章时保持最新文章在列表顶部。

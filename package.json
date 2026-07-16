@@ -8,9 +8,10 @@
     "dev:fresh": "vite --host 127.0.0.1 --port 5173 --strictPort --force",
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "test:article-workflow": "node --test tests/blog-article-ai-stage-data.test.mjs tests/collaborative-stages.test.mjs",
+    "test:article-workflow": "node --test tests/blog-article-ai-stage-data.test.mjs tests/blog-article-planning-preview.test.mjs tests/collaborative-stages.test.mjs",
     "test:collaborative": "node --test tests/collaborative-stages.test.mjs",
     "test:copilot": "node --test tests/copilot-contracts.test.mjs",
+    "test:demo-data": "node --test tests/demo-data-storage.test.mjs",
     "test:toast": "node --test tests/toast-state.test.mjs",
     "typecheck:edgeone": "tsc --noEmit -p tsconfig.edgeone.json"
   },

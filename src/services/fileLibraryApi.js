@@ -1,9 +1,10 @@
 import mammoth from 'mammoth';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url';
 import * as XLSX from 'xlsx';
+import { getDemoTableSeed } from '../data/demo/database/registry.js';
+import { demoTableNames } from '../data/demo/database/schema.js';
+import { readDemoSessionTable, writeDemoSessionTable } from './demoSessionStore.js';
 
-const storageVersion = 1;
-const storagePrefix = 'content-studio-file-library';
 const maxFileSize = 20 * 1024 * 1024;
 const allowedExtensions = new Set(['docx', 'xlsx', 'xls', 'pdf', 'txt', 'md']);
 const uploadedBlobStore = new Map();
@@ -22,31 +23,23 @@ function getProjectId(projectOrId) {
 }
 
 function getDemoFiles(projectOrId) {
-  return typeof projectOrId === 'string' ? [] : projectOrId?.demoProject?.fileAssets ?? [];
-}
-
-function getStorageKey(projectId) {
-  return `${storagePrefix}:v${storageVersion}:${projectId}`;
+  const projectId = getProjectId(projectOrId);
+  const databaseFiles = getDemoTableSeed(projectId, demoTableNames.fileAssets);
+  return Array.isArray(databaseFiles)
+    ? databaseFiles
+    : typeof projectOrId === 'string'
+      ? []
+      : projectOrId?.demoProject?.fileAssets ?? [];
 }
 
 // 文件库状态保存上传文件、标签覆盖、处理状态和分块内容。
 function readState(projectId) {
-  if (typeof window === 'undefined') {
-    return createEmptyState();
-  }
-
-  try {
-    const raw = window.localStorage.getItem(getStorageKey(projectId));
-    if (!raw) return createEmptyState();
-    return { ...createEmptyState(), ...JSON.parse(raw) };
-  } catch {
-    return createEmptyState();
-  }
+  const snapshot = readDemoSessionTable(projectId, demoTableNames.fileAssets, createEmptyState());
+  return snapshot && typeof snapshot === 'object' ? { ...createEmptyState(), ...snapshot } : createEmptyState();
 }
 
 function writeState(projectId, state) {
-  if (typeof window === 'undefined') return;
-  window.localStorage.setItem(getStorageKey(projectId), JSON.stringify(state));
+  writeDemoSessionTable(projectId, demoTableNames.fileAssets, state);
 }
 
 function createEmptyState() {
@@ -116,7 +109,7 @@ export function listFiles(projectOrId) {
   return [...demoFiles, ...uploadedFiles];
 }
 
-// 上传文件只保存元数据到 localStorage，原始文件保存在内存 Map 中。
+// 上传文件只保存元数据到当前标签页，原始文件保存在内存 Map 中。
 export async function uploadFiles(projectOrId, files) {
   const projectId = getProjectId(projectOrId);
   const state = readState(projectId);

@@ -417,6 +417,11 @@ function getInitialAutoState(workflow, task, status, latestFinalArtifactId) {
   }
 
   if (status === 'generating' && isAutoTask(task)) {
+    const restoredState = getSavedWorkflowState(workflow, task);
+    if (restoredState.completedTaskIds.length || restoredState.visibleArtifactIds.length) {
+      return restoredState;
+    }
+
     return {
       completedTaskIds: [],
       currentTaskIndex: 0,

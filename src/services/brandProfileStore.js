@@ -1,5 +1,10 @@
-const storageKeyPrefix = 'content-studio-brand-profile:';
-const storageSchemaVersion = 2;
+import { getDemoTableSeed } from '../data/demo/database/registry.js';
+import { demoTableNames } from '../data/demo/database/schema.js';
+import {
+  readDemoSessionTable,
+  removeDemoSessionTable,
+  writeDemoSessionTable,
+} from './demoSessionStore.js';
 
 // 目标市场选项作为品牌档案表单的固定候选值。
 export const marketOptions = [
@@ -26,27 +31,6 @@ export const marketOptions = [
   'Global',
 ];
 
-// 品牌档案按项目隔离存储，并通过版本号控制 demo 数据刷新。
-function getStorageKey(projectId) {
-  return `${storageKeyPrefix}${projectId}`;
-}
-
-function serializeBrandProfile(data) {
-  return JSON.stringify({
-    schemaVersion: storageSchemaVersion,
-    data,
-  });
-}
-
-function isPlainObject(value) {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-// schemaVersion 变化时刷新 demo 品牌档案，避免旧缓存盖住新版默认内容。
-function shouldRefreshDemoBrandProfile(project, schemaVersion) {
-  return Boolean(project?.demoProject) && schemaVersion !== storageSchemaVersion;
-}
-
 function safeJoin(items) {
   return Array.isArray(items) ? items.join('\n') : '';
 }
@@ -69,7 +53,7 @@ function getDefaultBrandName(project, demoProject) {
 
 export function createDefaultBrandProfile(project) {
   const demoProject = project?.demoProject;
-  const brandProfile = demoProject?.brandProfile ?? {};
+  const brandProfile = getDemoTableSeed(project?.id, demoTableNames.brandProfile) ?? demoProject?.brandProfile ?? {};
   const defaultCoreCategories = [
     'Precision CNC machining',
     'Custom metal parts',
@@ -104,63 +88,18 @@ export function createDefaultBrandProfile(project) {
 }
 
 export function getBrandProfileDraft(project) {
-  if (typeof window === 'undefined') {
-    return createDefaultBrandProfile(project);
-  }
-
-  const stored = window.localStorage.getItem(getStorageKey(project.id));
-
-  if (!stored) {
-    return createDefaultBrandProfile(project);
-  }
-
-  try {
-    const parsed = JSON.parse(stored);
-    const defaultProfile = createDefaultBrandProfile(project);
-
-    if (isPlainObject(parsed) && isPlainObject(parsed.data)) {
-      if (shouldRefreshDemoBrandProfile(project, parsed.schemaVersion)) {
-        window.localStorage.setItem(getStorageKey(project.id), serializeBrandProfile(defaultProfile));
-        return defaultProfile;
-      }
-
-      return {
-        ...defaultProfile,
-        ...parsed.data,
-      };
-    }
-
-    if (isPlainObject(parsed)) {
-      if (shouldRefreshDemoBrandProfile(project)) {
-        window.localStorage.setItem(getStorageKey(project.id), serializeBrandProfile(defaultProfile));
-        return defaultProfile;
-      }
-
-      return {
-        ...defaultProfile,
-        ...parsed,
-      };
-    }
-
-    return defaultProfile;
-  } catch {
-    return createDefaultBrandProfile(project);
-  }
+  const defaultProfile = createDefaultBrandProfile(project);
+  const snapshot = readDemoSessionTable(project.id, demoTableNames.brandProfile, defaultProfile);
+  return snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot)
+    ? { ...defaultProfile, ...snapshot }
+    : defaultProfile;
 }
 
 export function saveBrandProfileDraft(projectId, data) {
-  if (typeof window === 'undefined') {
-    return data;
-  }
-
-  window.localStorage.setItem(getStorageKey(projectId), serializeBrandProfile(data));
-  return data;
+  return writeDemoSessionTable(projectId, demoTableNames.brandProfile, data);
 }
 
 export function resetBrandProfileDraft(project) {
-  if (typeof window !== 'undefined') {
-    window.localStorage.removeItem(getStorageKey(project.id));
-  }
-
+  removeDemoSessionTable(project.id, demoTableNames.brandProfile);
   return createDefaultBrandProfile(project);
 }

@@ -467,7 +467,7 @@ function ReferencesPreview({ artifact }) {
 }
 
 function StrategyInlineText({ children }) {
-  const tokens = String(children ?? '').split(/(\*\*.*?\*\*|<br\s*\/?\s*>|https?:\/\/[^\s）)\]}]+)/gi);
+  const tokens = String(children ?? '').split(/(\*\*.*?\*\*|<br\s*\/?\s*>|https?:\/\/[^\s）)\]}，。；、]+)/gi);
 
   return tokens.map((token, index) => {
     if (!token) return null;
@@ -540,16 +540,16 @@ function StrategyTable({ header, rows }) {
 
 function StrategyHighlight({ lines }) {
   return (
-    <aside className="my-4 rounded-[6px] border border-[#F3D19E] border-l-4 border-l-[#E6A23C] bg-[#FDF6EC] px-4 py-3 text-[#7A4E00]">
-      <div className="space-y-2.5">
+    <aside className="my-4 rounded-[8px] border border-[#FDECC8] bg-[#FFFBEB] px-4 py-3">
+      <div className="space-y-2 text-[14px] leading-[22px] text-[#7C4A03]">
         {lines.map((line, index) => {
           const bullet = line.match(/^-\s+(.*)$/);
           if (!bullet) {
-            return <p key={`${line}-${index}`} className="font-semibold"><StrategyInlineText>{line}</StrategyInlineText></p>;
+            return <p key={`${line}-${index}`} className="text-[15px] font-bold leading-[24px] text-[#9A5B00]"><StrategyInlineText>{line}</StrategyInlineText></p>;
           }
           return (
             <div key={`${line}-${index}`} className="flex items-start gap-2">
-              <span className="mt-[10px] h-1.5 w-1.5 flex-none rounded-full bg-[#E6A23C]" />
+              <Check className="mt-1 h-4 w-4 flex-none" />
               <p className="min-w-0 flex-1"><StrategyInlineText>{bullet[1]}</StrategyInlineText></p>
             </div>
           );

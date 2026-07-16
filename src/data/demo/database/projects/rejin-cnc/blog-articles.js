@@ -1,0 +1,52 @@
+import { createBlogArticleSeeds } from '../seedFactories.js';
+
+export const rejinCncBlogArticles = createBlogArticleSeeds({
+  companyName: 'Rejin CNC Technology Co.,Ltd',
+  idPrefix: 'rejin-cnc',
+  articles: [
+    {
+      slug: 'turning-vs-milling',
+      title: 'CNC Turning vs. Milling: How to Choose for Your Next Project',
+      summary: 'A procurement-focused comparison of process fit, geometry, tolerance, cost, and supplier capability.',
+      articleType: 'Comparison',
+      audienceId: 'overseas-procurement-manager',
+      audienceName: 'Overseas Procurement Manager',
+      keywords: ['CNC turning', 'CNC milling', 'custom metal parts'],
+      status: 'pending',
+      updatedAt: '2026-07-15',
+    },
+    {
+      slug: 'dfm-support',
+      title: 'How DFM Support Reduces CNC Machining Cost and Rework',
+      summary: 'Explains how drawing review and manufacturability feedback reduce sourcing and production risk.',
+      articleType: 'How-to Guide',
+      audienceId: 'hardware-startup-founder',
+      audienceName: 'Hardware Startup Founder',
+      keywords: ['DFM support', 'CNC machining cost', 'prototype'],
+      status: 'draft',
+      updatedAt: '2026-07-14',
+    },
+    {
+      slug: 'supplier-checklist',
+      title: 'CNC Machining Supplier Checklist for Overseas Buyers',
+      summary: 'A structured checklist for comparing quality systems, communication, inspection, and RFQ readiness.',
+      articleType: 'Ultimate Guide',
+      audienceId: 'supply-chain-lead',
+      audienceName: 'Supply Chain Lead for Hardware Brands',
+      keywords: ['CNC machining supplier', 'supplier checklist', 'RFQ'],
+      status: 'review',
+      updatedAt: '2026-07-11',
+    },
+    {
+      slug: 'surface-finishing',
+      title: 'Surface Finishing Options for Aluminum CNC Parts',
+      summary: 'Compares anodizing, polishing, brushing, painting, and other finishes for custom aluminum components.',
+      articleType: 'Industry Insight',
+      audienceId: 'mechanical-engineer',
+      audienceName: 'Mechanical Design Engineer',
+      keywords: ['surface finishing', 'aluminum CNC parts', 'anodizing'],
+      status: 'published',
+      updatedAt: '2026-07-08',
+    },
+  ],
+});

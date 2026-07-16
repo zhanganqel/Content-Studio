@@ -26,8 +26,14 @@ import {
 } from './services/blogArticleAiStore.js';
 import {
   getAiTaskArticleContext,
-  migrateAiTaskArticleRuleStorage,
 } from './services/blogArticleAiArticleStore.js';
+import { demoTableNames } from './data/demo/database/schema.js';
+import {
+  cleanupLegacyDemoLocalStorage,
+  readDemoSessionTable,
+  removeDemoSessionTable,
+  writeDemoSessionTable,
+} from './services/demoSessionStore.js';
 import {
   collapsedSidebarWidth,
   expandedSidebarWidth,
@@ -36,7 +42,6 @@ import {
 } from './services/sidebarPreferenceStore.js';
 
 const localeStorageKey = 'content-studio-locale';
-const aiPlanningSessionStorageKey = 'content-studio-active-ai-planning-session';
 
 // 初始化界面语言，未知语言回退到默认语言包。
 function getInitialLocale() {
@@ -49,35 +54,19 @@ function getInitialLocale() {
 }
 
 // 读取文章 AI 创作当前会话，用于刷新后恢复到对应阶段页面。
-function readAiPlanningSession() {
-  if (typeof window === 'undefined') {
-    return null;
-  }
-
-  try {
-    const storedValue = window.localStorage.getItem(aiPlanningSessionStorageKey);
-    return storedValue ? JSON.parse(storedValue) : null;
-  } catch {
-    return null;
-  }
+function readAiPlanningSession(projectId) {
+  return readDemoSessionTable(projectId, demoTableNames.articleWorkflowSession, null);
 }
 
 // 保存文章 AI 创作会话，记录当前项目、任务和阶段。
 function writeAiPlanningSession(session) {
-  if (typeof window === 'undefined') {
-    return;
-  }
-
-  window.localStorage.setItem(aiPlanningSessionStorageKey, JSON.stringify(session));
+  if (!session?.projectId) return;
+  writeDemoSessionTable(session.projectId, demoTableNames.articleWorkflowSession, session);
 }
 
 // 清除文章 AI 创作会话，避免关闭后再次进入旧阶段。
-function clearAiPlanningSession() {
-  if (typeof window === 'undefined') {
-    return;
-  }
-
-  window.localStorage.removeItem(aiPlanningSessionStorageKey);
+function clearAiPlanningSession(projectId) {
+  removeDemoSessionTable(projectId, demoTableNames.articleWorkflowSession);
 }
 
 // 解析外部预览链接参数，支持资料来源和文件预览独立打开。
@@ -153,14 +142,15 @@ export default function App() {
     saveSidebarCollapsedPreference(sidebarCollapsed);
   }, [sidebarCollapsed]);
 
+  useEffect(() => {
+    cleanupLegacyDemoLocalStorage();
+  }, []);
+
   const activeProject = useMemo(
     () => projects.find((project) => project.id === activeProjectId) ?? projects[0],
     [activeProjectId],
   );
   const sidebarWidth = sidebarCollapsed ? collapsedSidebarWidth : expandedSidebarWidth;
-
-  // 文章草稿规则迁移需要跟随当前项目执行，保证旧缓存可以被新页面读取。
-  migrateAiTaskArticleRuleStorage(activeProject);
 
   useEffect(() => {
     if (externalView?.view) {
@@ -179,7 +169,7 @@ export default function App() {
     }
 
     // 刷新页面后根据缓存任务恢复到策划、大纲、正文或自动创作页面。
-    const session = readAiPlanningSession();
+    const session = readAiPlanningSession(activeProject.id);
     if (!session || session.projectId !== activeProject.id) {
       return;
     }
@@ -215,7 +205,7 @@ export default function App() {
       return;
     }
 
-    clearAiPlanningSession();
+    clearAiPlanningSession(activeProject.id);
   }, [
     activeProject,
     blogAiAutoContext,
@@ -325,7 +315,7 @@ export default function App() {
       setBlogAiPlanningContext(null);
       setBlogAiOutlineContext(null);
       setBlogAiContentContext(null);
-      clearAiPlanningSession();
+      clearAiPlanningSession(activeProject.id);
     },
     [activeProject.id],
   );
@@ -370,7 +360,7 @@ export default function App() {
   function exitArticleCreationFlow() {
     // 退出流程只回到博客文章页，不删除任务，也不创建文章。
     setActiveItemId('blog-article');
-    clearAiPlanningSession();
+    clearAiPlanningSession(activeProject.id);
     setBlogAiCreateOpen(false);
     setBlogAiAutoContext(null);
     setBlogAiPlanningContext(null);
@@ -652,11 +642,11 @@ export default function App() {
         locale={locale}
         onBack={() => {
           setActiveItemId('blog-article');
-          clearAiPlanningSession();
+          clearAiPlanningSession(activeProject.id);
           setBlogAiAutoContext(null);
         }}
         onSaveAndEdit={(savedArticle) => {
-          clearAiPlanningSession();
+          clearAiPlanningSession(activeProject.id);
           setBlogAiAutoContext(null);
           setBlogEditorArticle(savedArticle);
         }}
@@ -781,7 +771,7 @@ export default function App() {
             exitArticleCreationFlow();
           }}
           onSaveAndEdit={(savedArticle) => {
-            clearAiPlanningSession();
+            clearAiPlanningSession(activeProject.id);
             setBlogAiContentContext(null);
             setBlogAiViewStage(null);
             setBlogEditorArticle(savedArticle);
