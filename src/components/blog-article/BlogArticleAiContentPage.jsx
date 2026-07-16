@@ -1122,14 +1122,17 @@ export default function BlogArticleAiContentPage({
     [project, revisionRequests, task],
   );
   const workflow = demoData.workflow;
-  const initialPlaybackState = useMemo(() => getInitialPlaybackState(workflow, task), [workflow, task]);
-  const [currentTaskIndex, setCurrentTaskIndex] = useState(initialPlaybackState.currentTaskIndex);
-  const [visibleThinkingCounts, setVisibleThinkingCounts] = useState(initialPlaybackState.visibleThinkingCounts);
-  const [visibleArtifactIds, setVisibleArtifactIds] = useState(initialPlaybackState.visibleArtifactIds);
-  const [completedTaskIds, setCompletedTaskIds] = useState(initialPlaybackState.completedTaskIds);
-  const [isComplete, setIsComplete] = useState(initialPlaybackState.isComplete);
-  const [isStopped, setIsStopped] = useState(task?.stage === 'content-stopped' || Boolean(task?.content?.isStopped));
-  const [selectedArtifactId, setSelectedArtifactId] = useState(initialPlaybackState.selectedArtifactId);
+  // 播放进度以任务缓存为唯一来源，避免用重挂载页面的方式刷新流程展示。
+  const playbackState = useMemo(() => getInitialPlaybackState(workflow, task), [workflow, task]);
+  const {
+    completedTaskIds,
+    currentTaskIndex,
+    isComplete,
+    selectedArtifactId,
+    visibleArtifactIds,
+    visibleThinkingCounts,
+  } = playbackState;
+  const isStopped = task?.stage === 'content-stopped' || Boolean(task?.content?.isStopped);
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
   const [referenceOpen, setReferenceOpen] = useState(false);
   const [referenceTab, setReferenceTab] = useState('knowledge-items');
@@ -1218,7 +1221,6 @@ export default function BlogArticleAiContentPage({
     // 中止任务时保留当前可见进度，方便返回后恢复。
     if (isStopped || isComplete) return;
 
-    setIsStopped(true);
     const nextTask = updateAiCreationTask(project.id, task.id, {
       stage: 'content-stopped',
       content: buildContentPayload(demoData, {
@@ -1246,6 +1248,19 @@ export default function BlogArticleAiContentPage({
     onRestartStage?.({ article, stage: 'content', task: nextTask ?? task });
   }
 
+  function handleArtifactClick(artifactId) {
+    const nextTask = updateAiCreationTask(project.id, task.id, {
+      content: {
+        currentArtifactId: artifactId,
+        playback: {
+          ...(task?.content?.playback ?? {}),
+          selectedArtifactId: artifactId,
+        },
+      },
+    });
+    onTaskUpdated?.(nextTask ?? task);
+  }
+
   function handleSubmitRevisionRequest() {
     // 提交修改要求后追加一轮修订任务。
     const text = revisionInput.trim();
@@ -1264,17 +1279,15 @@ export default function BlogArticleAiContentPage({
     ];
     const nextDemoData = createContentDemoData(task, project, { revisionRequests: nextRevisionRequests });
     const nextCurrentTaskIndex = workflow.length;
+    const nextRevisionStepId = getTaskSteps(nextDemoData.workflow[nextCurrentTaskIndex])[0]?.id;
+    const nextVisibleThinkingCounts = {
+      ...visibleThinkingCounts,
+      ...(nextRevisionStepId ? { [nextRevisionStepId]: 0 } : {}),
+    };
 
     setRevisionRequests(nextRevisionRequests);
     setRevisionInput('');
-    setIsComplete(false);
-    setIsStopped(false);
     setAutoScrollEnabled(true);
-    setCurrentTaskIndex(nextCurrentTaskIndex);
-    setVisibleThinkingCounts((current) => ({
-      ...current,
-      [getTaskSteps(nextDemoData.workflow[nextCurrentTaskIndex])[0]?.id]: 0,
-    }));
     const nextTask = updateAiCreationTask(project.id, task.id, {
       stage: 'content',
       content: buildContentPayload(nextDemoData, {
@@ -1289,10 +1302,7 @@ export default function BlogArticleAiContentPage({
           isComplete: false,
           selectedArtifactId,
           visibleArtifactIds,
-          visibleThinkingCounts: {
-            ...visibleThinkingCounts,
-            [getTaskSteps(nextDemoData.workflow[nextCurrentTaskIndex])[0]?.id]: 0,
-          },
+          visibleThinkingCounts: nextVisibleThinkingCounts,
           version: Number(task?.content?.playback?.version ?? 0) + 1,
         },
         updatedAt: getTodayString(),
@@ -1425,7 +1435,7 @@ export default function BlogArticleAiContentPage({
                   isCurrent={isCurrent}
                   isStopped={isStopped}
                   locale={locale}
-                  onArtifactClick={setSelectedArtifactId}
+                  onArtifactClick={handleArtifactClick}
                   selectedArtifactId={selectedArtifactId}
                   showArtifactIds={visibleArtifactIds}
                   task={workflowTask}

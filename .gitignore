@@ -1,8 +1,19 @@
-node_modules
-dist
+node_modules/
+dist/
+coverage/
 .DS_Store
 .env
 .env.*
+!.env.example
 *.local
-.vite
-.pnpm-store
+.vite/
+.tmp/
+.pnpm-store/
+
+# Tencent Cloud EdgeOne
+.edgeone/
+.tef_dist/
+
+# Keep repository documentation local only.
+/README.md
+/docs/

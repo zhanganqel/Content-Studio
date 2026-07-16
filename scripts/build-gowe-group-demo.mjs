@@ -1317,7 +1317,7 @@ All business data in this folder is written in English because the demo project 
 - \`src/data/demo/goweGroupAssetLibrary.js\` imports images from \`demo-data/gowe-group/assets/images/\`.
 - \`src/data/demo/goweGroupFileLibrary.js\` imports Word and Excel files from \`demo-data/gowe-group/file/\`.
 
-Because the app imports files from this folder, do not move or rename files here without updating \`src/data/demo/*\` and running \`pnpm build\`.
+Because the app imports files from this folder, do not move or rename files here without updating \`src/data/demo/*\` and running \`npm run build\`.
 
 ## Maintenance Rule
 
@@ -1498,7 +1498,7 @@ ${rows}
 
 ## Maintenance Rule
 
-These files are generated from \`demo-data/gowe-group/source-data.json\`. Regenerate them after changing the structured demo data, then run \`pnpm build\`.
+These files are generated from \`demo-data/gowe-group/source-data.json\`. Regenerate them after changing the structured demo data, then run \`npm run build\`.
 `;
 
   await fs.writeFile(path.join(fileDir, 'README.md'), content);

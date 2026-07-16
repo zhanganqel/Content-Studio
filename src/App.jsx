@@ -673,7 +673,7 @@ export default function App() {
       <>
         {renderCollaborativeTaskRunner(blogAiPlanningContext.task)}
         <BlogArticleAiPlanningPage
-          key={`${blogAiPlanningContext.task.id}-${blogAiPlanningContext.task.runId ?? 'planning'}-${blogAiViewStage}-${blogAiPlanningContext.task.planning?.playback?.version ?? 0}`}
+          key={`${blogAiPlanningContext.task.id}-${blogAiPlanningContext.task.runId ?? 'planning'}`}
           article={blogAiPlanningContext.article}
           locale={locale}
           onClose={() => {
@@ -719,7 +719,7 @@ export default function App() {
       <>
         {renderCollaborativeTaskRunner(blogAiOutlineContext.task)}
         <BlogArticleAiOutlinePage
-          key={`${blogAiOutlineContext.task.id}-${blogAiOutlineContext.task.runId ?? 'outline'}-${blogAiViewStage}-${blogAiOutlineContext.task.outline?.playback?.version ?? 0}`}
+          key={`${blogAiOutlineContext.task.id}-${blogAiOutlineContext.task.runId ?? 'outline'}`}
           article={blogAiOutlineContext.article}
           locale={locale}
           onClose={() => {
@@ -765,7 +765,7 @@ export default function App() {
       <>
         {renderCollaborativeTaskRunner(blogAiContentContext.task)}
         <BlogArticleAiContentPage
-          key={`${blogAiContentContext.task.id}-${blogAiContentContext.task.runId ?? 'content'}-${blogAiViewStage}-${blogAiContentContext.task.content?.playback?.version ?? 0}`}
+          key={`${blogAiContentContext.task.id}-${blogAiContentContext.task.runId ?? 'content'}`}
           article={blogAiContentContext.article}
           locale={locale}
           onClose={() => {

@@ -13,4 +13,4 @@ Readable source documents and structured workbooks for the GOWE Group demo proje
 
 ## Maintenance Rule
 
-These files are generated from `demo-data/gowe-group/source-data.json`. Regenerate them after changing the structured demo data, then run `pnpm build`.
+These files are generated from `demo-data/gowe-group/source-data.json`. Regenerate them after changing the structured demo data, then run `npm run build`.

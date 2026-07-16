@@ -35,7 +35,7 @@ All business data in this folder is written in English because the demo project 
 - `src/data/demo/rejinCncAssetLibrary.js` imports images from `demo-data/rejin-cnc/assets/images/`.
 - `src/data/demo/rejinCncFileLibrary.js` imports Word, Excel, and PDF files from `demo-data/rejin-cnc/file/`.
 
-Because the app imports files from this folder, do not move or rename files here without updating `src/data/demo/*` and running `pnpm build`.
+Because the app imports files from this folder, do not move or rename files here without updating `src/data/demo/*` and running `npm run build`.
 
 ## Maintenance Rule
 

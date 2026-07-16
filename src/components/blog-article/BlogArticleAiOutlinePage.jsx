@@ -777,21 +777,24 @@ export default function BlogArticleAiOutlinePage({
   const copy = t.blogArticle.aiCreation;
   const demoData = useMemo(() => createOutlineDemoData(task, project), [project, task]);
   const workflow = demoData.workflow;
-  const initialPlaybackState = useMemo(() => getInitialPlaybackState(workflow, task), [workflow, task]);
-  const [currentTaskIndex, setCurrentTaskIndex] = useState(initialPlaybackState.currentTaskIndex);
-  const [visibleThinkingCounts, setVisibleThinkingCounts] = useState(initialPlaybackState.visibleThinkingCounts);
-  const [visibleArtifactIds, setVisibleArtifactIds] = useState(initialPlaybackState.visibleArtifactIds);
-  const [completedTaskIds, setCompletedTaskIds] = useState(initialPlaybackState.completedTaskIds);
-  const [isComplete, setIsComplete] = useState(initialPlaybackState.isComplete);
-  const [isStopped, setIsStopped] = useState(task?.stage === 'outline-stopped' || Boolean(task?.outline?.isStopped));
-  const [titlesVisible, setTitlesVisible] = useState(initialPlaybackState.titlesVisible);
-  const [titleConfirmed, setTitleConfirmed] = useState(initialPlaybackState.titleConfirmed);
+  // 播放展示来自任务快照，避免播放节拍导致页面本地状态重新初始化。
+  const playbackState = useMemo(() => getInitialPlaybackState(workflow, task), [workflow, task]);
+  const {
+    completedTaskIds,
+    currentTaskIndex,
+    isComplete,
+    selectedArtifactId,
+    titleConfirmed,
+    titlesVisible,
+    visibleArtifactIds,
+    visibleThinkingCounts,
+  } = playbackState;
+  const isStopped = task?.stage === 'outline-stopped' || Boolean(task?.outline?.isStopped);
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
-  const [selectedArtifactId, setSelectedArtifactId] = useState(initialPlaybackState.selectedArtifactId);
   const [titleOptions, setTitleOptions] = useState(demoData.titleOptions);
   const [selectedTitleId, setSelectedTitleId] = useState(demoData.selectedTitleId);
   const [confirmedTitleId, setConfirmedTitleId] = useState(
-    task?.outline?.confirmedTitleId || (initialPlaybackState.titleConfirmed ? demoData.selectedTitleId : ''),
+    task?.outline?.confirmedTitleId || (playbackState.titleConfirmed ? demoData.selectedTitleId : ''),
   );
   const [titleDraft, setTitleDraft] = useState(task?.outline?.titleDraft || demoData.selectedTitle);
   const [outlineTree, setOutlineTree] = useState(cloneTree(task?.outline?.outlineTree?.length ? task.outline.outlineTree : demoData.outlineTree));
@@ -968,19 +971,15 @@ export default function BlogArticleAiOutlinePage({
     const completedThroughTitle = workflow.slice(0, outlineTaskIndex).map((item) => item.id);
     const nextCompletedTaskIds = [...new Set([...completedTaskIds, ...completedThroughTitle])];
     const writeTitlesTask = workflow.find((item) => item.id === 'write-titles');
+    const nextVisibleThinkingCounts = {
+      ...visibleThinkingCounts,
+      ...(writeTitlesTask ? { [writeTitlesTask.id]: writeTitlesTask.thinking.length } : {}),
+    };
+    const nextCurrentTaskIndex = outlineTaskIndex >= 0 ? outlineTaskIndex : currentTaskIndex;
 
-    setTitleConfirmed(true);
     setConfirmedTitleId(selectedTitleId);
     setTitleDraft(nextTitle);
     setSavedTitleDraft(nextTitle);
-    setCompletedTaskIds(nextCompletedTaskIds);
-    setVisibleThinkingCounts((current) => ({
-      ...current,
-      ...(writeTitlesTask ? { [writeTitlesTask.id]: writeTitlesTask.thinking.length } : {}),
-    }));
-    if (outlineTaskIndex >= 0) {
-      setCurrentTaskIndex(outlineTaskIndex);
-    }
 
     const nextTask = updateAiCreationTask(project.id, task.id, {
       stage: 'outline',
@@ -994,6 +993,17 @@ export default function BlogArticleAiOutlinePage({
         titleConfirmed: true,
         titleDraft: nextTitle,
         titleOptions,
+        playback: {
+          ...(task?.outline?.playback ?? {}),
+          completedTaskIds: nextCompletedTaskIds,
+          currentTaskIndex: nextCurrentTaskIndex,
+          isComplete: false,
+          selectedArtifactId,
+          titleConfirmed: true,
+          titlesVisible: true,
+          visibleArtifactIds,
+          visibleThinkingCounts: nextVisibleThinkingCounts,
+        },
         updatedAt: getTodayString(),
       },
     });
@@ -1004,7 +1014,6 @@ export default function BlogArticleAiOutlinePage({
     // 停止任务保留当前标题、大纲树和已完成步骤。
     if (isStopped || isComplete) return;
 
-    setIsStopped(true);
     const nextTask = updateAiCreationTask(project.id, task.id, {
       stage: 'outline-stopped',
       outline: {
@@ -1043,6 +1052,19 @@ export default function BlogArticleAiOutlinePage({
     const nextTask = restartCollaborativeOutlineTask(project.id, task.id);
     toast.dismiss(stoppedToastId);
     onRestartStage?.({ article, stage: 'outline', task: nextTask ?? task });
+  }
+
+  function handleArtifactClick(artifactId) {
+    const nextTask = updateAiCreationTask(project.id, task.id, {
+      outline: {
+        currentArtifactId: artifactId,
+        playback: {
+          ...(task?.outline?.playback ?? {}),
+          selectedArtifactId: artifactId,
+        },
+      },
+    });
+    onTaskUpdated?.(nextTask ?? task);
   }
 
   function handleDiscardUnsaved() {
@@ -1150,10 +1172,7 @@ export default function BlogArticleAiOutlinePage({
     setTitleDraft(nextTitle);
     setSavedTitleDraft(nextTitle);
     setSavedOutlineTree(nextTree);
-    setTitleConfirmed(true);
     setConfirmedTitleId((current) => current || selectedTitleId);
-    setCompletedTaskIds(nextCompletedTaskIds);
-    setIsComplete(true);
 
     const nextTask = startCollaborativeContentTask(project.id, task.id, {
         completedTaskIds: nextCompletedTaskIds,
@@ -1220,7 +1239,7 @@ export default function BlogArticleAiOutlinePage({
                 group={group}
                 isStopped={isStopped}
                 locale={locale}
-                onArtifactClick={setSelectedArtifactId}
+                onArtifactClick={handleArtifactClick}
                 onConfirmTitle={handleConfirmTitle}
                 onRegenerateTitle={handleRegenerateTitle}
                 onSelectTitle={handleSelectTitle}

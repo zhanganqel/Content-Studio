@@ -270,28 +270,26 @@ function getRunnerDelay(task, project) {
 function advanceLatestTask({ onTaskUpdated, project, task }) {
   const latestTask = getAiCreationTasks(project.id).find((item) => item.id === task.id) ?? task;
   if (latestTask.stage === 'planning') {
-    advanceSimplePhase({
+    return advanceSimplePhase({
       demoData: createPlanningDemoData(latestTask, project),
       onTaskUpdated,
       phaseName: 'planning',
       projectId: project.id,
       task: latestTask,
     });
-    return;
   }
 
   if (latestTask.stage === 'outline') {
-    advanceOutlinePhase({
+    return advanceOutlinePhase({
       demoData: createOutlineDemoData(latestTask, project),
       onTaskUpdated,
       projectId: project.id,
       task: latestTask,
     });
-    return;
   }
 
   if (latestTask.stage === 'content') {
-    advanceContentPhase({
+    return advanceContentPhase({
       demoData: createContentDemoData(latestTask, project, {
         revisionRequests: latestTask.content?.revisionRequests ?? [],
       }),
@@ -300,25 +298,52 @@ function advanceLatestTask({ onTaskUpdated, project, task }) {
       task: latestTask,
     });
   }
+
+  return { delay: null };
 }
 
 // 页面切换后仍存活的协同任务运行器；它只推进实际执行阶段，不改变用户的查看阶段。
 export default function CollaborativeTaskRunner({ onTaskUpdated, project, task }) {
   const timerRef = useRef(null);
+  const latestRef = useRef({ onTaskUpdated, project, task });
+
+  useEffect(() => {
+    latestRef.current = { onTaskUpdated, project, task };
+  }, [onTaskUpdated, project, task]);
 
   useEffect(() => {
     if (!project?.id || !task?.id || task.mode === 'auto' || !['planning', 'outline', 'content'].includes(task.stage)) {
       return undefined;
     }
 
-    const latestTask = getAiCreationTasks(project.id).find((item) => item.id === task.id) ?? task;
-    const delay = getRunnerDelay(latestTask, project);
-    if (delay) timerRef.current = window.setTimeout(() => advanceLatestTask({ onTaskUpdated, project, task }), delay);
+    let cancelled = false;
+
+    const scheduleNextStep = () => {
+      const latest = latestRef.current;
+      const latestTask = getAiCreationTasks(latest.project.id).find((item) => item.id === task.id) ?? latest.task;
+      const delay = getRunnerDelay(latestTask, latest.project);
+
+      if (!delay || cancelled) return;
+
+      timerRef.current = window.setTimeout(() => {
+        if (cancelled) return;
+
+        advanceLatestTask({
+          onTaskUpdated: latestRef.current.onTaskUpdated,
+          project: latestRef.current.project,
+          task: latestRef.current.task,
+        });
+        scheduleNextStep();
+      }, delay);
+    };
+
+    scheduleNextStep();
 
     return () => {
+      cancelled = true;
       if (timerRef.current) window.clearTimeout(timerRef.current);
     };
-  }, [onTaskUpdated, project, task]);
+  }, [project?.id, task?.id, task?.mode, task?.runId, task?.stage]);
 
   return null;
 }

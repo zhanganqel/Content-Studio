@@ -797,14 +797,17 @@ export default function BlogArticleAiPlanningPage({
   const copy = t.blogArticle.aiCreation;
   const demoData = useMemo(() => createPlanningDemoData(task, project), [project, task]);
   const workflow = demoData.workflow;
-  const initialPlaybackState = useMemo(() => getInitialPlaybackState(workflow, task), [workflow, task]);
-  const [currentTaskIndex, setCurrentTaskIndex] = useState(initialPlaybackState.currentTaskIndex);
-  const [visibleThinkingCounts, setVisibleThinkingCounts] = useState(initialPlaybackState.visibleThinkingCounts);
-  const [visibleArtifactIds, setVisibleArtifactIds] = useState(initialPlaybackState.visibleArtifactIds);
-  const [completedTaskIds, setCompletedTaskIds] = useState(initialPlaybackState.completedTaskIds);
-  const [isComplete, setIsComplete] = useState(initialPlaybackState.isComplete);
-  const [isStopped, setIsStopped] = useState(task?.stage === 'planning-stopped' || Boolean(task?.planning?.isStopped));
-  const [selectedArtifactId, setSelectedArtifactId] = useState(initialPlaybackState.selectedArtifactId);
+  // 播放视图直接读取任务快照，后台推进时只更新新增流程内容，不重挂整页。
+  const playbackState = useMemo(() => getInitialPlaybackState(workflow, task), [workflow, task]);
+  const {
+    completedTaskIds,
+    currentTaskIndex,
+    isComplete,
+    selectedArtifactId,
+    visibleArtifactIds,
+    visibleThinkingCounts,
+  } = playbackState;
+  const isStopped = task?.stage === 'planning-stopped' || Boolean(task?.planning?.isStopped);
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
   const toast = useToast({ scope: `blog-ai-planning-${task.id}` });
   const [strategyContent, setStrategyContent] = useState(demoData.artifacts.strategy.content);
@@ -861,7 +864,16 @@ export default function BlogArticleAiPlanningPage({
     if (!action) return;
 
     if (action.type === 'select-artifact') {
-      setSelectedArtifactId(action.artifactId);
+      const nextTask = updateAiCreationTask(project.id, task.id, {
+        planning: {
+          currentArtifactId: action.artifactId,
+          playback: {
+            ...(task?.planning?.playback ?? {}),
+            selectedArtifactId: action.artifactId,
+          },
+        },
+      });
+      onTaskUpdated?.(nextTask ?? task);
       return;
     }
 
@@ -898,7 +910,6 @@ export default function BlogArticleAiPlanningPage({
     // 停止任务会保留已完成步骤和当前策划内容。
     if (isStopped || isComplete) return;
 
-    setIsStopped(true);
     const nextTask = updateAiCreationTask(project.id, task.id, {
       stage: 'planning-stopped',
       planning: {
