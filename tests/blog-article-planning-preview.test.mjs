@@ -117,5 +117,18 @@ test('planning FAQ and generation rules are complete and contain no process plac
   assert.match(content, /Q4（证据与限制）/);
   assert.match(content, /Q7（信任建立与 CTA）/);
   assert.match(content, /> \*\*生成规范\*\*/);
+  assert.match(content, /> - \*\*用户输入与生成要求：\*\*<br>品牌要求：/);
   assert.doesNotMatch(content, /未调用|未爬取|未获取正文|仅提供链接|待验证|待补充/);
+});
+
+test('planning generation rules keep supplemental requirements after the label break', () => {
+  const task = createCompletePlanningTask();
+  task.taskInput.additionalRequirements = 'Use a comparison table and keep the CTA quote-oriented.';
+  const content = createPlanningDemoData(task, createProject()).artifacts.strategy.content;
+
+  assert.match(content, /> - \*\*用户输入与生成要求：\*\*<br>品牌要求：/);
+  assert.match(
+    content,
+    /Make calls to action direct and quote-oriented\.<br>补充生成要求：Use a comparison table and keep the CTA quote-oriented\.<br>标题、大纲和正文不得擅自改写文章基础信息。/,
+  );
 });

@@ -1057,7 +1057,7 @@ function createPlanningPreviewContent(task, project) {
     ...faqItems.map(([category, question], index) => `- **Q${index + 1}（${category}）：**${question}`),
     '',
     '> **生成规范**',
-    `> - **用户输入与生成要求：**${generationRequirementsText}<br>标题、大纲和正文不得擅自改写文章基础信息。`,
+    `> - **用户输入与生成要求：**<br>${generationRequirementsText}<br>标题、大纲和正文不得擅自改写文章基础信息。`,
     `> - **事实与来源：**${companyName} 的能力、认证、参数和案例只使用项目知识库、官方页面与已选择资料，竞对内容仅用于结构与行业解释。`,
     '> - **禁止虚构：**不得编造参数、认证、案例、客户、规模、结果、市场数据或监管结论；高风险内容需合格专业人员复核。',
     `> - **SEO 与语言：**正文使用 ${articleLanguage}，符合 ${targetRegion} 的 B2B 阅读习惯，围绕「${primaryKeyword}」和 ${searchIntent} 自然写作，不堆砌关键词。`,
