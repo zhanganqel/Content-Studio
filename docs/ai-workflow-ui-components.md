@@ -4,10 +4,10 @@
 
 ## Component Ownership
 
-- `src/components/ai-workflow/AiWorkflowComponents.jsx` {#Agent头像、任务状态图标、任务过程和任务组渲染组件}。
-- `src/components/ai-workflow/AiInputComponents.jsx` {#AI任务表单、关键词、知识资源和标题选择组件}。
-- `src/components/ai-workflow/ArtifactComponents.jsx` {#产物卡片和按产物类型分派的预览组件}。
-- `src/components/ai-workflow/taskCatalog.js` {#标准任务名称、所属Agent和状态文案格式器}。
+- `src/components/ai-workflow/AiWorkflowComponents.jsx` {-Agent头像、任务状态图标、任务过程和任务组渲染组件}。
+- `src/components/ai-workflow/AiInputComponents.jsx` {-AI任务表单、关键词、知识资源和标题选择组件}。
+- `src/components/ai-workflow/ArtifactComponents.jsx` {-产物卡片和按产物类型分派的预览组件}。
+- `src/components/ai-workflow/taskCatalog.js` {-标准任务名称、所属Agent和状态文案格式器}。
 
 ## Agent Presentation
 
@@ -81,7 +81,3 @@ uiBlocks: [
 - 顶部菜单触发重命名时，在顶部标题区域编辑；侧栏触发重命名时，在对应会话行编辑。同一时间只允许一个入口处于编辑状态。
 - 两种重命名入口写入同一个项目级会话对象，保存后顶部标题、侧栏列表和浮层列表同步刷新。
 - 会话删除必须先使用共享 `ConfirmDialog` 二次确认；确认前不得中止任务、释放线程或删除任何关联数据。
-
-## Demo Data
-
-Rejin项目包含六个以 `UI演示｜` 开头的独立会话，用于检查任务表单、标题、大纲、多Agent流程、状态、检索、引用、产物和版本。演示种子只补充固定ID实体，不覆盖用户数据。

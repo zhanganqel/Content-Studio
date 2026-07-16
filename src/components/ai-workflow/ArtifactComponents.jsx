@@ -14,18 +14,19 @@ function getArtifactVisual(type = '') {
 
 export function ArtifactCard({ artifact, onClick, panel = false, selected = false }) {
   const { icon: Icon } = getArtifactVisual(artifact.type);
+  const compact = artifact.metadata?.displayMode === 'compact';
   return (
     <button
       type="button"
-      className={`flex min-h-[78px] w-full min-w-0 items-center gap-3 rounded-[8px] border p-4 text-left transition ${panel ? 'max-w-none' : 'max-w-[520px]'} ${selected ? 'border-[#365EFF] bg-[#EEF3FF]' : 'border-[#DCDFE6] bg-white hover:border-[#365EFF] hover:bg-[#F5F7FF]'}`}
+      className={`flex w-full min-w-0 items-center gap-3 rounded-[8px] border text-left transition ${compact ? 'min-h-[44px] px-3 py-2' : 'min-h-[78px] p-4'} ${panel ? 'max-w-none' : 'max-w-[520px]'} ${selected ? 'border-[#365EFF] bg-[#EEF3FF]' : 'border-[#DCDFE6] bg-white hover:border-[#365EFF] hover:bg-[#F5F7FF]'}`}
       onClick={onClick}
     >
-      <span className="inline-flex h-11 w-11 flex-none items-center justify-center rounded-[8px] bg-[#5B7CFF] text-white">
-        <Icon className="h-5 w-5" />
+      <span className={`inline-flex flex-none items-center justify-center rounded-[8px] bg-[#5B7CFF] text-white ${compact ? 'h-7 w-7' : 'h-11 w-11'}`}>
+        <Icon className={compact ? 'h-3.5 w-3.5' : 'h-5 w-5'} />
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[14px] font-semibold leading-[22px] text-[#303133]">{artifact.title}</span>
-        <span className="mt-0.5 line-clamp-2 text-[13px] leading-[20px] text-[#606266]">{artifact.summary}</span>
+        {!compact ? <span className="mt-0.5 line-clamp-2 text-[13px] leading-[20px] text-[#606266]">{artifact.summary}</span> : null}
       </span>
       <ChevronRight className="h-5 w-5 flex-none text-[#A8ABB2]" />
     </button>
@@ -152,6 +153,95 @@ function StructuredPreview({ artifact }) {
   return <pre className="whitespace-pre-wrap break-words rounded-[8px] bg-[#F7F8FB] p-4 text-[13px] leading-6 text-[#606266]">{JSON.stringify(data, null, 2)}</pre>;
 }
 
+const planningLabels = {
+  additionalRequirements: '补充生成要求', analyzedReferences: '已分析参考文章', anchorText: '锚文本',
+  answerDirection: '回答方向', articleLanguage: '文章语言', articleLength: '文章长度', articleTopic: '文章主题',
+  articleType: '文章类型', audienceAnalysis: '目标受众分析', brandRequirements: '品牌要求',
+  businessGoal: '业务目标', businessGoalAnalysis: '业务目标分析', businessGoalType: '业务目标类型',
+  contentBoundaries: '内容边界', contentGaps: '内容空缺', conversionGoal: '转化目标',
+  copyModelStrategy: '营销文案模型与写作思路', differentiationOpportunities: '差异化机会',
+  evidenceGaps: '证据缺口', evidenceNeeded: '所需依据', faqItems: 'FAQ 建议', faqPlan: 'FAQ 建议',
+  goal: '阶段目标', goalAnalysis: '文章目标分析', guidance: '布局建议', internalLinkPlan: '内链插入建议',
+  keyword: '关键词', keywordItems: '关键词明细', keywordLayout: '关键词布局建议', keyContent: '核心内容',
+  limitations: '当前限制', linkSuggestions: '内链建议', modelRationale: '模型选择理由', name: '阶段名称',
+  origin: '来源', person: '人称', placement: '建议位置', primaryKeywords: '主要关键词', primaryModel: '主文案模型',
+  question: '问题', rationale: '建议理由', referenceAnalysis: '参考文章分析', referenceArticles: '参考文章',
+  relevance: '相关性', risks: '风险', role: '关键词角色', searchIntent: '搜索意图', secondaryKeywords: '次要关键词',
+  secondaryModel: '辅助文案模型', skippedReferences: '跳过的参考文章', stage: '写作阶段', stageGuidance: '分阶段布局',
+  strengths: '可借鉴点', summary: '摘要', synthesis: '综合结论', targetAudience: '目标受众',
+  targetMarketAnalysis: '目标市场分析', targetRegion: '目标地区', targetTitle: '目标页面', targetUrl: '目标 URL',
+  title: '标题', tone: '语气', trustBuildingMethods: '信任建立方式', usageGuidance: '使用说明', url: 'URL',
+  writingPrinciples: '写作原则', writingStages: '分阶段写作思路',
+};
+
+const planningSectionTitles = {
+  copyModelStrategy: '营销文案模型与写作思路', faqPlan: 'FAQ 建议', goalAnalysis: '文章目标分析',
+  internalLinkPlan: '内链插入建议', keywordLayout: '关键词布局建议', referenceAnalysis: '参考文章分析',
+};
+
+function PlanningValue({ value }) {
+  if (value === null || value === undefined || value === '') return <span className="text-[#A8ABB2]">未提供</span>;
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    const text = String(value);
+    return /^https?:\/\//i.test(text)
+      ? <a className="break-all font-semibold text-[#365EFF] hover:underline" href={text} target="_blank" rel="noreferrer">{text}</a>
+      : <span className="whitespace-pre-wrap break-words">{text}</span>;
+  }
+  if (Array.isArray(value)) {
+    if (!value.length) return <span className="text-[#A8ABB2]">暂无</span>;
+    return (
+      <div className="space-y-2">
+        {value.map((item, index) => (
+          <div key={`${index}-${typeof item === 'string' ? item.slice(0, 16) : 'item'}`} className={typeof item === 'object' ? 'rounded-[8px] border border-[#EBEEF5] bg-white p-3' : 'flex gap-2'}>
+            {typeof item !== 'object' ? <span className="mt-2 h-1.5 w-1.5 flex-none rounded-full bg-[#365EFF]" /> : null}
+            <div className="min-w-0 flex-1"><PlanningValue value={item} /></div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+  return (
+    <dl className="grid gap-3">
+      {Object.entries(value).map(([key, item]) => (
+        <div key={key} className="grid gap-1.5 sm:grid-cols-[150px_minmax(0,1fr)] sm:gap-4">
+          <dt className="text-[12px] font-semibold text-[#909399]">{planningLabels[key] || key}</dt>
+          <dd className="min-w-0 text-[13px] leading-6 text-[#606266]"><PlanningValue value={item} /></dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function ArticlePlanningPreview({ artifact }) {
+  const data = parseOutlineContent(artifact.content);
+  if (!data) return <MarkdownContent content={artifact.content} />;
+  const finalPlan = artifact.metadata?.kind === 'article_planning_plan';
+  const sections = finalPlan ? data.sections ?? {} : { [artifact.metadata?.sectionKey || 'section']: data };
+
+  return (
+    <div className="w-full min-w-0 space-y-5">
+      {finalPlan ? (
+        <section className="rounded-[8px] bg-[#F7F8FB] p-4">
+          <h3 className="text-[15px] font-bold text-[#303133]">已确认的文章基础信息</h3>
+          <div className="mt-3"><PlanningValue value={data.confirmedInputs ?? {}} /></div>
+        </section>
+      ) : null}
+      {Object.entries(sections).map(([sectionKey, section]) => (
+        <section key={sectionKey} className="rounded-[8px] border border-[#EBEEF5] bg-white p-4">
+          <h3 className="text-[15px] font-bold text-[#303133]">{planningSectionTitles[sectionKey] || planningLabels[sectionKey] || artifact.title}</h3>
+          <div className="mt-3"><PlanningValue value={section} /></div>
+        </section>
+      ))}
+      {finalPlan && (data.evidenceGaps?.length || data.limitations?.length) ? (
+        <section className="rounded-[8px] border border-amber-100 bg-amber-50 p-4">
+          <h3 className="text-[14px] font-bold text-amber-800">证据缺口与当前限制</h3>
+          <div className="mt-3 text-amber-800"><PlanningValue value={[...(data.evidenceGaps ?? []), ...(data.limitations ?? [])]} /></div>
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
 function RevisionPreview({ artifact }) {
   return (
     <div>
@@ -172,7 +262,8 @@ export function ArtifactPreview({ artifact, emptyText = '选择产物后可在�
   if (artifact.type === 'evaluation') body = <EvaluationPreview artifact={artifact} />;
   if (artifact.type === 'tdk') body = <TdkPreview artifact={artifact} />;
   if (artifact.type === 'title_options') body = <TitleOptionsPreview artifact={artifact} onInsertToComposer={onInsertToComposer} />;
-  if (artifact.type === 'strategy' || artifact.type === 'enrichment') body = <StructuredPreview artifact={artifact} />;
+  if (artifact.type === 'strategy' && ['planning_section', 'article_planning_plan'].includes(artifact.metadata?.kind)) body = <ArticlePlanningPreview artifact={artifact} />;
+  else if (artifact.type === 'strategy' || artifact.type === 'enrichment') body = <StructuredPreview artifact={artifact} />;
   if (artifact.type === 'revision') body = <RevisionPreview artifact={artifact} />;
 
   return (

@@ -40,27 +40,13 @@ import {
   expandedSidebarWidth,
 } from '../../services/sidebarPreferenceStore.js';
 import {
-  getCopilotSidebarCollapsedPreference,
-  saveCopilotSidebarCollapsedPreference,
-} from '../../services/copilotWorkbenchStore.js';
-import { releaseCopilotThread, streamCopilotChat } from '../../services/copilotChatApi.js';
-import {
-  createCopilotArtifact,
-  createCopilotConversation,
-  createCopilotMessage,
-  createCopilotRun,
-  createCopilotSource,
-  deriveConversationTitle,
-  getConversationArtifacts,
-  getConversationMessages,
-  getCopilotConversationState,
-  saveCopilotConversationState,
-} from '../../services/copilotConversationStore.js';
-import { createTargetArtifactSnapshot } from '../../services/copilotArtifactPayload.js';
-import { getCodexServiceHealth } from '../../services/codexServiceApi.js';
+  getSidebarCollapsedPreference,
+  saveSidebarCollapsedPreference,
+} from '../../features/copilot/storage.js';
+import { copilotAttachmentLimits } from '../../features/copilot/contracts.js';
+import { useCopilotController } from '../../features/copilot/useCopilotController.js';
 import {
   buildCopilotKnowledgeAttachments,
-  copilotAttachmentLimits,
   getKnowledgeSelectionData,
 } from '../../services/knowledgeSelectionData.js';
 import {
@@ -73,14 +59,9 @@ import ConfirmDialog from '../ui/ConfirmDialog.jsx';
 import { SolidDashboardIcon } from '../ui/SolidIcons.jsx';
 import {
   AgentAvatar,
-  AgentTaskGroup,
   getAgentPresentation,
   TaskStatusIcon,
 } from '../ai-workflow/AiWorkflowComponents.jsx';
-import {
-  ArticleTaskForm,
-  TitleSelector,
-} from '../ai-workflow/AiInputComponents.jsx';
 import {
   ArtifactCard,
   ArtifactPreview,
@@ -157,26 +138,6 @@ function getLatestConversationRuns(runs = []) {
   }
 
   return latestRuns;
-}
-
-function getPendingConversationRun(runs = [], conversationId = '') {
-  // 查找等待用户补充信息且尚未解决的任务。
-  return runs
-    .filter(
-      (run) =>
-        run.conversationId === conversationId &&
-        run.status === 'waiting_input' &&
-        !run.resolvedAt,
-    )
-    .sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt))[0];
-}
-
-function isWaitingTaskCancellation(value = '') {
-  // 等待补充时识别用户明确取消任务的表达。
-  const normalized = value.trim().toLowerCase().replace(/[。！!.]+$/g, '').trim();
-  return /^(取消|停止|不用了|不继续|取消任务|停止任务|cancel|stop|never mind|don't continue)$/.test(
-    normalized,
-  );
 }
 
 function IconTooltip({ children, label, placement = 'right' }) {
@@ -407,6 +368,10 @@ export default function CopilotWorkbenchPage({
   onProjectChange,
 }) {
   const copy = t.copilot;
+  const copilot = useCopilotController({
+    projectId: activeProject.id,
+    untitledLabel: copy.untitled,
+  });
   const knowledgeSelection = useMemo(() => getKnowledgeSelectionData(activeProject), [activeProject]);
   const knowledgeSelectionLabels = useMemo(
     () => createKnowledgeSelectionLabels(locale, {
@@ -425,23 +390,13 @@ export default function CopilotWorkbenchPage({
     ],
     [t],
   );
-  const initialConversationStateRef = useRef(null);
-  if (!initialConversationStateRef.current) {
-    // 首次渲染只读取一次当前项目的会话缓存。
-    initialConversationStateRef.current = getCopilotConversationState(activeProject.id);
-  }
-  // 工作台状态分为侧栏、会话、弹层、预览和流式任务五组。
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(getCopilotSidebarCollapsedPreference);
+  // 页面只保留展示和输入相关状态，会话与网络状态由 controller 管理。
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(getSidebarCollapsedPreference);
   const [brandSectionOpen, setBrandSectionOpen] = useState(true);
   const [pinnedSectionOpen, setPinnedSectionOpen] = useState(true);
   const [historySectionOpen, setHistorySectionOpen] = useState(true);
   const [workspaceMode, setWorkspaceMode] = useState('chat');
   const [conversationSearchQuery, setConversationSearchQuery] = useState('');
-  const [conversationState, setConversationState] = useState(initialConversationStateRef.current);
-  const conversationStateRef = useRef(conversationState);
-  const [activeConversationId, setActiveConversationId] = useState(
-    () => conversationState.conversations[0]?.id ?? '',
-  );
   const [editingConversationId, setEditingConversationId] = useState('');
   const [editingConversationTitle, setEditingConversationTitle] = useState('');
   const [editingConversationSurface, setEditingConversationSurface] = useState('');
@@ -455,10 +410,7 @@ export default function CopilotWorkbenchPage({
   const [composerDrafts, setComposerDrafts] = useState({});
   const [composerMenuOpen, setComposerMenuOpen] = useState(false);
   const [knowledgeModal, setKnowledgeModal] = useState(null);
-  const [currentModel, setCurrentModel] = useState('Codex');
   const [showScrollToLatest, setShowScrollToLatest] = useState(false);
-  const [conversationErrors, setConversationErrors] = useState({});
-  const [runningConversationIds, setRunningConversationIds] = useState(() => new Set());
   const [selectedArtifactId, setSelectedArtifactId] = useState('');
   const projectMenuRef = useRef(null);
   const userMenuRef = useRef(null);
@@ -470,12 +422,17 @@ export default function CopilotWorkbenchPage({
   const chatInputRef = useRef(null);
   const mainWorkspaceRef = useRef(null);
   const popoverCloseTimerRef = useRef(null);
-  const activeChatControllersRef = useRef(new Map());
 
   const sidebarWidth = sidebarCollapsed ? collapsedSidebarWidth : expandedSidebarWidth;
+  const {
+    activeConversation,
+    activeConversationId,
+    conversationErrors,
+    conversationState,
+    currentModel,
+    runningConversationIds,
+  } = copilot;
   const conversations = conversationState.conversations;
-  const activeConversation =
-    conversations.find((conversation) => conversation.id === activeConversationId) ?? conversations[0];
   const activeComposerDraft = composerDrafts[activeConversation?.id] ?? emptyComposerDraft;
   const chatInput = activeComposerDraft.text;
   const selectedComposerItems = knowledgeSelection.items.filter((item) =>
@@ -484,23 +441,20 @@ export default function CopilotWorkbenchPage({
   const selectedComposerFiles = knowledgeSelection.files.filter((file) =>
     activeComposerDraft.knowledgeFileIds.includes(file.id),
   );
-  const knowledgeModalBlock = getKnowledgeModalBlock();
-  const knowledgeModalItemIds =
-    knowledgeModal?.target === 'ui-block'
-      ? knowledgeModalBlock?.knowledgeItemIds ?? []
-      : activeComposerDraft.knowledgeItemIds;
-  const knowledgeModalFileIds =
-    knowledgeModal?.target === 'ui-block'
-      ? knowledgeModalBlock?.knowledgeFileIds ?? []
-      : activeComposerDraft.knowledgeFileIds;
+  const knowledgeModalItemIds = activeComposerDraft.knowledgeItemIds;
+  const knowledgeModalFileIds = activeComposerDraft.knowledgeFileIds;
   const activeConversationRunning = runningConversationIds.has(activeConversation?.id);
   const chatError = conversationErrors[activeConversation?.id] ?? '';
   const activeMessages = useMemo(
-    () => getConversationMessages(conversationState, activeConversation?.id),
+    () => conversationState.messages
+      .filter((message) => message.conversationId === activeConversation?.id)
+      .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt)),
     [activeConversation?.id, conversationState],
   );
   const activeArtifacts = useMemo(
-    () => getConversationArtifacts(conversationState, activeConversation?.id),
+    () => conversationState.artifacts
+      .filter((artifact) => artifact.conversationId === activeConversation?.id)
+      .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)),
     [activeConversation?.id, conversationState],
   );
   const selectedArtifact =
@@ -517,7 +471,6 @@ export default function CopilotWorkbenchPage({
     () => getLatestConversationRuns(conversationState.runs),
     [conversationState.runs],
   );
-  const activePendingRun = getPendingConversationRun(conversationState.runs, activeConversation?.id);
   const isChatMode = workspaceMode === 'chat';
   const previewVisible = isChatMode && previewOpen;
   const artifactPanelVisible = isChatMode && artifactPanelOpen && !previewOpen;
@@ -529,31 +482,11 @@ export default function CopilotWorkbenchPage({
 
   useEffect(() => {
     // 折叠偏好持久化到本地缓存。
-    saveCopilotSidebarCollapsedPreference(sidebarCollapsed);
+    saveSidebarCollapsedPreference(sidebarCollapsed);
   }, [sidebarCollapsed]);
 
   useEffect(() => {
-    // ref 始终指向最新会话状态，供异步流式回调读取。
-    conversationStateRef.current = conversationState;
-  }, [conversationState]);
-
-  useEffect(() => {
-    // 模型名称只读自后端健康检查；读取失败不阻塞用户编辑和后续请求。
-    const controller = new AbortController();
-    getCodexServiceHealth({ signal: controller.signal })
-      .then((health) => setCurrentModel(health?.model || 'Codex'))
-      .catch(() => setCurrentModel('Codex'));
-    return () => controller.abort();
-  }, []);
-
-  useEffect(() => {
-    // 切换项目时中断当前流式任务并重载项目会话缓存。
-    for (const controller of activeChatControllersRef.current.values()) controller.abort();
-    activeChatControllersRef.current.clear();
-    const nextConversationState = getCopilotConversationState(activeProject.id);
-    conversationStateRef.current = nextConversationState;
-    setConversationState(nextConversationState);
-    setActiveConversationId(nextConversationState.conversations[0]?.id ?? '');
+    // 切换项目时只重置页面级输入和弹层；controller 负责停止请求和加载服务端会话。
     setConversationSearchQuery('');
     setActivePopover('');
     setConversationActionMenuOpen(false);
@@ -561,8 +494,6 @@ export default function CopilotWorkbenchPage({
     setEditingConversationTitle('');
     setEditingConversationSurface('');
     setDeleteConversationTarget(null);
-    setConversationErrors({});
-    setRunningConversationIds(new Set());
     setComposerDrafts({});
     setComposerMenuOpen(false);
     setKnowledgeModal(null);
@@ -604,15 +535,6 @@ export default function CopilotWorkbenchPage({
       setShowScrollToLatest(true);
     }
   }, [activeMessages]);
-
-  useEffect(
-    () => () => {
-      // 页面卸载时中断所有未完成的流式请求。
-      for (const controller of activeChatControllersRef.current.values()) controller.abort();
-      activeChatControllersRef.current.clear();
-    },
-    [],
-  );
 
   useEffect(() => {
     // 当前选中产物不存在时自动回退到第一个产物。
@@ -663,16 +585,6 @@ export default function CopilotWorkbenchPage({
     [],
   );
 
-  function persistConversationState(nextState, nextActiveConversationId) {
-    // 所有会话状态变更都通过项目维度缓存落盘。
-    const savedState = saveCopilotConversationState(activeProject.id, nextState);
-    conversationStateRef.current = savedState;
-    setConversationState(savedState);
-    if (nextActiveConversationId !== undefined) {
-      setActiveConversationId(nextActiveConversationId);
-    }
-  }
-
   function updateComposerDraft(conversationId, patch) {
     // 未发送文本和附件按会话隔离，切换会话时不会串用。
     if (!conversationId) return;
@@ -710,111 +622,35 @@ export default function CopilotWorkbenchPage({
     setShowScrollToLatest(distance >= 120);
   }
 
-  function setConversationRunning(conversationId, running) {
-    // runningConversationIds 只保存当前正在流式响应的会话。
-    setRunningConversationIds((current) => {
-      const next = new Set(current);
-      if (running) next.add(conversationId);
-      else next.delete(conversationId);
-      return next;
-    });
-  }
-
-  function setConversationError(conversationId, message) {
-    // 错误信息按会话隔离，避免切换会话后串台。
-    setConversationErrors((current) => ({ ...current, [conversationId]: message }));
-  }
-
   function cancelActiveProjectRuns() {
-    // 离开项目或关闭工作台时批量中止当前项目的流式任务。
-    const conversationIds = new Set(activeChatControllersRef.current.keys());
-    if (!conversationIds.size) return;
-
-    for (const controller of activeChatControllersRef.current.values()) controller.abort();
-    activeChatControllersRef.current.clear();
-    const endedAt = new Date().toISOString();
-    persistConversationState({
-      ...conversationStateRef.current,
-      messages: conversationStateRef.current.messages.map((message) =>
-        conversationIds.has(message.conversationId) && message.status === 'streaming'
-          ? { ...message, status: 'cancelled', statusText: '', updatedAt: endedAt }
-          : message,
-      ),
-      runs: conversationStateRef.current.runs.map((run) =>
-        conversationIds.has(run.conversationId) && run.status === 'running'
-          ? { ...run, acknowledgedAt: '', endedAt, status: 'cancelled' }
-          : run,
-      ),
-    });
-    setRunningConversationIds(new Set());
+    // controller 会同时终止浏览器请求和 EdgeOne Agent 运行。
+    copilot.stopAll();
   }
 
   function cancelConversationRun(conversationId) {
-    // 用户点击停止时，只中断当前会话的流式请求。
-    const controller = activeChatControllersRef.current.get(conversationId);
-    if (!controller) return;
-
-    controller.abort();
-    activeChatControllersRef.current.delete(conversationId);
-    const endedAt = new Date().toISOString();
-    persistConversationState({
-      ...conversationStateRef.current,
-      messages: conversationStateRef.current.messages.map((message) =>
-        message.conversationId === conversationId && message.status === 'streaming'
-          ? {
-              ...message,
-              content: message.content || copy.chatStopped,
-              status: 'cancelled',
-              statusText: '',
-              updatedAt: endedAt,
-            }
-          : message,
-      ),
-      runs: conversationStateRef.current.runs.map((run) =>
-        run.conversationId === conversationId && run.status === 'running'
-          ? { ...run, acknowledgedAt: '', endedAt, status: 'cancelled' }
-          : run,
-      ),
-    });
-    setConversationRunning(conversationId, false);
-    setConversationError(conversationId, '');
+    void copilot.stopConversation(conversationId);
   }
 
   function closeWorkbench() {
-    // 关闭工作台前先释放当前项目的运行中任务。
     cancelActiveProjectRuns();
     onClose();
   }
 
   function createNewConversation() {
-    // 新建会话插入到历史列表顶部并切回聊天模式。
-    const conversation = createCopilotConversation(
-      activeProject.id,
-      copy.newConversationTitle(conversations.length + 1),
-    );
-    persistConversationState(
-      {
-        ...conversationStateRef.current,
-        conversations: [conversation, ...conversationStateRef.current.conversations],
-      },
-      conversation.id,
-    );
+    copilot.createConversation(copy.newConversationTitle(conversations.length + 1));
     setWorkspaceMode('chat');
     setActivePopover('');
     setConversationSearchQuery('');
     setConversationActionMenuOpen(false);
-    setEditingConversationId('');
-    setEditingConversationTitle('');
-    setEditingConversationSurface('');
+    cancelInlineRename();
   }
 
   function startConversationRename(conversationId, surface = 'sidebar') {
-    // 顶部和侧栏共享同一份标题草稿，但只在触发入口显示输入框。
     const target = conversations.find((conversation) => conversation.id === conversationId);
     if (!target) return;
 
+    copilot.selectConversation(conversationId);
     setWorkspaceMode('chat');
-    setActiveConversationId(conversationId);
     setConversationSearchQuery('');
     setActivePopover('');
     setConversationActionMenuOpen(false);
@@ -824,137 +660,58 @@ export default function CopilotWorkbenchPage({
   }
 
   function cancelInlineRename() {
-    // 退出重命名时清空临时标题。
     setEditingConversationId('');
     setEditingConversationTitle('');
     setEditingConversationSurface('');
   }
 
   function commitInlineRename(conversationId) {
-    // 空标题或未变化标题不写入缓存。
     if (editingConversationId !== conversationId) return;
-
     const target = conversations.find((conversation) => conversation.id === conversationId);
     const nextTitle = editingConversationTitle.trim();
-
-    if (!target || !nextTitle || nextTitle === target.title) {
-      cancelInlineRename();
-      return;
+    if (target && nextTitle && nextTitle !== target.title) {
+      copilot.renameConversation(conversationId, nextTitle);
     }
-
-    persistConversationState(
-      {
-        ...conversationStateRef.current,
-        conversations: conversationStateRef.current.conversations.map((conversation) =>
-          conversation.id === conversationId
-            ? { ...conversation, title: nextTitle, updatedAt: new Date().toISOString() }
-            : conversation,
-        ),
-      },
-    );
     cancelInlineRename();
   }
 
   function toggleConversationPin(conversationId) {
-    // 置顶状态直接写回会话列表。
-    persistConversationState(
-      {
-        ...conversationStateRef.current,
-        conversations: conversationStateRef.current.conversations.map((conversation) =>
-          conversation.id === conversationId
-            ? { ...conversation, pinned: !conversation.pinned, updatedAt: new Date().toISOString() }
-            : conversation,
-        ),
-      },
-    );
+    copilot.togglePin(conversationId);
   }
 
-  function deleteConversation(conversationId) {
-    // 删除会话会同步清理消息、产物、来源和运行记录。
-    activeChatControllersRef.current.get(conversationId)?.abort();
-    activeChatControllersRef.current.delete(conversationId);
-    setConversationRunning(conversationId, false);
+  async function deleteConversation(conversationId) {
+    // 服务端删除成功后 controller 才会移除本地会话。
+    await copilot.deleteConversation(conversationId);
     removeComposerDraft(conversationId);
-    setConversationErrors((current) => {
-      const next = { ...current };
-      delete next[conversationId];
-      return next;
-    });
-    void releaseCopilotThread(activeProject.id, conversationId).catch(() => {});
-
-    const currentState = conversationStateRef.current;
-    const nextConversations = currentState.conversations.filter((conversation) => conversation.id !== conversationId);
-    const nextState = {
-      ...currentState,
-      artifacts: currentState.artifacts.filter((artifact) => artifact.conversationId !== conversationId),
-      conversations: nextConversations,
-      messages: currentState.messages.filter((message) => message.conversationId !== conversationId),
-      runs: currentState.runs.filter((run) => run.conversationId !== conversationId),
-      sources: currentState.sources.filter((source) => source.conversationId !== conversationId),
-    };
-
-    if (editingConversationId === conversationId) {
-      cancelInlineRename();
-    }
-
-    if (nextConversations.length) {
-      persistConversationState(nextState, nextConversations[0].id);
-      return;
-    }
-
-    const replacement = createCopilotConversation(activeProject.id, copy.newConversationTitle(1));
-    persistConversationState(
-      {
-        ...nextState,
-        conversations: [replacement],
-      },
-      replacement.id,
-    );
+    if (editingConversationId === conversationId) cancelInlineRename();
   }
 
   function requestConversationDelete(conversationId) {
-    // 删除入口只记录目标，会话数据在确认前保持不变。
     const target = conversations.find((conversation) => conversation.id === conversationId);
     if (!target) return;
     setConversationActionMenuOpen(false);
     setDeleteConversationTarget(target);
   }
 
-  function confirmConversationDelete() {
+  async function confirmConversationDelete() {
     if (!deleteConversationTarget) return;
     const conversationId = deleteConversationTarget.id;
-    setDeleteConversationTarget(null);
-    deleteConversation(conversationId);
+    try {
+      await deleteConversation(conversationId);
+      setDeleteConversationTarget(null);
+    } catch {
+      // 删除失败时保留确认弹窗，避免界面误认为会话已删除。
+    }
   }
 
   function selectProject(projectId) {
-    // 切换项目前先中断当前项目的运行任务。
     if (projectId !== activeProject.id) cancelActiveProjectRuns();
     onProjectChange(projectId);
     setActivePopover('');
   }
 
   function selectConversation(conversationId) {
-    // 查看已结束任务时标记最新运行状态为已读。
-    const latestRun = getLatestConversationRuns(conversationStateRef.current.runs).get(conversationId);
-    const shouldAcknowledge =
-      latestRun &&
-      !latestRun.acknowledgedAt &&
-      ['done', 'error', 'interrupted', 'cancelled'].includes(latestRun.status);
-
-    if (shouldAcknowledge) {
-      persistConversationState(
-        {
-          ...conversationStateRef.current,
-          runs: conversationStateRef.current.runs.map((run) =>
-            run.id === latestRun.id ? { ...run, acknowledgedAt: new Date().toISOString() } : run,
-          ),
-        },
-        conversationId,
-      );
-    } else {
-      setActiveConversationId(conversationId);
-    }
+    copilot.selectConversation(conversationId);
     setWorkspaceMode('chat');
     setActivePopover('');
     setConversationActionMenuOpen(false);
@@ -962,116 +719,63 @@ export default function CopilotWorkbenchPage({
   }
 
   function selectWorkspaceMode(mode) {
-    // 进入业务模块时关闭会话相关浮层。
     setWorkspaceMode(mode);
     setActivePopover('');
     setConversationActionMenuOpen(false);
-    setEditingConversationId('');
-    setEditingConversationTitle('');
-    setEditingConversationSurface('');
+    cancelInlineRename();
   }
 
   function updateSidebarCollapsed(collapsed) {
-    // 侧栏折叠切换会重置正在编辑和打开的浮层。
     setSidebarCollapsed(collapsed);
     setActivePopover('');
     setConversationActionMenuOpen(false);
-    setEditingConversationId('');
-    setEditingConversationTitle('');
-    setEditingConversationSurface('');
+    cancelInlineRename();
   }
 
   function runConversationAction(action) {
-    // 会话菜单动作执行后立即关闭菜单。
     action();
     setConversationActionMenuOpen(false);
   }
 
   function openPopover(id) {
-    // 鼠标重新进入弹层时取消延迟关闭。
-    if (popoverCloseTimerRef.current) {
-      clearTimeout(popoverCloseTimerRef.current);
-    }
-
+    if (popoverCloseTimerRef.current) clearTimeout(popoverCloseTimerRef.current);
     setActivePopover(id);
   }
 
   function closePopoverLater() {
-    // 折叠侧栏弹层延迟关闭，方便鼠标移入弹层本体。
-    if (popoverCloseTimerRef.current) {
-      clearTimeout(popoverCloseTimerRef.current);
-    }
-
+    if (popoverCloseTimerRef.current) clearTimeout(popoverCloseTimerRef.current);
     popoverCloseTimerRef.current = setTimeout(() => setActivePopover(''), 150);
   }
 
   function togglePopover(id) {
-    // 同一个弹层重复点击时收起。
     setActivePopover((current) => (current === id ? '' : id));
   }
 
   function toggleArtifactPanel() {
-    // 产物列表和预览页互斥展示。
     if (artifactPanelVisible) {
       setArtifactPanelOpen(false);
       return;
     }
-
     setPreviewOpen(false);
     setArtifactPanelOpen(true);
   }
 
   function togglePreview() {
-    // 打开预览页时关闭右侧产物列表。
     if (previewOpen) {
       setPreviewOpen(false);
       setArtifactPanelOpen(true);
       return;
     }
-
     setPreviewOpen(true);
     setArtifactPanelOpen(false);
     setPreviewWidthPercent(50);
   }
 
   function openArtifactPreview(artifactId) {
-    // 点击产物后直接进入独立预览区。
     setSelectedArtifactId(artifactId);
     setArtifactPanelOpen(false);
-    if (!previewOpen) {
-      setPreviewWidthPercent(50);
-    }
+    if (!previewOpen) setPreviewWidthPercent(50);
     setPreviewOpen(true);
-  }
-
-  function patchConversationState(updater) {
-    // 异步回调统一通过函数式补丁更新最新缓存。
-    const currentState = conversationStateRef.current;
-    const nextState = typeof updater === 'function' ? updater(currentState) : updater;
-    persistConversationState(nextState);
-    return nextState;
-  }
-
-  function updateMessageUiBlock(messageId, blockId, updater) {
-    // 演示表单和标题选择状态跟随消息写入项目级会话缓存。
-    patchConversationState((currentState) => ({
-      ...currentState,
-      messages: currentState.messages.map((message) =>
-        message.id === messageId
-          ? {
-              ...message,
-              uiBlocks: (message.uiBlocks ?? []).map((block) =>
-                block.id === blockId
-                  ? typeof updater === 'function'
-                    ? updater(block)
-                    : { ...block, ...updater }
-                  : block,
-              ),
-              updatedAt: new Date().toISOString(),
-            }
-          : message,
-      ),
-    }));
   }
 
   function appendToComposer(value) {
@@ -1083,610 +787,19 @@ export default function CopilotWorkbenchPage({
     window.requestAnimationFrame(() => chatInputRef.current?.focus());
   }
 
-  function getKnowledgeModalBlock() {
-    if (knowledgeModal?.target !== 'ui-block') return null;
-    const message = conversationState.messages.find((item) => item.id === knowledgeModal.messageId);
-    return message?.uiBlocks?.find((block) => block.id === knowledgeModal.blockId) ?? null;
-  }
-
-  function updateAssistantMessage(messageId, patch) {
-    // 流式事件增量合并到同一条助手消息。
-    const { artifactId, contentDelta, sourceId, warning, ...messagePatch } = patch;
-
-    patchConversationState((currentState) => ({
-      ...currentState,
-      messages: currentState.messages.map((message) =>
-        message.id === messageId
-          ? {
-              ...message,
-              ...messagePatch,
-              content:
-                typeof contentDelta === 'string'
-                  ? `${message.content}${contentDelta}`
-                  : messagePatch.content ?? message.content,
-              sourceIds: sourceId
-                ? [...new Set([...(message.sourceIds ?? []), sourceId])]
-                : message.sourceIds,
-              artifactIds: artifactId
-                ? [...new Set([...(message.artifactIds ?? []), artifactId])]
-                : message.artifactIds,
-              updatedAt: new Date().toISOString(),
-              warnings: warning
-                ? [...new Set([...(message.warnings ?? []), warning])]
-                : message.warnings,
-            }
-          : message,
-      ),
-    }));
-  }
-
-  function upsertTaskEventBlock(messageId, eventData) {
-    // 后端任务生命周期事件映射为现有多智能体任务组组件。
-    const taskId = eventData.taskId || `${messageId}-copilot-process`;
-    const blockId = `task-group-${taskId}`;
-    patchConversationState((currentState) => ({
-      ...currentState,
-      messages: currentState.messages.map((message) => {
-        if (message.id !== messageId) return message;
-        const blocks = [...(message.uiBlocks ?? [])];
-        const blockIndex = blocks.findIndex((block) => block.id === blockId);
-        const currentBlock = blockIndex >= 0 ? blocks[blockIndex] : null;
-        const currentTask = currentBlock?.tasks?.[0] ?? {};
-        const nextTask = {
-          ...currentTask,
-          agentId: eventData.agentId || currentTask.agentId || 'copilot',
-          clarification: eventData.prompt ?? currentTask.clarification ?? '',
-          id: taskId,
-          status: eventData.status || currentTask.status || 'running',
-          taskKey: eventData.taskKey || currentTask.taskKey || 'copilot_reply',
-          taskName: eventData.taskName || currentTask.taskName,
-        };
-        const nextBlock = {
-          ...currentBlock,
-          agentId: eventData.agentId || currentBlock?.agentId || 'copilot',
-          id: blockId,
-          tasks: [nextTask],
-          type: 'task_group',
-          workflowId: eventData.workflowId || currentBlock?.workflowId || '',
-        };
-        if (blockIndex >= 0) blocks[blockIndex] = nextBlock;
-        else blocks.push(nextBlock);
-        return { ...message, uiBlocks: blocks, updatedAt: new Date().toISOString() };
-      }),
-    }));
-  }
-
-  function appendTaskProcessEvent(messageId, eventData) {
-    const taskId = eventData.taskId || `${messageId}-copilot-process`;
-    upsertTaskEventBlock(messageId, {
-      agentId: eventData.agentId || 'copilot',
-      status: 'running',
-      taskId,
-      taskKey: eventData.taskKey || 'copilot_reply',
-      taskName: eventData.taskKey ? undefined : '处理当前请求',
-      workflowId: eventData.workflowId,
-    });
-    patchConversationState((currentState) => ({
-      ...currentState,
-      messages: currentState.messages.map((message) =>
-        message.id === messageId
-          ? {
-              ...message,
-              uiBlocks: (message.uiBlocks ?? []).map((block) =>
-                block.id === `task-group-${taskId}`
-                  ? {
-                      ...block,
-                      tasks: (block.tasks ?? []).map((task) =>
-                        task.id === taskId
-                          ? {
-                              ...task,
-                              processItems: [
-                                ...(task.processItems ?? []).filter((item) => item.id !== `${taskId}-process-${eventData.sequence}`),
-                                {
-                                  emphasis: eventData.kind === 'summary',
-                                  id: `${taskId}-process-${eventData.sequence}`,
-                                  text: eventData.content,
-                                },
-                              ],
-                            }
-                          : task,
-                      ),
-                    }
-                  : block,
-              ),
-              updatedAt: new Date().toISOString(),
-            }
-          : message,
-      ),
-    }));
-  }
-
-  function attachArtifactToTask(messageId, taskId, artifactId) {
-    if (!taskId || !artifactId) return;
-    patchConversationState((currentState) => ({
-      ...currentState,
-      messages: currentState.messages.map((message) =>
-        message.id === messageId
-          ? {
-              ...message,
-              uiBlocks: (message.uiBlocks ?? []).map((block) => ({
-                ...block,
-                tasks: (block.tasks ?? []).map((task) =>
-                  task.id === taskId
-                    ? { ...task, artifactIds: [...new Set([...(task.artifactIds ?? []), artifactId])] }
-                    : task,
-                ),
-              })),
-            }
-          : message,
-      ),
-    }));
-  }
-
-  function upsertConversationArtifact(conversationId, messageId, rawArtifact) {
-    // 后端返回的产物写入产物列表，并关联到消息和会话。
-    const sourceIds = (rawArtifact.sourceIds ?? []).map((sourceId) =>
-      conversationStateRef.current.sources.find(
-        (source) => source.conversationId === conversationId && source.originId === sourceId,
-      )?.id ?? sourceId,
-    );
-    const artifact = createCopilotArtifact({
-      changedSections: rawArtifact.changedSections ?? [],
-      changeSummary: rawArtifact.changeSummary ?? '',
-      content: rawArtifact.content,
-      contentFormat: rawArtifact.contentFormat ?? 'markdown',
-      conversationId,
-      evidenceGaps: rawArtifact.evidenceGaps ?? [],
-      id: rawArtifact.id,
-      metadata: rawArtifact.metadata ?? {},
-      parentArtifactId: rawArtifact.parentArtifactId ?? '',
-      sourceIds,
-      sourceMessageId: messageId,
-      status: rawArtifact.status ?? 'ready',
-      summary: rawArtifact.summary,
-      taskId: rawArtifact.taskId ?? '',
-      taskKey: rawArtifact.taskKey ?? rawArtifact.taskType ?? '',
-      taskType: rawArtifact.taskType ?? '',
-      title: rawArtifact.title,
-      type: rawArtifact.type ?? 'reply',
-      workflowId: rawArtifact.workflowId ?? '',
-    });
-
-    patchConversationState((currentState) => ({
-      ...currentState,
-      artifacts: [artifact, ...currentState.artifacts],
-      conversations: currentState.conversations.map((conversation) =>
-        conversation.id === conversationId
-          ? {
-              ...conversation,
-              artifactIds: [...new Set([artifact.id, ...(conversation.artifactIds ?? [])])],
-              updatedAt: new Date().toISOString(),
-            }
-          : conversation,
-      ),
-      messages: currentState.messages.map((message) =>
-        message.id === messageId
-          ? {
-              ...message,
-              artifactIds: [...new Set([...(message.artifactIds ?? []), artifact.id])],
-              updatedAt: new Date().toISOString(),
-            }
-          : message,
-      ),
-    }));
-    setSelectedArtifactId(artifact.id);
-    return artifact;
-  }
-
-  function upsertConversationSource(conversationId, messageId, rawSource) {
-    // 后端返回的来源写入来源列表，并关联到助手消息。
-    const source = createCopilotSource({
-      conversationId,
-      metadata: rawSource.metadata ?? {},
-      originId: rawSource.originId ?? rawSource.id ?? '',
-      snippet: rawSource.snippet,
-      title: rawSource.title,
-      type: rawSource.type,
-      url: rawSource.url,
-    });
-
-    patchConversationState((currentState) => ({
-      ...currentState,
-      messages: currentState.messages.map((message) =>
-        message.id === messageId
-          ? {
-              ...message,
-              sourceIds: [...new Set([...(message.sourceIds ?? []), source.id])],
-              updatedAt: new Date().toISOString(),
-            }
-          : message,
-      ),
-      sources: [source, ...currentState.sources],
-    }));
-  }
-
   async function submitChat(event) {
-    // 提交聊天消息后创建用户消息、助手占位消息和运行记录。
-    event.preventDefault();
-
+    event?.preventDefault?.();
     const content = chatInput.trim();
-    if (!content) return;
+    if (!content || !activeConversation?.id || activeConversationRunning) return;
 
-    const currentConversation =
-      conversationStateRef.current.conversations.find((conversation) => conversation.id === activeConversationId) ??
-      conversationStateRef.current.conversations[0];
-    if (!currentConversation) return;
-    if (activeChatControllersRef.current.has(currentConversation.id)) return;
-
-    const pendingRun = getPendingConversationRun(
-      conversationStateRef.current.runs,
-      currentConversation.id,
-    );
-    const composerDraft = composerDrafts[currentConversation.id] ?? emptyComposerDraft;
-    const cancellingWaitingTask = pendingRun && isWaitingTaskCancellation(content);
-    const requestAttachments = cancellingWaitingTask
-      ? []
-      : buildCopilotKnowledgeAttachments({
-          fileIds: composerDraft.knowledgeFileIds,
-          files: knowledgeSelection.files,
-          itemIds: composerDraft.knowledgeItemIds,
-          items: knowledgeSelection.items,
-        });
-
-    const userMessage = createCopilotMessage({
-      attachments: requestAttachments.map(({ content: _content, ...attachment }) => attachment),
-      content,
-      conversationId: currentConversation.id,
-      role: 'user',
-      userName: 'Angel',
+    const attachments = buildCopilotKnowledgeAttachments({
+      fileIds: activeComposerDraft.knowledgeFileIds,
+      files: knowledgeSelection.files,
+      itemIds: activeComposerDraft.knowledgeItemIds,
+      items: knowledgeSelection.items,
     });
-    const nextTitle = currentConversation.messageIds?.length
-      ? currentConversation.title
-      : deriveConversationTitle(content, currentConversation.title);
-
-    if (cancellingWaitingTask) {
-      // 等待用户补充时，取消表达直接结束待处理任务。
-      const endedAt = new Date().toISOString();
-      const cancellationMessage = createCopilotMessage({
-        agentId: 'copilot',
-        content: copy.chatStopped,
-        conversationId: currentConversation.id,
-        role: 'assistant',
-      });
-      persistConversationState(
-        {
-          ...conversationStateRef.current,
-          conversations: conversationStateRef.current.conversations.map((conversation) =>
-            conversation.id === currentConversation.id
-              ? {
-                  ...conversation,
-                  messageIds: [
-                    ...(conversation.messageIds ?? []),
-                    userMessage.id,
-                    cancellationMessage.id,
-                  ],
-                  title: nextTitle,
-                  updatedAt: endedAt,
-                }
-              : conversation,
-          ),
-          messages: [
-            ...conversationStateRef.current.messages,
-            userMessage,
-            cancellationMessage,
-          ],
-          runs: conversationStateRef.current.runs.map((run) =>
-            run.id === pendingRun.id
-              ? {
-                  ...run,
-                  acknowledgedAt: '',
-                  endedAt,
-                  resolvedAt: endedAt,
-                  status: 'cancelled',
-                }
-              : run,
-          ),
-        },
-        currentConversation.id,
-      );
-      clearComposerDraft(currentConversation.id);
-      setConversationError(currentConversation.id, '');
-      return;
-    }
-
-    const assistantMessage = createCopilotMessage({
-      agentId: 'copilot',
-      content: '',
-      conversationId: currentConversation.id,
-      role: 'assistant',
-      status: 'streaming',
-      statusText: copy.taskRunning,
-    });
-    const run = createCopilotRun({
-      conversationId: currentConversation.id,
-      currentTaskIndex: pendingRun?.currentTaskIndex || 0,
-      operation: pendingRun?.operation || '',
-      originalMessage: pendingRun?.originalMessage || content,
-      status: 'running',
-      taskKey: pendingRun?.taskKey || pendingRun?.taskType || '',
-      taskType: pendingRun?.taskType || '',
-      workflowId: pendingRun?.workflowId || '',
-      workflowKey: pendingRun?.workflowKey || '',
-    });
-    const startedAt = new Date().toISOString();
-    const nextState = {
-      ...conversationStateRef.current,
-      conversations: conversationStateRef.current.conversations.map((conversation) =>
-        conversation.id === currentConversation.id
-          ? {
-              ...conversation,
-              messageIds: [...(conversation.messageIds ?? []), userMessage.id, assistantMessage.id],
-              title: nextTitle,
-              updatedAt: new Date().toISOString(),
-            }
-          : conversation,
-      ),
-      messages: [...conversationStateRef.current.messages, userMessage, assistantMessage],
-      runs: [
-        run,
-        ...conversationStateRef.current.runs.map((item) =>
-          item.id === pendingRun?.id ? { ...item, resolvedAt: startedAt } : item,
-        ),
-      ],
-    };
-
-    persistConversationState(nextState, currentConversation.id);
-    clearComposerDraft(currentConversation.id);
-    setConversationError(currentConversation.id, '');
-    setConversationRunning(currentConversation.id, true);
-
-    const controller = new AbortController();
-    activeChatControllersRef.current.set(currentConversation.id, controller);
-
-    const targetCandidate = previewOpen ? selectedArtifact : null;
-    // 预览页打开时，把当前产物快照传给后端作为修改目标。
-    const targetArtifact = createTargetArtifactSnapshot(targetCandidate);
-    const taskContinuation = pendingRun
-      ? {
-          currentTaskIndex: pendingRun.currentTaskIndex || 0,
-          operation: pendingRun.operation || undefined,
-          originalMessage: pendingRun.originalMessage,
-          requiredField: pendingRun.requiredField,
-          response: content,
-          taskKey: pendingRun.taskKey || pendingRun.taskType,
-          taskType: pendingRun.taskType,
-          workflowId: pendingRun.workflowId || undefined,
-          workflowKey: pendingRun.workflowKey || undefined,
-        }
-      : undefined;
-    let clarificationEvent = null;
-    let latestTaskEvent = null;
-    let latestWorkflowEvent = null;
-    let streamOutcome = '';
-    try {
-      await streamCopilotChat({
-        body: {
-          attachments: requestAttachments,
-          conversationId: currentConversation.id,
-          message: content,
-          projectId: activeProject.id,
-          taskContinuation,
-          targetArtifact,
-          threadId: currentConversation.threadId || undefined,
-        },
-        conversationId: currentConversation.id,
-        signal: controller.signal,
-        onEvent: (eventData) => {
-          // SSE 事件按类型更新任务状态、消息内容、来源和产物。
-          if (eventData.type === 'ping') return;
-
-          if (eventData.type === 'task_status') {
-            // 任务状态事件用于刷新助手气泡上的执行标签。
-            latestTaskEvent = eventData;
-            upsertTaskEventBlock(assistantMessage.id, eventData);
-            updateAssistantMessage(assistantMessage.id, {
-              agentId: eventData.agentId,
-              intent: eventData.intent,
-              statusText: eventData.label || eventData.status || copy.taskRunning,
-            });
-            patchConversationState((currentState) => ({
-              ...currentState,
-              runs: currentState.runs.map((item) =>
-                item.id === run.id
-                  ? {
-                      ...item,
-                      currentTaskIndex: eventData.currentTaskIndex ?? item.currentTaskIndex,
-                      operation: eventData.operation || item.operation,
-                      taskKey: eventData.taskKey || item.taskKey,
-                      taskType: eventData.taskType || eventData.taskKey || eventData.intent || item.taskType,
-                      workflowId: eventData.workflowId || item.workflowId,
-                    }
-                  : item,
-              ),
-            }));
-            if (eventData.status === 'waiting_input') {
-              clarificationEvent = {
-                content: eventData.prompt || '',
-                field: eventData.requiredField || '',
-                taskKey: eventData.taskKey || '',
-                taskType: eventData.taskType || eventData.taskKey || '',
-                workflowId: eventData.workflowId || '',
-                workflowKey: latestWorkflowEvent?.workflowKey || '',
-                operation: eventData.operation || '',
-              };
-            }
-            return;
-          }
-
-          if (eventData.type === 'workflow_status') {
-            latestWorkflowEvent = eventData;
-            patchConversationState((currentState) => ({
-              ...currentState,
-              runs: currentState.runs.map((item) =>
-                item.id === run.id
-                  ? {
-                      ...item,
-                      currentTaskIndex: eventData.currentTaskIndex ?? item.currentTaskIndex,
-                      workflowId: eventData.workflowId || item.workflowId,
-                      workflowKey: eventData.workflowKey || item.workflowKey,
-                    }
-                  : item,
-              ),
-            }));
-            return;
-          }
-
-          if (eventData.type === 'process_delta') {
-            appendTaskProcessEvent(assistantMessage.id, eventData);
-            return;
-          }
-
-          if (eventData.type === 'thread_bound') {
-            // thread_bound 将后端会话线程 ID 绑定到当前前端会话。
-            patchConversationState((currentState) => ({
-              ...currentState,
-              conversations: currentState.conversations.map((conversation) =>
-                conversation.id === currentConversation.id
-                  ? { ...conversation, threadId: eventData.threadId }
-                  : conversation,
-              ),
-            }));
-            if (eventData.reset) {
-              updateAssistantMessage(assistantMessage.id, {
-                warning: copy.threadResetWarning,
-              });
-            }
-            return;
-          }
-
-          if (eventData.type === 'message_delta') {
-            // 文本增量追加到正在流式展示的助手消息。
-            updateAssistantMessage(assistantMessage.id, {
-              agentId: eventData.agentId,
-              contentDelta: eventData.content ?? eventData.delta ?? '',
-              intent: eventData.intent,
-            });
-            return;
-          }
-
-          if (eventData.type === 'source' && eventData.source) {
-            // 来源事件追加到当前助手消息的引用列表。
-            upsertConversationSource(currentConversation.id, assistantMessage.id, eventData.source);
-            return;
-          }
-
-          if (eventData.type === 'artifact' && eventData.artifact) {
-            // 产物事件写入右侧产物面板。
-            const artifact = upsertConversationArtifact(currentConversation.id, assistantMessage.id, {
-              ...eventData.artifact,
-              taskId: eventData.taskId || eventData.artifact.taskId,
-              taskKey: eventData.taskKey || eventData.artifact.taskKey,
-              workflowId: eventData.workflowId || eventData.artifact.workflowId,
-            });
-            attachArtifactToTask(assistantMessage.id, eventData.taskId || eventData.artifact.taskId, artifact.id);
-            return;
-          }
-
-          if (eventData.type === 'clarification_required') {
-            // 需要补充信息时，当前运行转为 waiting_input。
-            clarificationEvent = eventData;
-            updateAssistantMessage(assistantMessage.id, {
-              agentId: 'content_operator',
-              contentDelta: eventData.content ?? '',
-              intent: eventData.taskType ?? 'draft',
-              status: 'waiting_input',
-              statusText: '',
-            });
-            return;
-          }
-
-          if (eventData.type === 'capability_warning') {
-            // 能力缺失或降级提示保留在助手消息里。
-            updateAssistantMessage(assistantMessage.id, {
-              warning: eventData.content ?? '',
-            });
-            return;
-          }
-
-          if (eventData.type === 'error_message') {
-            // 后端主动返回错误事件时抛出到统一 catch 分支。
-            const streamError = new Error(eventData.content || copy.chatFallbackError);
-            streamError.code = eventData.code;
-            throw streamError;
-          }
-
-          if (eventData.type === 'done') {
-            streamOutcome = eventData.outcome || 'completed';
-          }
-        },
-      });
-
-      const endedAt = new Date().toISOString();
-      // 流式完成后根据是否需要澄清写入最终运行状态。
-      const finalStatus = clarificationEvent || streamOutcome === 'waiting_input'
-        ? 'waiting_input'
-        : streamOutcome === 'error'
-          ? 'error'
-          : 'done';
-      updateAssistantMessage(assistantMessage.id, {
-        status: finalStatus,
-        statusText: '',
-      });
-      patchConversationState((currentState) => ({
-        ...currentState,
-        runs: currentState.runs.map((item) =>
-          item.id === run.id
-            ? finalStatus === 'waiting_input'
-              ? {
-                  ...item,
-                  currentTaskIndex: latestWorkflowEvent?.currentTaskIndex ?? item.currentTaskIndex,
-                  endedAt,
-                  originalMessage: pendingRun?.originalMessage || content,
-                  requiredField: clarificationEvent?.field || '',
-                  status: 'waiting_input',
-                  operation: clarificationEvent?.operation || latestTaskEvent?.operation || item.operation,
-                  taskKey: clarificationEvent?.taskKey || latestTaskEvent?.taskKey || item.taskKey,
-                  taskType: clarificationEvent?.taskType || item.taskType,
-                  workflowId: clarificationEvent?.workflowId || latestWorkflowEvent?.workflowId || item.workflowId,
-                  workflowKey: clarificationEvent?.workflowKey || latestWorkflowEvent?.workflowKey || item.workflowKey,
-                }
-              : { ...item, endedAt, status: finalStatus }
-            : item,
-        ),
-      }));
-    } catch (error) {
-      // AbortError 属于主动停止，不展示为失败。
-      if (error && typeof error === 'object' && error.name === 'AbortError') return;
-
-      const message = getChatErrorMessage(error);
-      setConversationError(currentConversation.id, message);
-      updateAssistantMessage(assistantMessage.id, {
-        content: message,
-        error: message,
-        status: 'error',
-        statusText: '',
-      });
-      patchConversationState((currentState) => ({
-        ...currentState,
-        runs: currentState.runs.map((item) =>
-          item.id === run.id
-            ? {
-                ...item,
-                endedAt: new Date().toISOString(),
-                error: message,
-                errorCode: error?.code || 'chat_error',
-                status: 'error',
-              }
-            : item,
-        ),
-      }));
-    } finally {
-      // 无论成功或失败，都清理当前会话的控制器和运行标记。
-      if (activeChatControllersRef.current.get(currentConversation.id) === controller) {
-        activeChatControllersRef.current.delete(currentConversation.id);
-      }
-      setConversationRunning(currentConversation.id, false);
-    }
+    clearComposerDraft(activeConversation.id);
+    await copilot.sendMessage({ attachments, content });
   }
 
   function startPreviewResize(event) {
@@ -1885,61 +998,9 @@ export default function CopilotWorkbenchPage({
     return <div>{artifacts.map(renderInlineArtifactCard)}</div>;
   }
 
-  function renderMessageUiBlocks(message) {
-    if (!message.uiBlocks?.length) return null;
-
-    return (
-      <div className="space-y-6">
-        {message.uiBlocks.map((block) => {
-          if (block.type === 'task_group') {
-            return (
-              <AgentTaskGroup
-                key={block.id}
-                block={block}
-                locale={locale}
-                sources={conversationState.sources}
-                renderArtifact={(artifactId) => {
-                  const artifact = conversationState.artifacts.find((item) => item.id === artifactId);
-                  return artifact ? renderInlineArtifactCard(artifact) : null;
-                }}
-              />
-            );
-          }
-
-          const agent = getAgentPresentation(block.agentId || message.agentId || 'copilot', locale);
-          return (
-            <section key={block.id} className="flex gap-4">
-              <AgentAvatar agentId={agent.id} locale={locale} />
-              <div className="min-w-0 flex-1 pb-4">
-                <div className="text-[15px] font-semibold leading-6 text-slate-900">{agent.name}</div>
-                <div className="mt-3">
-                  {block.type === 'article_task_form' ? (
-                    <ArticleTaskForm
-                      block={block}
-                      knowledgeFiles={knowledgeSelection.files}
-                      knowledgeItems={knowledgeSelection.items}
-                      locale={locale}
-                      onChange={(values) => updateMessageUiBlock(message.id, block.id, { values })}
-                      onOpenKnowledge={(kind) => setKnowledgeModal({ kind, target: 'ui-block', messageId: message.id, blockId: block.id })}
-                    />
-                  ) : block.type === 'title_selector' ? (
-                    <TitleSelector
-                      locale={locale}
-                      options={block.options}
-                      selectedTitleId={block.selectedTitleId}
-                      onSelect={(option) => {
-                        updateMessageUiBlock(message.id, block.id, { selectedTitleId: option.id });
-                        appendToComposer(option.title);
-                      }}
-                    />
-                  ) : null}
-                </div>
-              </div>
-            </section>
-          );
-        })}
-      </div>
-    );
+  function renderMessageUiBlocks() {
+    // 第一阶段只保留流程组件，不从普通聊天事件构造文章工作流区块。
+    return null;
   }
 
   function renderMessageAttachments(message) {
@@ -1960,21 +1021,6 @@ export default function CopilotWorkbenchPage({
         })}
       </div>
     );
-  }
-
-  function getChatErrorMessage(error) {
-    // 网络和 SSE 异常统一映射为连接错误文案。
-    const message = error instanceof Error ? error.message : String(error || '');
-    if (
-      error instanceof TypeError ||
-      /Failed to fetch|No SSE events|Codex service/i.test(
-        message,
-      )
-    ) {
-      return copy.chatConnectionError;
-    }
-
-    return message || copy.chatFallbackError;
   }
 
   function renderChatMessage(message) {
@@ -2479,11 +1525,6 @@ export default function CopilotWorkbenchPage({
                       <span className="font-bold">{copy.chatErrorTitle}: </span>{chatError}
                     </p>
                   ) : null}
-                  {activePendingRun ? (
-                    <p className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold leading-5 text-amber-700">
-                      {copy.taskWaitingInput}
-                    </p>
-                  ) : null}
                   {selectedComposerItems.length || selectedComposerFiles.length ? (
                     <div className="mb-2 flex flex-wrap gap-2" data-testid="copilot-composer-attachments">
                       {[...selectedComposerItems.map((item) => ({ ...item, kind: 'knowledge_item' })), ...selectedComposerFiles.map((file) => ({ ...file, kind: 'knowledge_file' }))].map((attachment) => {
@@ -2638,11 +1679,7 @@ export default function CopilotWorkbenchPage({
           maxSelected={copilotAttachmentLimits.maxAttachments - knowledgeModalFileIds.length}
           onClose={() => setKnowledgeModal(null)}
           onConfirm={(ids) => {
-            if (knowledgeModal.target === 'ui-block' && knowledgeModalBlock) {
-              updateMessageUiBlock(knowledgeModal.messageId, knowledgeModal.blockId, { knowledgeItemIds: ids });
-            } else {
-              updateComposerDraft(activeConversation.id, { knowledgeItemIds: ids });
-            }
+            updateComposerDraft(activeConversation.id, { knowledgeItemIds: ids });
             setKnowledgeModal(null);
           }}
           selectedIds={knowledgeModalItemIds}
@@ -2657,11 +1694,7 @@ export default function CopilotWorkbenchPage({
           maxSelected={copilotAttachmentLimits.maxAttachments - knowledgeModalItemIds.length}
           onClose={() => setKnowledgeModal(null)}
           onConfirm={(ids) => {
-            if (knowledgeModal.target === 'ui-block' && knowledgeModalBlock) {
-              updateMessageUiBlock(knowledgeModal.messageId, knowledgeModal.blockId, { knowledgeFileIds: ids });
-            } else {
-              updateComposerDraft(activeConversation.id, { knowledgeFileIds: ids });
-            }
+            updateComposerDraft(activeConversation.id, { knowledgeFileIds: ids });
             setKnowledgeModal(null);
           }}
           requireUsableContent

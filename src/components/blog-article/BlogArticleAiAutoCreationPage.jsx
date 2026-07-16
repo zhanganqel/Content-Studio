@@ -1,19 +1,18 @@
 import {
   ArrowLeft,
   BookOpen,
-  Check,
   ChevronDown,
   ChevronRight,
   ClipboardList,
   ExternalLink,
   FileText,
-  PauseCircle,
   Save,
   Sparkles,
   X,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import Toast from '../ui/Toast.jsx';
+import { TaskStatusIcon } from '../ai-workflow/AiWorkflowComponents.jsx';
+import { useToast } from '../ui/Toast.jsx';
 import { formatTaskState, getTaskCompletedText, getTaskName, getTaskRunningText } from './aiTaskText.js';
 import { getAgentDisplay } from './agentDisplay.js';
 import {
@@ -444,31 +443,6 @@ function AgentAvatar({ agentTitle }) {
   );
 }
 
-function StatusIcon({ completed, stopped }) {
-  // 步骤状态图标区分完成、中止和运行中。
-  if (completed) {
-    return (
-      <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-[#10B981] text-[#10B981]">
-        <Check className="h-3 w-3" />
-      </span>
-    );
-  }
-
-  if (stopped) {
-    return (
-      <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-[#F59E0B] text-[#F59E0B]">
-        <PauseCircle className="h-3 w-3" />
-      </span>
-    );
-  }
-
-  return (
-    <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border-2 border-[#365EFF] border-t-transparent">
-      <span className="h-1.5 w-1.5 rounded-full bg-[#365EFF]" />
-    </span>
-  );
-}
-
 function ThinkingBlock({ children }) {
   // 加粗标记的思考内容渲染为强调样式。
   const text = typeof children === 'string' ? children : '';
@@ -607,6 +581,7 @@ function WorkflowTask({
   artifacts,
   completed,
   copy,
+  isFailed,
   isCurrent,
   isStopped,
   locale,
@@ -664,17 +639,25 @@ function WorkflowTask({
               steps.slice(0, stepIndex).every((candidate) => isStepDone(candidate, visibleThinkingCounts, showArtifactIds));
             const thinkingCount = visibleThinkingCounts[step.id] ?? 0;
             const taskName = getTaskName(step, locale);
+            const stopped = isStopped && stepActive;
+            const failed = isFailed && stepActive;
+            const taskLabel = stepCompleted
+              ? getTaskCompletedText(step, copy.status.done, locale)
+              : failed
+                ? formatTaskState(taskName, copy.status.failed ?? '生成失败', locale)
+                : stopped
+                  ? formatTaskState(taskName, copy.status.stopped, locale)
+                  : getTaskRunningText(step, locale);
 
             return (
               <div key={step.id} className="flex items-start gap-3">
-                <StatusIcon completed={stepCompleted} stopped={isStopped && stepActive} />
+                <TaskStatusIcon
+                  label={taskLabel}
+                  status={stepCompleted ? 'done' : failed ? 'error' : stopped ? 'cancelled' : 'running'}
+                />
                 <div className="min-w-0 flex-1">
                   <div className="text-[14px] font-semibold leading-[20px] text-[#303133]">
-                    {stepCompleted
-                      ? getTaskCompletedText(step, copy.status.done, locale)
-                      : isStopped && stepActive
-                        ? formatTaskState(taskName, copy.status.stopped, locale)
-                        : getTaskRunningText(step, locale)}
+                    {taskLabel}
                   </div>
                   <div className="mt-3 space-y-4">
                     {step.thinking.slice(0, Math.min(thinkingCount, step.thinking.length)).map((paragraph, index) => (
@@ -1381,8 +1364,7 @@ export default function BlogArticleAiAutoCreationPage({
   const [isStopped, setIsStopped] = useState(localStatus === 'stopped');
   const [selectedArtifactId, setSelectedArtifactId] = useState(initialState.selectedArtifactId);
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
-  const [toast, setToast] = useState(null);
-  const [processStatusToast, setProcessStatusToast] = useState(null);
+  const toast = useToast({ scope: `blog-ai-auto-${task.id}` });
   const workflowRef = useRef(null);
 
   // 当前页面展示由任务状态、工作流进度和可见产物共同决定。
@@ -1403,16 +1385,12 @@ export default function BlogArticleAiAutoCreationPage({
   }, [task?.id]);
 
   useEffect(() => {
-    // 普通提示自动关闭。
-    if (!toast) return undefined;
-
-    const timer = window.setTimeout(() => setToast(null), 2600);
-    return () => window.clearTimeout(timer);
-  }, [toast]);
-
-  useEffect(() => {
     // 失败或中止状态通过持久 toast 提供重新创建入口。
-    if (localStatus !== 'stopped' && localStatus !== 'failed') return;
+    const processToastId = `blog-ai-auto-process-${localTask.id}`;
+    if (localStatus !== 'stopped' && localStatus !== 'failed') {
+      toast.dismiss(processToastId);
+      return;
+    }
 
     const toastConfig =
       localStatus === 'failed'
@@ -1425,14 +1403,19 @@ export default function BlogArticleAiAutoCreationPage({
             type: 'info',
           };
 
-    setProcessStatusToast((current) =>
-      current ?? {
-        id: Date.now(),
-        task: localTask,
-        ...toastConfig,
-      },
-    );
-  }, [copy.actions.stop, copy.toast, localStatus, localTask]);
+    toast.show({
+      ...toastConfig,
+      actions: [
+        {
+          label: taskListCopy.actions.recreate,
+          onClick: () => onRecreateTask?.(localTask),
+        },
+      ],
+      duration: 0,
+      id: processToastId,
+      showClose: true,
+    });
+  }, [copy.actions.stop, copy.toast, localStatus, localTask, onRecreateTask, taskListCopy.actions.recreate, toast]);
 
   useEffect(() => {
     // 自动创作流程按固定节奏逐步显示思考、来源和产物。
@@ -1580,12 +1563,6 @@ export default function BlogArticleAiAutoCreationPage({
       ...stoppedPayload,
     };
     setLocalTask(nextTask ?? fallbackTask);
-    setProcessStatusToast({
-      id: Date.now(),
-      message: copy.toast?.autoStoppedManual || copy.toast?.autoStopped || copy.actions.stop,
-      task: nextTask ?? fallbackTask,
-      type: 'info',
-    });
   }
 
   function handleSaveAndEdit() {
@@ -1693,11 +1670,7 @@ export default function BlogArticleAiAutoCreationPage({
     setSelectedArtifactId(nextSelectedArtifactId);
     setAutoScrollEnabled(true);
     setRevisionInput('');
-    setToast({
-      id: Date.now(),
-      message: locale === 'en-US' ? 'Revision note saved.' : '修改要求已保存',
-      type: 'success',
-    });
+    toast.success(locale === 'en-US' ? 'Revision note saved.' : '修改要求已保存');
   }
 
   return (
@@ -1743,6 +1716,7 @@ export default function BlogArticleAiAutoCreationPage({
                   artifacts={artifacts}
                   completed={completed}
                   copy={copy}
+                  isFailed={localStatus === 'failed'}
                   isCurrent={isCurrent}
                   isStopped={isStopped}
                   locale={locale}
@@ -1799,28 +1773,6 @@ export default function BlogArticleAiAutoCreationPage({
         </div>
       </footer>
 
-      {toast ? (
-        <Toast
-          message={toast.message}
-          type={toast.type}
-        />
-      ) : null}
-
-      {processStatusToast ? (
-        <Toast
-          key={processStatusToast.id}
-          actionLabel={taskListCopy.actions.recreate}
-          message={processStatusToast.message}
-          onAction={() => {
-            const recreateTask = processStatusToast.task;
-            setProcessStatusToast(null);
-            onRecreateTask?.(recreateTask);
-          }}
-          onClose={() => setProcessStatusToast(null)}
-          testId="blog-article-auto-status-toast"
-          type={processStatusToast.type}
-        />
-      ) : null}
     </div>
   );
 }

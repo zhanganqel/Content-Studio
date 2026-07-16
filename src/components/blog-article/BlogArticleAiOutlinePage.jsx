@@ -1,22 +1,22 @@
 import {
-  ArrowLeft,
-  Check,
   ChevronRight,
   FileText,
   GripVertical,
-  PauseCircle,
   RefreshCw,
   Trash2,
   X,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import Toast from '../ui/Toast.jsx';
-import AiCreationStepLabel from './AiCreationStepLabel.jsx';
+import { TaskStatusIcon } from '../ai-workflow/AiWorkflowComponents.jsx';
+import { useToast } from '../ui/Toast.jsx';
+import CollaborativeCreationHeader from './CollaborativeCreationHeader.jsx';
 import { formatTaskState, getTaskCompletedText, getTaskName, getTaskRunningText } from './aiTaskText.js';
+import { getCollaborativeStageStatuses } from './collaborativeStages.js';
 import { getAgentDisplay } from './agentDisplay.js';
 import {
   createOutlineDemoData,
-  resetAiOutlineTask,
+  restartCollaborativeOutlineTask,
+  startCollaborativeContentTask,
   updateAiCreationTask,
 } from '../../services/blogArticleAiStore.js';
 
@@ -178,6 +178,20 @@ function hasCompletedOutlineOutput(task) {
 }
 
 function getInitialPlaybackState(workflow, task) {
+  const playback = task?.outline?.playback;
+  if (playback) {
+    return {
+      completedTaskIds: playback.completedTaskIds ?? [],
+      currentTaskIndex: playback.currentTaskIndex ?? 0,
+      isComplete: Boolean(playback.isComplete),
+      selectedArtifactId: playback.selectedArtifactId ?? task?.outline?.currentArtifactId ?? '',
+      titleConfirmed: Boolean(playback.titleConfirmed),
+      titlesVisible: Boolean(playback.titlesVisible),
+      visibleArtifactIds: playback.visibleArtifactIds ?? [],
+      visibleThinkingCounts: playback.visibleThinkingCounts ?? {},
+    };
+  }
+
   // 返回正文阶段时，大纲页需要恢复为已完成状态。
   const returnedFromContentStage = isPostOutlineStage(task?.stage);
   const alreadyCompleted = task?.stage === 'outline-completed' || hasCompletedOutlineOutput(task);
@@ -191,6 +205,7 @@ function getInitialPlaybackState(workflow, task) {
       completedTaskIds: workflow.map((item) => item.id),
       currentTaskIndex: workflow.length,
       isComplete: true,
+      selectedArtifactId: task?.outline?.currentArtifactId ?? '',
       titleConfirmed: true,
       titlesVisible: true,
       visibleArtifactIds: returnedFromContentStage ? [] : workflow.map((item) => item.artifactId).filter(Boolean),
@@ -204,6 +219,7 @@ function getInitialPlaybackState(workflow, task) {
       completedTaskIds: savedCompletedTaskIds,
       currentTaskIndex,
       isComplete: false,
+      selectedArtifactId: task?.outline?.currentArtifactId ?? '',
       titleConfirmed: savedTitleConfirmed || savedCompletedTaskIds.includes('write-titles'),
       titlesVisible: savedTitleConfirmed || savedCompletedTaskIds.includes('write-titles'),
       visibleArtifactIds: task?.outline?.currentArtifactId ? [task.outline.currentArtifactId] : [],
@@ -219,6 +235,7 @@ function getInitialPlaybackState(workflow, task) {
       completedTaskIds: [...new Set([...savedCompletedTaskIds, ...completedThroughTitle])],
       currentTaskIndex: outlineTaskIndex,
       isComplete: false,
+      selectedArtifactId: task?.outline?.currentArtifactId ?? '',
       titleConfirmed: true,
       titlesVisible: true,
       visibleArtifactIds: task?.outline?.currentArtifactId ? [task.outline.currentArtifactId] : [],
@@ -235,31 +252,12 @@ function getInitialPlaybackState(workflow, task) {
     completedTaskIds: [],
     currentTaskIndex: 0,
     isComplete: false,
+    selectedArtifactId: '',
     titleConfirmed: false,
     titlesVisible: false,
     visibleArtifactIds: [],
     visibleThinkingCounts: {},
   };
-}
-
-function Stepper({ copy }) {
-  return (
-    <div className="flex flex-1 items-center justify-center gap-5">
-      {copy.steps.map((step, index) => (
-        <div key={step} className="flex items-center gap-3">
-          <span
-            className={`inline-flex h-7 w-7 items-center justify-center rounded-full text-[14px] font-semibold ${
-              index === 2 ? 'bg-[#365EFF] text-white' : 'bg-[#E9ECF2] text-[#A8ABB2]'
-            }`}
-          >
-            {index + 1}
-          </span>
-          <AiCreationStepLabel active={index === 2} step={step} />
-          {index < copy.steps.length - 1 ? <span className="h-px w-16 bg-[#E4E7ED]" /> : null}
-        </div>
-      ))}
-    </div>
-  );
 }
 
 function AgentAvatar({ agentTitle }) {
@@ -271,30 +269,6 @@ function AgentAvatar({ agentTitle }) {
     >
       {agentDisplay.initial}
     </div>
-  );
-}
-
-function StatusIcon({ completed, stopped }) {
-  if (completed) {
-    return (
-      <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-[#10B981] text-[#10B981]">
-        <Check className="h-3 w-3" />
-      </span>
-    );
-  }
-
-  if (stopped) {
-    return (
-      <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-[#F59E0B] text-[#F59E0B]">
-        <PauseCircle className="h-3 w-3" />
-      </span>
-    );
-  }
-
-  return (
-    <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border-2 border-[#365EFF] border-t-transparent">
-      <span className="h-1.5 w-1.5 rounded-full bg-[#365EFF]" />
-    </span>
   );
 }
 
@@ -446,17 +420,19 @@ function WorkflowTaskItem({
   copy,
 }) {
   const taskName = getTaskName(task, locale);
+  const stopped = isStopped && isCurrent && !completed;
+  const taskLabel = completed
+    ? getTaskCompletedText(task, copy.status.done, locale)
+    : stopped
+      ? formatTaskState(taskName, copy.status.stopped, locale)
+      : getTaskRunningText(task, locale);
 
   return (
     <div className="flex items-start gap-3">
-      <StatusIcon completed={completed} stopped={isStopped && isCurrent && !completed} />
+      <TaskStatusIcon label={taskLabel} status={completed ? 'done' : stopped ? 'cancelled' : 'running'} />
       <div className="min-w-0 flex-1">
         <div className="text-[14px] font-semibold leading-[20px] text-[#303133]">
-          {completed
-            ? getTaskCompletedText(task, copy.status.done, locale)
-            : isStopped && isCurrent
-              ? formatTaskState(taskName, copy.status.stopped, locale)
-              : getTaskRunningText(task, locale)}
+          {taskLabel}
         </div>
         <div className="mt-3 space-y-4">
           {task.thinking.slice(0, thinkingCount).map((paragraph, index) => (
@@ -784,7 +760,19 @@ function UnsavedDialog({ copy, onClose, onDiscard }) {
   );
 }
 
-export default function BlogArticleAiOutlinePage({ article, locale, onBack, onClose, onGenerateContent, project, t, task }) {
+export default function BlogArticleAiOutlinePage({
+  article,
+  isHistoricalView = false,
+  locale,
+  onClose,
+  onGenerateContent,
+  onRestartStage,
+  onStageChange,
+  onTaskUpdated,
+  project,
+  t,
+  task,
+}) {
   // 大纲页同时管理任务播放状态、标题确认和可编辑大纲树。
   const copy = t.blogArticle.aiCreation;
   const demoData = useMemo(() => createOutlineDemoData(task, project), [project, task]);
@@ -799,7 +787,7 @@ export default function BlogArticleAiOutlinePage({ article, locale, onBack, onCl
   const [titlesVisible, setTitlesVisible] = useState(initialPlaybackState.titlesVisible);
   const [titleConfirmed, setTitleConfirmed] = useState(initialPlaybackState.titleConfirmed);
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
-  const [selectedArtifactId, setSelectedArtifactId] = useState(initialPlaybackState.visibleArtifactIds[0] ?? '');
+  const [selectedArtifactId, setSelectedArtifactId] = useState(initialPlaybackState.selectedArtifactId);
   const [titleOptions, setTitleOptions] = useState(demoData.titleOptions);
   const [selectedTitleId, setSelectedTitleId] = useState(demoData.selectedTitleId);
   const [confirmedTitleId, setConfirmedTitleId] = useState(
@@ -809,7 +797,7 @@ export default function BlogArticleAiOutlinePage({ article, locale, onBack, onCl
   const [outlineTree, setOutlineTree] = useState(cloneTree(task?.outline?.outlineTree?.length ? task.outline.outlineTree : demoData.outlineTree));
   const [savedTitleDraft, setSavedTitleDraft] = useState(task?.outline?.titleDraft || demoData.selectedTitle);
   const [savedOutlineTree, setSavedOutlineTree] = useState(cloneTree(task?.outline?.outlineTree?.length ? task.outline.outlineTree : demoData.outlineTree));
-  const [toast, setToast] = useState(null);
+  const toast = useToast({ scope: `blog-ai-outline-${task.id}` });
   const [pendingAction, setPendingAction] = useState(null);
   const [dragState, setDragState] = useState(null);
   const [dropIndicator, setDropIndicator] = useState(null);
@@ -828,130 +816,8 @@ export default function BlogArticleAiOutlinePage({ article, locale, onBack, onCl
   };
   const outlineReady = visibleArtifactIds.includes('outline') || isComplete;
   const editorReady = titlesVisible || outlineReady;
-
-  useEffect(() => {
-    // 首次进入时把当前大纲播放快照写回任务，刷新后可恢复阶段。
-    const nextStage = isPostOutlineStage(task?.stage)
-      ? task.stage
-      : isComplete
-        ? 'outline-completed'
-        : isStopped
-          ? 'outline-stopped'
-          : 'outline';
-
-    updateAiCreationTask(project.id, task.id, {
-      stage: nextStage,
-      outline: {
-        completedTaskIds,
-        confirmedTitleId,
-        currentArtifactId: selectedArtifactId || task?.outline?.currentArtifactId || '',
-        isStopped,
-        outlineTree,
-        selectedTitleId,
-        titleConfirmed,
-        titleDraft,
-        titleOptions,
-        updatedAt: getTodayString(),
-      },
-    });
-  }, []);
-
-  useEffect(() => {
-    if (!toast || toast.actionLabel) {
-      return undefined;
-    }
-
-    const timer = window.setTimeout(() => setToast(null), 2200);
-    return () => window.clearTimeout(timer);
-  }, [toast]);
-
-  useEffect(() => {
-    // 未停止且未完成时，按节奏展示思考文本、标题候选和大纲产物。
-    if (isStopped || isComplete || !currentTask) {
-      return undefined;
-    }
-
-    const thinkingCount = visibleThinkingCounts[currentTask.id] ?? 0;
-    const hasMoreThinking = thinkingCount < currentTask.thinking.length;
-    const titleSelectionVisible = !currentTask.titleSelection || titlesVisible;
-    const artifactVisible = !currentTask.artifactId || visibleArtifactIds.includes(currentTask.artifactId);
-
-    if (currentTask.titleSelection && titleSelectionVisible && !titleConfirmed) {
-      return undefined;
-    }
-
-    const timer = window.setTimeout(() => {
-      if (hasMoreThinking) {
-        setVisibleThinkingCounts((current) => ({
-          ...current,
-          [currentTask.id]: (current[currentTask.id] ?? 0) + 1,
-        }));
-        return;
-      }
-
-      if (currentTask.titleSelection && !titleSelectionVisible) {
-        setTitlesVisible(true);
-        setTitleDraft((current) => current || demoData.selectedTitle);
-        return;
-      }
-
-      if (!artifactVisible && currentTask.artifactId) {
-        setVisibleArtifactIds((current) =>
-          current.includes(currentTask.artifactId) ? current : [...current, currentTask.artifactId],
-        );
-        setSelectedArtifactId(currentTask.artifactId);
-        return;
-      }
-
-      const nextCompletedTaskIds = completedTaskIds.includes(currentTask.id)
-        ? completedTaskIds
-        : [...completedTaskIds, currentTask.id];
-      setCompletedTaskIds(nextCompletedTaskIds);
-
-      if (currentTaskIndex + 1 >= workflow.length) {
-        setIsComplete(true);
-        updateAiCreationTask(project.id, task.id, {
-          stage: 'outline-completed',
-          outline: {
-            completedTaskIds: nextCompletedTaskIds,
-            confirmedTitleId,
-            currentArtifactId: 'outline',
-            isStopped: false,
-            outlineTree,
-            selectedTitleId,
-            titleConfirmed,
-            titleDraft,
-            titleOptions,
-            updatedAt: getTodayString(),
-          },
-        });
-        return;
-      }
-
-      setCurrentTaskIndex((current) => current + 1);
-    }, hasMoreThinking ? 950 : 650);
-
-    return () => window.clearTimeout(timer);
-  }, [
-    completedTaskIds,
-    confirmedTitleId,
-    currentTask,
-    currentTaskIndex,
-    demoData.selectedTitle,
-    isComplete,
-    isStopped,
-    outlineTree,
-    project.id,
-    selectedTitleId,
-    task.id,
-    titleConfirmed,
-    titleDraft,
-    titleOptions,
-    titlesVisible,
-    visibleArtifactIds,
-    visibleThinkingCounts,
-    workflow.length,
-  ]);
+  const stoppedToastId = `blog-ai-outline-stopped-${task.id}`;
+  const isOutlineStopped = isStopped && task?.stage === 'outline-stopped';
 
   useEffect(() => {
     // 用户停留在任务流底部时自动跟随最新生成步骤。
@@ -966,6 +832,19 @@ export default function BlogArticleAiOutlinePage({ article, locale, onBack, onCl
     });
   }, [autoScrollEnabled, completedTaskIds, currentTaskIndex, titlesVisible, visibleArtifactIds, visibleThinkingCounts]);
 
+  useEffect(() => {
+    if (!isOutlineStopped) return;
+
+    toast.show({
+      actions: [{ label: copy.actions.regenerate, closeOnClick: false, onClick: handleRegenerate }],
+      duration: 0,
+      id: stoppedToastId,
+      message: locale === 'en-US' ? 'Task stopped. Go back to edit or' : '任务已中止，可返回上一步修改或',
+      showClose: false,
+      type: 'warning',
+    });
+  }, [isOutlineStopped, locale, stoppedToastId, task.id]);
+
   function handleWorkflowScroll() {
     // 距离底部较远说明用户正在查看历史步骤，暂停自动滚动。
     const container = workflowRef.current;
@@ -977,7 +856,7 @@ export default function BlogArticleAiOutlinePage({ article, locale, onBack, onCl
 
   function persistOutline(overrides = {}) {
     // 大纲局部保存统一经过这里，便于保留当前标题和树结构。
-    return updateAiCreationTask(project.id, task.id, {
+    const nextTask = updateAiCreationTask(project.id, task.id, {
       outline: {
         currentArtifactId: selectedArtifactId,
         outlineTree,
@@ -989,6 +868,8 @@ export default function BlogArticleAiOutlinePage({ article, locale, onBack, onCl
         ...overrides,
       },
     });
+    onTaskUpdated?.(nextTask ?? task);
+    return nextTask;
   }
 
   function executePendingAction(action) {
@@ -1000,13 +881,13 @@ export default function BlogArticleAiOutlinePage({ article, locale, onBack, onCl
       return;
     }
 
-    if (action.type === 'back') {
-      onBack();
+    if (action.type === 'close') {
+      onClose();
       return;
     }
 
-    if (action.type === 'close') {
-      onClose();
+    if (action.type === 'view-stage') {
+      onStageChange?.(action.stage);
       return;
     }
 
@@ -1063,7 +944,7 @@ export default function BlogArticleAiOutlinePage({ article, locale, onBack, onCl
       setTitleDraft(nextTitle);
     }
 
-    updateAiCreationTask(project.id, task.id, {
+    const nextTask = updateAiCreationTask(project.id, task.id, {
       outline: {
         selectedTitleId,
         titleConfirmed,
@@ -1072,13 +953,14 @@ export default function BlogArticleAiOutlinePage({ article, locale, onBack, onCl
         updatedAt: getTodayString(),
       },
     });
+    onTaskUpdated?.(nextTask ?? task);
   }
 
   function handleConfirmTitle() {
     // 标题确认后才允许继续播放到大纲生成步骤。
     const nextTitle = titleDraft.trim();
     if (!selectedTitleId || !nextTitle) {
-      setToast({ message: '请先选择并确认文章标题', type: 'error' });
+      toast.error('请先选择并确认文章标题');
       return;
     }
 
@@ -1100,7 +982,7 @@ export default function BlogArticleAiOutlinePage({ article, locale, onBack, onCl
       setCurrentTaskIndex(outlineTaskIndex);
     }
 
-    updateAiCreationTask(project.id, task.id, {
+    const nextTask = updateAiCreationTask(project.id, task.id, {
       stage: 'outline',
       outline: {
         completedTaskIds: nextCompletedTaskIds,
@@ -1115,6 +997,7 @@ export default function BlogArticleAiOutlinePage({ article, locale, onBack, onCl
         updatedAt: getTodayString(),
       },
     });
+    onTaskUpdated?.(nextTask ?? task);
   }
 
   function stopTask() {
@@ -1122,14 +1005,25 @@ export default function BlogArticleAiOutlinePage({ article, locale, onBack, onCl
     if (isStopped || isComplete) return;
 
     setIsStopped(true);
-    updateAiCreationTask(project.id, task.id, {
+    const nextTask = updateAiCreationTask(project.id, task.id, {
       stage: 'outline-stopped',
       outline: {
         completedTaskIds,
         confirmedTitleId,
-        currentArtifactId: selectedArtifactId,
+        currentArtifactId: selectedArtifactId || task?.outline?.currentArtifactId || '',
         isStopped: true,
         outlineTree,
+        playback: {
+          ...(task?.outline?.playback ?? {}),
+          completedTaskIds,
+          currentTaskIndex,
+          isComplete: false,
+          selectedArtifactId,
+          titleConfirmed,
+          titlesVisible,
+          visibleArtifactIds,
+          visibleThinkingCounts,
+        },
         selectedTitleId,
         titleConfirmed,
         titleDraft,
@@ -1137,14 +1031,7 @@ export default function BlogArticleAiOutlinePage({ article, locale, onBack, onCl
         updatedAt: getTodayString(),
       },
     });
-    setToast({
-      actionLabel: copy.actions.regenerate,
-      message:
-        locale === 'en-US'
-          ? 'Task stopped. Go back or regenerate.'
-          : '任务已中止，可返回上一步修改或重新生成',
-      type: 'warning',
-    });
+    onTaskUpdated?.(nextTask ?? task);
   }
 
   function handleStopTask() {
@@ -1152,9 +1039,10 @@ export default function BlogArticleAiOutlinePage({ article, locale, onBack, onCl
   }
 
   function handleRegenerate() {
-    // 重新生成先清空大纲阶段状态，再刷新页面进入初始播放。
-    resetAiOutlineTask(project.id, task.id);
-    window.location.reload();
+    // 大纲中止后从已保存的策划输入重新开始，并清空大纲与正文产物。
+    const nextTask = restartCollaborativeOutlineTask(project.id, task.id);
+    toast.dismiss(stoppedToastId);
+    onRestartStage?.({ article, stage: 'outline', task: nextTask ?? task });
   }
 
   function handleDiscardUnsaved() {
@@ -1240,20 +1128,19 @@ export default function BlogArticleAiOutlinePage({ article, locale, onBack, onCl
 
   function saveAndEnterContent() {
     // 进入正文前保存最终标题和大纲树，并初始化正文阶段状态。
+    if (isOutlineStopped) {
+      handleRegenerate();
+      return;
+    }
+
     const nextTitle = titleDraft.trim();
     if (!nextTitle) {
-      setToast({
-        message: locale === 'en-US' ? 'Title cannot be empty.' : '文章标题不能为空，无法生成内容',
-        type: 'error',
-      });
+      toast.error(locale === 'en-US' ? 'Title cannot be empty.' : '文章标题不能为空，无法生成内容');
       return;
     }
 
     if (!outlineTree.length) {
-      setToast({
-        message: locale === 'en-US' ? 'Outline cannot be empty.' : '文章大纲不能为空，无法生成内容',
-        type: 'error',
-      });
+      toast.error(locale === 'en-US' ? 'Outline cannot be empty.' : '文章大纲不能为空，无法生成内容');
       return;
     }
 
@@ -1268,25 +1155,27 @@ export default function BlogArticleAiOutlinePage({ article, locale, onBack, onCl
     setCompletedTaskIds(nextCompletedTaskIds);
     setIsComplete(true);
 
-    const nextTask = updateAiCreationTask(project.id, task.id, {
-      content: {
-        currentArtifactId: '',
-        isStopped: false,
-        updatedAt: getTodayString(),
-      },
-      stage: 'content',
-      outline: {
+    const nextTask = startCollaborativeContentTask(project.id, task.id, {
         completedTaskIds: nextCompletedTaskIds,
         confirmedTitleId: confirmedTitleId || selectedTitleId,
         currentArtifactId: 'outline',
         isStopped: false,
         outlineTree: nextTree,
+        playback: {
+          completedTaskIds: nextCompletedTaskIds,
+          currentTaskIndex: workflow.length,
+          isComplete: true,
+          selectedArtifactId: 'outline',
+          titleConfirmed: true,
+          titlesVisible: true,
+          visibleArtifactIds: ['outline'],
+          visibleThinkingCounts: Object.fromEntries(workflow.map((item) => [item.id, item.thinking.length])),
+        },
         selectedTitleId,
         titleConfirmed: true,
         titleDraft: nextTitle,
         titleOptions,
         updatedAt: getTodayString(),
-      },
     });
     onGenerateContent?.({ article, task: nextTask ?? task });
   }
@@ -1305,23 +1194,14 @@ export default function BlogArticleAiOutlinePage({ article, locale, onBack, onCl
           }
         `}
       </style>
-      <header className="fixed left-0 right-0 top-0 z-40 h-[52px] border-b border-[#EBEEF5] bg-white">
-        <div className="mx-auto flex h-full max-w-[1600px] items-center px-6">
-          <button
-            type="button"
-            className="mr-3 inline-flex h-8 w-8 items-center justify-center rounded-[6px] text-[#232E45] transition hover:bg-[#F5F7FA]"
-            onClick={() => requestAction({ type: 'close' })}
-            aria-label="返回"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </button>
-          <h1 className="w-[360px] text-[18px] font-bold leading-[28px] text-[#232E45]">
-            {copy.titles.outline}
-          </h1>
-          <Stepper copy={copy} />
-          <div className="w-[360px]" />
-        </div>
-      </header>
+      <CollaborativeCreationHeader
+        copy={copy}
+        onBack={() => requestAction({ type: 'close' })}
+        onStageChange={(stage) => requestAction({ stage, type: 'view-stage' })}
+        stageStatuses={getCollaborativeStageStatuses(task)}
+        title={copy.titles.outline}
+        viewStage="outline"
+      />
 
       <main className="mx-auto grid max-w-[1600px] grid-cols-2 gap-4 px-6 pb-[84px] pt-[68px]">
         <section
@@ -1383,19 +1263,12 @@ export default function BlogArticleAiOutlinePage({ article, locale, onBack, onCl
       </main>
 
       <footer className="fixed bottom-0 left-0 right-0 z-40 h-[60px] border-t border-[#EBEEF5] bg-white/95 backdrop-blur">
-        <div className="mx-auto flex h-full max-w-[1600px] items-center justify-between px-6">
-          <button
-            type="button"
-            className="inline-flex h-8 items-center justify-center whitespace-nowrap rounded-[6px] border border-[#365EFF] px-4 text-[14px] font-semibold text-[#365EFF] transition hover:bg-[#EEF3FF]"
-            onClick={() => requestAction({ type: 'back' })}
-          >
-            {copy.actions.previous}
-          </button>
+        <div className="mx-auto flex h-full max-w-[1600px] items-center justify-end px-6">
           <div className="flex items-center gap-3">
             <button
               type="button"
               className="inline-flex h-8 items-center justify-center whitespace-nowrap rounded-[6px] border border-[#365EFF] px-4 text-[14px] font-semibold text-[#365EFF] transition hover:bg-[#EEF3FF] disabled:cursor-not-allowed disabled:border-[#DCDFE6] disabled:text-[#A8ABB2] disabled:hover:bg-white"
-              disabled={isComplete || isStopped}
+              disabled={isHistoricalView || isComplete || isStopped}
               onClick={handleStopTask}
             >
               {copy.actions.stop}
@@ -1403,24 +1276,14 @@ export default function BlogArticleAiOutlinePage({ article, locale, onBack, onCl
             <button
               type="button"
               className="inline-flex h-8 items-center justify-center whitespace-nowrap rounded-[6px] bg-[#365EFF] px-5 text-[14px] font-semibold text-white transition hover:bg-[#2547D0] disabled:cursor-not-allowed disabled:bg-[#A8B9FF]"
-              disabled={!isComplete || isStopped}
+              disabled={isHistoricalView || (isOutlineStopped ? false : !isComplete || isStopped)}
               onClick={handleGenerateContent}
             >
-              {copy.actions.generateContent}
+              {isOutlineStopped ? copy.actions.regenerateOutline : copy.actions.generateContent}
             </button>
           </div>
         </div>
       </footer>
-
-      {toast ? (
-        <Toast
-          actionLabel={toast.actionLabel}
-          message={toast.message}
-          onAction={toast.actionLabel ? handleRegenerate : undefined}
-          onClose={toast.actionLabel ? () => setToast(null) : undefined}
-          type={toast.type}
-        />
-      ) : null}
 
       {pendingAction ? (
         <UnsavedDialog copy={copy} onClose={() => setPendingAction(null)} onDiscard={handleDiscardUnsaved} />

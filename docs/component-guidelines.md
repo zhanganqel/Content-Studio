@@ -1,6 +1,6 @@
 # Component Guidelines
 
-本文件是 Content Studio 共享组件使用规则。视觉 token、颜色、字体、间距、图标和 Figma 生成规范以同目录 `DESIGN.md` 为准；本文件只描述现有 React 组件的使用边界。
+本文件是 Content Studio 统一仓库中的共享 React 组件使用规则。视觉 token、颜色、字体、间距、图标和 Figma 生成规范以同目录 `DESIGN.md` 为准；本文件只描述现有前端组件的使用边界，不规定 EdgeOne 接口实现。
 
 新增页面前先检查 `src/components/ui/` 是否已有可复用组件。只有当现有组件无法表达明确的新交互时，才新增组件或变体。
 
@@ -10,15 +10,15 @@
 
 当前已存在的共享组件：
 
-- `src/components/ui/Button.jsx` {#页面级按钮组件:提供 primary、secondary、neutral、danger 四类操作按钮}。
-- `src/components/ui/SquareIconButton.jsx` {#方形图标按钮组件:用于筛选、搜索、历史、新建、收起展开等紧凑工具入口}。
-- `src/components/ui/PageHeader.jsx` {#页面头部组件:统一页面标题、说明和右侧操作区}。
-- `src/components/ui/FixedPageLayout.jsx` {#固定页面布局组件:提供页面头部固定区域和内部滚动主体}。
-- `src/components/ui/ListCard.jsx` {#列表卡片组件:统一重复列表项的标题、元信息、标签和操作区}。
-- `src/components/ui/Toast.jsx` {#全局提示组件:通过 portal 显示成功、信息、警告和错误提示}。
-- `src/components/ui/ConfirmDialog.jsx` {#确认与决策弹窗:统一遮罩、焦点、Escape关闭和操作按钮样式；通过 `actions` 支持三项流程决策}。
-- `src/components/knowledge-selection/KnowledgeSelectionModals.jsx` {#共享知识选择弹窗:供文章创作和 Copilot 选择知识条目或已解析文件}。
-- `src/components/ai-workflow/` {#AI工作流共享组件:提供Agent头像、任务状态、任务过程、紧凑表单、标题选择、产物卡片和预览}。
+- `src/components/ui/Button.jsx` {-页面级按钮组件:提供 primary、secondary、neutral、danger 四类操作按钮}。
+- `src/components/ui/SquareIconButton.jsx` {-方形图标按钮组件:用于筛选、搜索、历史、新建、收起展开等紧凑工具入口}。
+- `src/components/ui/PageHeader.jsx` {-页面头部组件:统一页面标题、说明和右侧操作区}。
+- `src/components/ui/FixedPageLayout.jsx` {-固定页面布局组件:提供页面头部固定区域和内部滚动主体}。
+- `src/components/ui/ListCard.jsx` {-列表卡片组件:统一重复列表项的标题、元信息、标签和操作区}。
+- `src/components/ui/Toast.jsx` {-全局提示组件:通过 portal 显示成功、信息、警告和错误提示}。
+- `src/components/ui/ConfirmDialog.jsx` {-确认与决策弹窗:统一遮罩、焦点、Escape关闭和操作按钮样式；通过 `actions` 支持三项流程决策}。
+- `src/components/knowledge-selection/KnowledgeSelectionModals.jsx` {-共享知识选择弹窗:供文章创作和 Copilot 选择知识条目或已解析文件}。
+- `src/components/ai-workflow/` {-AI工作流共享组件:提供Agent头像、任务状态、任务过程、紧凑表单、标题选择、产物卡片和预览}。
 
 当前仍分散在部分业务页面、后续适合迁移到共享组件的高频结构：
 
@@ -34,23 +34,23 @@
 ### P0
 
 - 将各页面局部 `ConfirmDialog`、`DeleteDialog`、`DiscardDialog`、`UnsavedDialog` 逐步迁移到共享 `ConfirmDialog`，避免一次性扩大重构范围。
-- `FormField` {#表单字段候选组件:统一 label、required、hint、error、disabled 和字段容器布局}：先支持 input、select、textarea，再扩展自定义 children。
-- `StatusBadge` {#状态标签候选组件:统一 success、info、warning、error、neutral 状态色和尺寸}：先覆盖文章状态、任务状态、资料处理状态、文件来源状态。
-- `EmptyState` {#空状态候选组件:统一空列表、筛选无结果、预览空和资料空的图标、标题、说明和操作按钮}：替代页面内临时空状态区块。
+- `FormField` {-表单字段候选组件:统一 label、required、hint、error、disabled 和字段容器布局}：先支持 input、select、textarea，再扩展自定义 children。
+- `StatusBadge` {-状态标签候选组件:统一 success、info、warning、error、neutral 状态色和尺寸}：先覆盖文章状态、任务状态、资料处理状态、文件来源状态。
+- `EmptyState` {-空状态候选组件:统一空列表、筛选无结果、预览空和资料空的图标、标题、说明和操作按钮}：替代页面内临时空状态区块。
 
 ### P1
 
-- `Drawer` {#右侧抽屉候选组件:统一创建和编辑复杂对象的标题栏、滚动正文、底部操作区和未保存确认}：优先覆盖受众画像和知识类型管理。
-- `FilterToolbar` {#筛选工具栏候选组件:统一搜索框、筛选入口、清除全部和列表控制区}：优先覆盖受众画像、博客文章和知识资料。
-- `FilterPopover` {#筛选弹层候选组件:统一筛选字段、蓝点状态、应用和清除操作}：与 `FilterToolbar` 配套抽取。
-- `TagInput` {#标签输入候选组件:统一标签展示、键盘添加、重复校验、数量上限和移除按钮}：优先覆盖品牌档案、受众画像和 AI 创建任务页。
+- `Drawer` {-右侧抽屉候选组件:统一创建和编辑复杂对象的标题栏、滚动正文、底部操作区和未保存确认}：优先覆盖受众画像和知识类型管理。
+- `FilterToolbar` {-筛选工具栏候选组件:统一搜索框、筛选入口、清除全部和列表控制区}：优先覆盖受众画像、博客文章和知识资料。
+- `FilterPopover` {-筛选弹层候选组件:统一筛选字段、蓝点状态、应用和清除操作}：与 `FilterToolbar` 配套抽取。
+- `TagInput` {-标签输入候选组件:统一标签展示、键盘添加、重复校验、数量上限和移除按钮}：优先覆盖品牌档案、受众画像和 AI 创建任务页。
 
 ### P2
 
-- `ArtifactCard` {#AI 产物卡候选组件:统一 AI 创作产物入口的选中态、标题、说明和跳转提示}。
-- `ReferenceBlockCard` {#引用来源卡候选组件:统一引用证据、来源跳转、展开收起和生成内容高亮}。
-- `AIGenerationShell` {#AI 创作工作台候选组件:统一顶部固定栏、双栏主体、底部操作栏和页面级滚动策略}。
-- `ResourceSelectModal` {#资源选择弹窗候选组件:统一知识条目、知识资料、受众等可搜索多选资源的选择体验}。
+- `ArtifactCard` {-AI 产物卡候选组件:统一 AI 创作产物入口的选中态、标题、说明和跳转提示}。
+- `ReferenceBlockCard` {-引用来源卡候选组件:统一引用证据、来源跳转、展开收起和生成内容高亮}。
+- `AIGenerationShell` {-AI 创作工作台候选组件:统一顶部固定栏、双栏主体、底部操作栏和页面级滚动策略}。
+- `ResourceSelectModal` {-资源选择弹窗候选组件:统一知识条目、知识资料、受众等可搜索多选资源的选择体验}。
 
 ## Adoption Rule
 
@@ -59,6 +59,7 @@
 - 抽取组件前先列出复用页面、props 需求、视觉差异和迁移风险，并向用户确认。
 - 组件抽取必须保持原页面行为不变；如果会改变文案、按钮顺序、交互路径或信息架构，先说明差异并等待确认。
 - 每次新增或修改共享组件后，同步更新同目录 `DESIGN.md` 和本文件。
+- 组件只负责界面、交互状态和已定义的回调；接口请求、SSE 解析和会话持久化继续放在 `src/features/copilot/` {-Copilot 客户端逻辑目录:统一管理请求、状态和浏览器存储} 或 `src/services/` {-业务数据服务目录:管理项目级浏览器数据}。
 
 ## Button
 
@@ -105,12 +106,13 @@
 
 ## Toast
 
-- 全局提示必须使用 `src/components/ui/Toast.jsx`。
-- Toast 通过 portal 渲染到 `document.body`，不得占用页面布局空间。
-- Toast 固定在视口顶部居中，短文案保持单行，长文案最多两行。
-- Toast 不使用边框，以语义背景色、语义图标色和轻量阴影表达状态。
-- 支持类型为 `success`、`info`、`warning`、`error`。
-- Toast 支持单个操作按钮和多个文字操作按钮；多操作用于未保存退出、流程分支等提示，按钮文案必须短，避免承载复杂表单。
+- 全局提示必须通过 `ToastProvider` 和 `useToast` 使用，Provider 仅在 `src/main.jsx` 挂载一次；业务页面不得再局部渲染 Toast 或自行维护关闭计时器。
+- `useToast` 提供 `success`、`info`、`warning`、`error`、`loading`、`show`、`update`、`dismiss`、`dismissAll`。常规调用使用 `toast.success(message)` 等快捷方法。
+- `duration` 默认 3000ms，`duration: 0` 为常驻提示；常驻流程提示必须设置 `showClose: true` 和稳定 `id`，并通过 hook 的 page scope 自动清理。
+- Toast 通过 portal 渲染到 `document.body`，固定在视口顶部居中，不得占用页面布局空间；同时最多显示三条，其余排队。
+- 视觉使用 RAGSEO 风格：6px 圆角、语义浅色背景、线性图标和轻量阴影，不使用边框。文案固定 14px，短文案自然单行，长文案完整换行且不截断。
+- `actions` 支持单个或多个文字操作，包含 `label`、可选 `tone`、`onClick`、`closeOnClick`；默认点击后关闭。多操作用于流程型提示，按钮文案必须短，避免承载复杂表单。
+- `id` 相同的 Toast 视为更新，不重复插入；`loading` 完成后必须使用 `update` 更新为成功或失败状态。
 
 ## Layout Helpers
 

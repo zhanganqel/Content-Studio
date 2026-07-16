@@ -1,5 +1,11 @@
 import { listChunks } from './fileLibraryApi.js';
 import { getBrandProfileDraft } from './brandProfileStore.js';
+import {
+  createCollaborativeRunId,
+  createContentResetState,
+  createOutlineResetState,
+  createPlanningResetState,
+} from './blogArticleAiStageData.js';
 
 const storageKeyPrefix = 'content-studio-blog-article-ai-tasks:';
 const storageSchemaVersion = 1;
@@ -270,12 +276,19 @@ function serializeTasks(tasks) {
 
 // 合并任务补丁时深合并阶段数据，避免只更新一个字段时覆盖整段产物。
 function mergeTaskPatch(task, patch) {
+  const {
+    replaceContent,
+    replaceOutline,
+    replacePlanning,
+    ...nextPatch
+  } = patch;
+
   return {
     ...task,
-    ...patch,
-    content: patch.content ? { ...(task.content ?? {}), ...patch.content } : task.content,
-    planning: patch.planning ? { ...(task.planning ?? {}), ...patch.planning } : task.planning,
-    outline: patch.outline ? { ...(task.outline ?? {}), ...patch.outline } : task.outline,
+    ...nextPatch,
+    content: replaceContent ?? (nextPatch.content ? { ...(task.content ?? {}), ...nextPatch.content } : task.content),
+    planning: replacePlanning ?? (nextPatch.planning ? { ...(task.planning ?? {}), ...nextPatch.planning } : task.planning),
+    outline: replaceOutline ?? (nextPatch.outline ? { ...(task.outline ?? {}), ...nextPatch.outline } : task.outline),
     updatedAt: today(),
   };
 }
@@ -365,17 +378,72 @@ export function convertCollaborativeTaskToAuto(projectId, taskId) {
 }
 
 // 重置策划阶段时保留任务输入，只清空运行状态和策划产物。
+// 从任务输入重新开始策划时替换全部阶段数据，防止深合并遗留旧产物。
+export function restartCollaborativePlanningTask(projectId, taskId, patch = {}) {
+  return updateAiCreationTask(projectId, taskId, {
+    ...patch,
+    errorMessage: '',
+    mode: 'collaborative',
+    replaceContent: createContentResetState(today()),
+    replaceOutline: createOutlineResetState(today()),
+    replacePlanning: createPlanningResetState(today()),
+    runId: createCollaborativeRunId(),
+    stage: 'planning',
+  });
+}
+
+// 从已确认的策划生成标题大纲时，保留策划并清空大纲与正文。
+export function startCollaborativeOutlineTask(projectId, taskId, planning = {}) {
+  return updateAiCreationTask(projectId, taskId, {
+    errorMessage: '',
+    planning,
+    replaceContent: createContentResetState(today()),
+    replaceOutline: createOutlineResetState(today()),
+    runId: createCollaborativeRunId(),
+    stage: 'outline',
+  });
+}
+
+// 已中止的大纲从保留的策划结果重新运行，不触碰策划产物。
+export function restartCollaborativeOutlineTask(projectId, taskId) {
+  return updateAiCreationTask(projectId, taskId, {
+    errorMessage: '',
+    replaceContent: createContentResetState(today()),
+    replaceOutline: createOutlineResetState(today()),
+    runId: createCollaborativeRunId(),
+    stage: 'outline',
+  });
+}
+
+// 从已确认的标题大纲生成正文时，保留上游输入并清空正文阶段产物。
+export function startCollaborativeContentTask(projectId, taskId, outline = {}) {
+  return updateAiCreationTask(projectId, taskId, {
+    errorMessage: '',
+    outline,
+    replaceContent: createContentResetState(today()),
+    runId: createCollaborativeRunId(),
+    stage: 'content',
+  });
+}
+
+// 重新生成正文不触碰任务输入、策划和标题大纲。
+export function restartCollaborativeContentTask(projectId, taskId) {
+  return updateAiCreationTask(projectId, taskId, {
+    errorMessage: '',
+    replaceContent: createContentResetState(today()),
+    runId: createCollaborativeRunId(),
+    stage: 'content',
+  });
+}
+
 export function resetAiPlanningTask(projectId, taskId) {
   return updateAiCreationTask(projectId, taskId, {
     errorMessage: '',
+    replaceContent: createContentResetState(today()),
+    replaceOutline: createOutlineResetState(today()),
+    replacePlanning: createPlanningResetState(today()),
+    runId: createCollaborativeRunId(),
     stage: 'planning',
-    planning: {
-      completedTaskIds: [],
-      currentArtifactId: '',
-      isStopped: false,
-      strategyContent: '',
-      updatedAt: today(),
-    },
   });
 }
 
@@ -383,47 +451,19 @@ export function resetAiPlanningTask(projectId, taskId) {
 export function resetAiOutlineTask(projectId, taskId) {
   return updateAiCreationTask(projectId, taskId, {
     errorMessage: '',
+    replaceContent: createContentResetState(today()),
+    replaceOutline: createOutlineResetState(today()),
+    runId: createCollaborativeRunId(),
     stage: 'outline',
-    outline: {
-      confirmedTitleId: '',
-      completedTaskIds: [],
-      currentArtifactId: '',
-      isStopped: false,
-      outlineTree: [],
-      selectedTitleId: '',
-      titleConfirmed: false,
-      titleDraft: '',
-      titleOptions: [],
-      updatedAt: today(),
-    },
   });
 }
 
 export function resetAiContentTask(projectId, taskId) {
   return updateAiCreationTask(projectId, taskId, {
     errorMessage: '',
+    replaceContent: createContentResetState(today()),
+    runId: createCollaborativeRunId(),
     stage: 'content',
-    content: {
-      articleVersions: [],
-      completedTaskIds: [],
-      currentArtifactId: '',
-      evaluationReports: [],
-      finalEvaluationReport: null,
-      finalArticle: null,
-      finalRevisionRounds: [],
-      isStopped: false,
-      latestEvaluationReportId: '',
-      latestFinalArticleId: '',
-      latestTdkId: '',
-      citationUsages: [],
-      referenceBlocks: [],
-      revisionRequests: [],
-      revisionRecords: [],
-      revisionSuggestions: [],
-      savedArticleId: '',
-      tdk: null,
-      updatedAt: today(),
-    },
   });
 }
 
@@ -738,6 +778,356 @@ function normalizeStrategyContent(content) {
   return String(content ?? '').replace(/（参考质量评估模型 P0）/g, '');
 }
 
+function formatPlanningInput(value) {
+  const values = Array.isArray(value) ? value : [value];
+  const normalized = values.map((item) => String(item ?? '').trim()).filter(Boolean);
+  return normalized.length ? normalized.join('<br>') : '-';
+}
+
+function escapePlanningTableCell(value) {
+  return formatPlanningInput(value).replace(/\|/g, '\\|').replace(/\r?\n/g, '<br>');
+}
+
+function createPlanningTableRow(...cells) {
+  return `| ${cells.map(escapePlanningTableCell).join(' | ')} |`;
+}
+
+function inferPlanningSearchIntent(articleType, articleTopic) {
+  const value = `${articleType} ${articleTopic}`.toLowerCase();
+  if (/comparison|\bvs\.?\b|对比|比较/.test(value)) return '比较评估';
+  if (/how-to|problem-solving|guide|指南|解决/.test(value)) return '问题解决';
+  if (/product|review|产品|采购/.test(value)) return '采购研究';
+  if (/faq|科普|insight|洞察/.test(value)) return '信息获取';
+  if (/brand|company|品牌|公司/.test(value)) return '品牌导航';
+  return '信息获取与采购研究';
+}
+
+function selectPlanningCopyModel(articleType, articleTopic) {
+  const value = `${articleType} ${articleTopic}`.toLowerCase();
+  if (/comparison|\bvs\.?\b|对比|比较/.test(value)) {
+    return {
+      name: '对比模型',
+      rationale: '主题包含明确的比较与决策场景，适合使用一致标准呈现差异、限制和适用条件，帮助读者完成公平选型。',
+      notSelected: '不选择 Problem-Solution-Proof：当前参考文章正文与独立证明不足，不应把有限供应商资料包装成完整证明链。',
+      stageNames: ['比较任务界定', '统一评估标准', '方案适配比较', '证据与限制'],
+    };
+  }
+  if (/product|review|产品/.test(value)) {
+    return {
+      name: 'FAB',
+      rationale: '产品型内容需要把功能与参数转换成采购方可理解的优势和业务收益，避免停留在产品罗列。',
+      notSelected: '不选择 Features-to-Benefits：当前文章需要保留特性、相对优势与客户利益三层判断，而不只是功能转利益。',
+      stageNames: ['买方场景', '产品特性', '相对优势', '客户利益'],
+    };
+  }
+  if (/problem-solving|问题解决|痛点/.test(value)) {
+    return {
+      name: 'PAS',
+      rationale: '问题解决型内容需要先明确客户问题及其业务影响，再提供有来源支持的解决路径。',
+      notSelected: '不选择 PASTOR：普通博客没有足够真实故事、Offer 和异议资料支撑更长的销售叙事。',
+      stageNames: ['问题', '业务影响', '解决路径', '证据与应用'],
+    };
+  }
+  if (/how-to|ultimate|faq|guide|指南|科普/.test(value)) {
+    return {
+      name: 'ACCA',
+      rationale: '教育型内容需要让读者从认识问题、理解方法进入证据验证和下一步行动，适合长尾搜索与专业解释。',
+      notSelected: '不选择 5W1H：当前任务需要连续建立理解与信任，而不是并列回答六类基础问题。',
+      stageNames: ['认知', '理解', '评估', '建立确信'],
+    };
+  }
+  return {
+    name: 'QUEST',
+    rationale: 'B2B 内容需要先锁定合适读者，再解释问题、提供教育与证明，最后承接咨询或采购行动。',
+    notSelected: '不选择 AIDA：当前任务以专业筛选和采购教育为主，不适合用兴趣与欲望驱动全文。',
+    stageNames: ['受众筛选', '问题理解', '市场教育', '决策支持'],
+  };
+}
+
+function getPlanningFaqCount(articleLength) {
+  if (/800\s*-\s*1200/.test(articleLength)) return 5;
+  if (/1200\s*-\s*1400|1400\s*-\s*1600/.test(articleLength)) return 7;
+  return 9;
+}
+
+function createPlanningPreviewContent(task, project) {
+  const input = task?.taskInput ?? {};
+  const demoProject = project?.demoProject ?? {};
+  const brandProfile = demoProject.brandProfile ?? {};
+  const companyName = demoProject.name ?? project?.name ?? 'Rejin CNC Technology Co.,Ltd';
+  const brandName = brandProfile.brandName ?? companyName;
+  const targetRegion = input.targetRegion || 'Global';
+  const articleLanguage = input.articleLanguage || 'EN';
+  const audienceName = input.targetAudience?.name || input.targetAudienceName || '目标受众未填写';
+  const audienceSummary =
+    input.targetAudience?.summary ||
+    input.targetAudience?.searchGoal ||
+    input.targetAudience?.businessDescription ||
+    '当前任务未提供受众画像摘要，后续内容仅使用已确认的受众名称。';
+  const businessGoal = input.businessGoal || '当前任务未填写业务目标。';
+  const articleTopic = input.articleTopic || '当前任务未填写文章主题';
+  const primaryKeyword = input.primaryKeyword || '';
+  const secondaryKeywordList = Array.isArray(input.secondaryKeywords)
+    ? input.secondaryKeywords.map((item) => String(item).trim()).filter(Boolean)
+    : splitAiKeywordText(input.secondaryKeywords);
+  const articleType = input.articleType || '';
+  const articleLength = input.articleLength || '';
+  const tone = input.tone || '';
+  const person = input.person || '';
+  const additionalRequirements = input.additionalRequirements || '';
+  const brandRequirements = input.brandRequirements || '';
+  const generationRequirements = [
+    brandRequirements ? `品牌要求：${brandRequirements}` : '',
+    additionalRequirements ? `补充生成要求：${additionalRequirements}` : '',
+  ].filter(Boolean);
+  const relatedLink = input.relatedLink || input.productLink || '';
+  const referenceInputUrls = (input.referenceArticles ?? [])
+    .map((item) => (typeof item === 'string' ? item : item?.url))
+    .filter(Boolean);
+  const knowledgeAssetNames = (input.knowledgeAssets ?? [])
+    .map((item) => item.fileName || item.title || item.name)
+    .filter(Boolean);
+  const formatBasicInput = (value) => {
+    const formatted = formatPlanningInput(value);
+    return formatted === '-' ? '未提供' : formatted;
+  };
+  const searchIntent = inferPlanningSearchIntent(articleType, articleTopic);
+  const copyModel = selectPlanningCopyModel(articleType, articleTopic);
+  const references = getReferenceArticles(task).slice(0, 6);
+  const knowledgeItems = input.knowledgeItems?.length ? input.knowledgeItems : demoProject.knowledgeItems ?? [];
+  const selectedKnowledgeNames = knowledgeItems
+    .slice(0, 6)
+    .map((item) => item.title || item.name)
+    .filter(Boolean);
+  const selectedKnowledgeText = selectedKnowledgeNames.length
+    ? selectedKnowledgeNames.join('、')
+    : '当前任务未选择知识条目';
+  const capabilities = brandProfile.capabilities?.length
+    ? brandProfile.capabilities.slice(0, 6).join('、')
+    : selectedKnowledgeText;
+  const caseNames = (demoProject.knowledgeItems ?? [])
+    .filter((item) => item.type === 'case')
+    .slice(0, 3)
+    .map((item) => item.title)
+    .filter(Boolean);
+  const linkCandidates = [
+    ...(input.knowledgeItems ?? []),
+    ...(demoProject.knowledgeItems ?? []).filter((item) => ['product', 'service', 'solution'].includes(item.type)),
+  ]
+    .map((item) => ({
+      title: item.title || item.name || '',
+      url: item.sourceUrl || item.productUrl || item.serviceUrl || item.url || '',
+    }))
+    .filter((item, index, items) => item.title && items.findIndex((candidate) => candidate.title === item.title) === index)
+    .slice(0, 3);
+  const keywordCell = (...keywords) => formatPlanningInput(keywords.flat().filter(Boolean));
+  const stageRows = [
+    {
+      name: '引言',
+      content: `围绕「${articleTopic}」呈现 ${audienceName} 正在面对的具体判断，并说明本文能够帮助其获得什么决策信息。`,
+      guidance: `使用 ${tone || '用户指定'} 语气和${person || '用户指定人称'}；主要依据创建任务与目标受众画像，不使用未经证实的结果承诺。`,
+    },
+    {
+      name: copyModel.stageNames[0],
+      content: `解释 ${audienceName} 在处理「${articleTopic}」时的业务场景、常见疑问和决策风险，使搜索问题与「${businessGoal}」建立联系。`,
+      guidance: '依据用户输入、目标市场和参考文章摘要；只描述可验证问题，不虚构市场数据、搜索量或客户损失。',
+    },
+    {
+      name: copyModel.stageNames[1],
+      content: `围绕 ${primaryKeyword || '主要关键词'} 建立采购、技术、交付、成本与服务评估标准，让读者能够比较不同方案。`,
+      guidance: `结合 ${selectedKnowledgeText}；技术深度服务于决策，不堆砌参数，不把行业常见能力写成品牌事实。`,
+    },
+    {
+      name: copyModel.stageNames[2],
+      content: `说明与「${articleTopic}」相关的可选路径、适用条件和取舍，并把功能或服务能力转换成 ${audienceName} 可理解的业务价值。`,
+      guidance: `优先引用项目知识库、产品链接和官网；品牌要求为“${brandRequirements || '未填写'}”，不得扩展无来源能力。`,
+    },
+    {
+      name: copyModel.stageNames[3],
+      content: `使用 ${companyName} 已确认的能力、资质、案例或服务流程支撑判断，并明确仍需补充的证据。`,
+      guidance: `可用能力包括 ${capabilities}；可用案例为 ${caseNames.join('、') || '当前未选择案例'}。缺少来源时明确留空。`,
+    },
+    {
+      name: '信任建立与 CTA',
+      content: `总结与「${articleTopic}」相关的决策要点，并引导读者完成符合「${businessGoal}」的下一步行动。`,
+      guidance: `CTA 只指向真实官网、产品或咨询入口；不使用 best、leading、No.1、guaranteed 等绝对化表达。`,
+    },
+  ];
+  const stageKeywordRows = [
+    [stageRows[0].name, keywordCell(primaryKeyword), '标题相关表达与引言前段自然出现，不机械重复。', '确认主题实体并承接主搜索意图。'],
+    [stageRows[1].name, keywordCell(primaryKeyword, secondaryKeywordList[0]), '用于问题描述、场景判断和读者疑问。', '覆盖问题识别与初步理解意图。'],
+    [stageRows[2].name, keywordCell(primaryKeyword, secondaryKeywordList[1]), '用于评估标准、比较维度和关键解释。', '扩展比较评估与采购研究语义。'],
+    [stageRows[3].name, keywordCell(primaryKeyword, secondaryKeywordList[2]), '与产品、服务或解决路径自然关联。', '连接方案理解与品牌业务上下文。'],
+    [stageRows[4].name, keywordCell(primaryKeyword, secondaryKeywordList.slice(3)), '仅在证据、案例或能力说明与关键词确实相关时出现。', '建立实体可信度，避免无关关键词填充。'],
+    [stageRows[5].name, keywordCell(primaryKeyword), 'FAQ、总结和 CTA 中自然回收主要关键词。', '完成长尾覆盖并承接行动转化。'],
+  ];
+  const getLink = (index) => linkCandidates[index] ?? null;
+  const createLinkRow = (stage, candidate, fallbackReason) => candidate?.url
+    ? [stage, candidate.title, candidate.url, fallbackReason]
+    : [stage, '不建议插入', '不适用', '当前阶段没有已确认且自然必要的真实链接。'];
+  const internalLinkRows = stageRows.map((stage, index) => {
+    if (index === 0) return [stage.name, '不建议插入', '不适用', '开头优先建立问题和阅读价值，避免过早打断阅读。'];
+    if (index === stageRows.length - 1) {
+      return relatedLink
+        ? [stage.name, brandName, relatedLink, '在行动建议处连接用户确认的相关页面。']
+        : [stage.name, '不建议插入', '不适用', '用户未提供相关链接，CTA 目标页面待确认。'];
+    }
+    const candidate = getLink(index - 1);
+    return createLinkRow(stage.name, candidate, '继续解决该阶段尚未完成的产品、服务或方案问题。');
+  });
+  const faqItems = (articleLanguage === 'CN'
+    ? [
+        `「${articleTopic}」最需要先理解的基础问题是什么？`,
+        `${audienceName} 应如何比较与 ${primaryKeyword || '该主题'} 相关的产品或方案？`,
+        '采购或技术评估时应核对哪些参数、质量证明、认证或可靠性信息？',
+        '实施、使用、维护或服务过程中常见的问题有哪些？',
+        `${targetRegion} 市场的买家通常会关注哪些交付、合规或服务问题？`,
+        `判断 ${companyName} 的供应或服务能力时需要哪些真实证据？`,
+        '替代方案、比较维度和成本因素应如何评估？',
+        '询价或咨询前应准备哪些项目资料、参数和交付要求？',
+        '哪些结论需要由工程、质量或合规专业人员进一步确认？',
+        '读者应如何判断现有证据是否足以支持下一步决策？',
+      ]
+    : [
+        `What should buyers understand first about ${articleTopic}?`,
+        `How should ${audienceName} compare options related to ${primaryKeyword || 'this topic'}?`,
+        'Which specifications, quality records, certifications, or reliability evidence should buyers verify?',
+        'What should buyers know about implementation, use, maintenance, or service support?',
+        `Which delivery, compliance, or service concerns matter in ${targetRegion}?`,
+        `What evidence should buyers request when evaluating ${companyName}?`,
+        'How should buyers compare alternatives and cost factors before making a decision?',
+        'What project details, specifications, and delivery requirements should be prepared before an enquiry?',
+        'Which conclusions require engineering, quality, compliance, or other professional review?',
+        'How can readers decide whether the available evidence is sufficient for the next step?',
+      ]).slice(0, getPlanningFaqCount(articleLength));
+  const referenceRows = references.length
+    ? references.map((reference) => [
+        reference.title,
+        reference.url || '未提供',
+        '仅提供链接；演示未抓取正文',
+        `标题层面与「${articleTopic}」及 ${primaryKeyword || '主要关键词'} 存在关联；正文未获取，不分析观点与结构。`,
+        `${targetRegion} / ${articleLanguage} 适配待验证`,
+      ])
+    : [['未提供', '未提供', '未提供', '跳过内容分析', '跳过内容分析']];
+
+  return [
+    '# 文章策划方案',
+    '',
+    '## 1. 文章目标',
+    '### 1.1 目标市场分析',
+    `- **表达习惯：**面向 ${targetRegion}、使用 ${articleLanguage}，采用自然 B2B 表达并保留必要专业术语。`,
+    '- **采购与交付关注点：**聚焦方案适配、质量证明、交付风险、总成本和服务边界。',
+    '- **法规风险：**法规、认证、安全和合规适用性待权威来源验证，不写成确定结论。',
+    `- **内容深度：**为 ${audienceName} 提供足以比较和验证方案的解释，不堆砌孤立参数。`,
+    `- **CTA 类型：**服务“${businessGoal}”；${relatedLink ? '引导至用户确认的相关页面。' : '相关链接未提供，具体落点待确认。'}`,
+    '',
+    '### 1.2 目标受众分析',
+    `- **知识水平：**${audienceSummary}`,
+    `- **关注点与疑问：**围绕「${articleTopic}」判断适配条件、供应商证据和下一步所需资料。`,
+    '- **决策标准与异议：**比较技术适配、质量证明、交付与成本透明度；主要异议来自证据不足和边界不清。',
+    '- **技术深度：**解释参数、流程和应用条件对决策的影响，不展开与搜索任务无关的技术细节。',
+    `- **信任证据：**使用 ${companyName} 的已确认品牌事实、知识资产、真实案例与权威来源；缺失项标记待补充。`,
+    '',
+    '### 1.3 搜索意图分析',
+    `- **搜索意图：**${searchIntent}；「${articleTopic}」和「${primaryKeyword || '主要关键词未提供'}」要求文章帮助读者形成实际判断。`,
+    '- **读者阶段：**处于理解到比较阶段，阅读后应能够建立验证清单并识别证据缺口。',
+    `- **核心问题：**${audienceName} 应如何比较与「${articleTopic}」相关的方案、证据和风险，并决定下一步行动？`,
+    '',
+    '### 1.4 业务目标判断',
+    `- **主要目标：**围绕“${businessGoal}”完成可信的比较决策与询盘转化。`,
+    '- **辅助目标：**通过市场教育说明评估标准，为主要目标降低理解成本。',
+    `- **期望行动：**读者形成需求或验证清单后，${relatedLink ? `访问 ${relatedLink} 继续核验或咨询。` : '进入咨询；具体链接待用户补充。'}`,
+    '',
+    '## 2. 参考文章分析',
+    '### 2.1 参考文章相关性',
+    createPlanningTableRow('参考文章', 'URL', '访问状态', '主题 / 关键词 / 类型相关性', '市场与语言适配'),
+    '| --- | --- | --- | --- | --- |',
+    ...referenceRows.map((row) => createPlanningTableRow(...row)),
+    '',
+    '### 2.2 优势 / 可借鉴点',
+    '- 当前参考来源未获取正文，因此不分析开头、叙事结构、可读性或 E-E-A-T 信号。只借鉴可见标题中的主题表达，待取得正文后再补充。',
+    '',
+    '### 2.3 差异化写作要点',
+    `- **内容补强：**用 ${selectedKnowledgeText} 补充可执行的比较标准、应用条件和证据检查。`,
+    `- **项目知识利用：**仅使用 ${companyName} 已确认的 ${capabilities}；${caseNames.length ? `可核验案例包括 ${caseNames.join('、')}。` : '真实案例待补充。'}`,
+    '- **风险规避：**不分析未获取正文，不转移竞品自述，不采用无来源参数、绝对化宣传或虚假案例。',
+    '',
+    '## 3. 文章结构策划（核心内容）',
+    '',
+    '### 3.1 文章基础信息',
+    createPlanningTableRow('字段', '值'),
+    '| --- | --- |',
+    createPlanningTableRow('业务目标', formatBasicInput(input.businessGoal)),
+    createPlanningTableRow('目标市场', formatBasicInput(input.targetRegion)),
+    createPlanningTableRow('目标语言', formatBasicInput(input.articleLanguage)),
+    createPlanningTableRow('目标受众', formatBasicInput(input.targetAudience?.name || input.targetAudienceName)),
+    createPlanningTableRow('相关链接', formatBasicInput(relatedLink)),
+    createPlanningTableRow('参考文章', formatBasicInput(referenceInputUrls)),
+    createPlanningTableRow('知识库文件', formatBasicInput(knowledgeAssetNames)),
+    createPlanningTableRow('文章主题', formatBasicInput(input.articleTopic)),
+    createPlanningTableRow('主要关键词', formatBasicInput(input.primaryKeyword)),
+    createPlanningTableRow('次要关键词', formatBasicInput(input.secondaryKeywords)),
+    createPlanningTableRow('文章类型', formatBasicInput(input.articleType)),
+    createPlanningTableRow('文章长度', formatBasicInput(input.articleLength)),
+    createPlanningTableRow('语气', formatBasicInput(input.tone)),
+    createPlanningTableRow('人称', formatBasicInput(input.person)),
+    createPlanningTableRow('**生成要求**', `**${formatBasicInput(generationRequirements)}**`),
+    '',
+    '### 3.2 营销文案模型与写作思路',
+    `- **所选模型：**${copyModel.name}。`,
+    `- **选择依据：**${copyModel.rationale}它同时响应“${businessGoal}”、${audienceName}、${articleType || '文章类型未提供'}、主题「${articleTopic}」和 ${searchIntent} 意图。`,
+    `- **证据适配：**知识资产可支撑 ${selectedKnowledgeText}；参考文章当前仅提供链接，正文结构、观点和 E-E-A-T 信号待补充。`,
+    `- **生成要求落实：**${formatBasicInput(generationRequirements)}；各阶段不得突破事实、来源和禁止主张边界。`,
+    `- **不选择其他模型的原因：**${copyModel.notSelected}`,
+    '- **阶段映射：**',
+    createPlanningTableRow('Stage', 'Content', 'Writing Guidance'),
+    '| --- | --- | --- |',
+    ...stageRows.map((stage) => createPlanningTableRow(stage.name, stage.content, stage.guidance)),
+    '',
+    '### 3.3 关键词布局建议与内链插入建议',
+    '**关键词布局建议：**',
+    '本演示未调用实时关键词工具；以下只使用用户输入关键词，不判断搜索量、竞争度、排名难度或实时趋势。',
+    createPlanningTableRow('Stage', 'Keywords', 'Placement', 'Purpose'),
+    '| --- | --- | --- | --- |',
+    ...stageKeywordRows.map((row) => createPlanningTableRow(...row)),
+    '- 主要关键词应覆盖标题、引言、至少 2-3 个核心 H2、FAQ 和结尾。',
+    '- 次要关键词按语义场景出现，不为填满阶段而机械重复。',
+    '- 不设固定关键词密度；密度只作为发布前检查信号，不作为生成目标。',
+    '',
+    '**内链插入建议：**',
+    createPlanningTableRow('Stage', 'Recommended Anchor Text', 'Target Page', 'Insertion Rationale'),
+    '| --- | --- | --- | --- |',
+    ...internalLinkRows.map((row) => createPlanningTableRow(...row)),
+    '- 锚文本应自然、明确、可独立理解，不使用 click here，不重复堆砌同一关键词。',
+    '- 没有真实 URL 时只建议页面类型，不创造链接；没有自然、必要内链的阶段明确标记“不建议插入”。',
+    '',
+    '### 3.4 FAQ 写作建议',
+    `- **检索词：**${formatPlanningInput([primaryKeyword, articleTopic, ...selectedKnowledgeNames.slice(0, 2)])}`,
+    `- **工具状态：**外部 FAQ 工具未执行；以下 ${faqItems.length} 个问题均为模型建议，不代表 PAA、搜索结果问题或真实用户数据。`,
+    ...faqItems.map((question, index) => {
+      const stage = stageRows[Math.min(index + 1, stageRows.length - 1)].name;
+      return `- **Q${index + 1}（模型建议 · ${stage}）：**${question}`;
+    }),
+    '',
+    '### 创作规范',
+    '> **重要事实与 E-E-A-T 约束**',
+    `> - **用户输入与生成要求：**原样执行 ${formatBasicInput(generationRequirements)}；标题、大纲和正文不得擅自改写已确认字段。`,
+    `> - **事实与来源：**只使用用户字段、已选择知识资产和真实 URL；${companyName} 或竞品自述必须限定来源范围，参考文章正文未获取时不得分析观点。`,
+    '> - **禁止虚构：**不得编造参数、认证、案例、客户、规模、结果、市场数据或监管结论；高风险内容需合格专业人员复核。',
+    `> - **SEO 与表达：**围绕「${primaryKeyword || '主要关键词未提供'}」和 ${searchIntent} 自然写作，不堆砌关键词，不承诺排名、流量或转化。`,
+    `> - **语言与品牌：**正文使用 ${articleLanguage}，符合 ${targetRegion} 语境和 ${tone || '用户指定语气'}；公司与品牌名称保持原写法。`,
+    `> - **内链、CTA 与发布检查：**只使用真实链接，CTA 服务“${businessGoal}”；发布前核对字段、事实、引用、FAQ 来源、禁用表达和必要专业审核。`,
+  ].join('\n');
+}
+
+function resolvePlanningPreviewContent(task, project) {
+  const savedContent = normalizeStrategyContent(task?.planning?.strategyContent);
+  const isLegacyDemoContent =
+    savedContent.includes('## 1. 项目背景与 E-E-A-T 内容底座') ||
+    savedContent.includes('## 4. 附录：系统约束规则');
+  return savedContent && !isLegacyDemoContent ? savedContent : createPlanningPreviewContent(task, project);
+}
+
 // 项目分析报告把品牌、市场、知识和任务要求整理成策划依据。
 function createProjectAnalysisReport(task, project) {
   const input = task?.taskInput ?? {};
@@ -928,7 +1318,7 @@ export function createPlanningDemoData(task, project) {
   const brandName = project?.demoProject?.brandProfile?.brandName ?? 'Rejin CNC';
   const articleTopic = input.articleTopic || 'CNC Turning vs. Milling: How to Choose for Your Next Project';
   const references = getReferenceArticles(task);
-  const strategyContent = normalizeStrategyContent(task?.planning?.strategyContent || createStrategyContent(task, project));
+  const strategyContent = resolvePlanningPreviewContent(task, project);
   const projectAnalysisReport = createProjectAnalysisReport(task, project);
 
   return {

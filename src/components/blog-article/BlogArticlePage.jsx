@@ -23,7 +23,7 @@ import { adaptivePageLayout } from '../layoutClasses.js';
 import Button from '../ui/Button.jsx';
 import ListCard from '../ui/ListCard.jsx';
 import PageHeader from '../ui/PageHeader.jsx';
-import Toast from '../ui/Toast.jsx';
+import { useToast } from '../ui/Toast.jsx';
 import {
   deleteAiCreationTask,
   getAiCreationTasks,
@@ -681,7 +681,7 @@ export default function BlogArticlePage({
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [taskDeleteTarget, setTaskDeleteTarget] = useState(null);
   const [creationModeOpen, setCreationModeOpen] = useState(false);
-  const [toast, setToast] = useState(null);
+  const toast = useToast();
   const [articleFocus, setArticleFocus] = useState({ id: '', token: 0 });
   const [taskFocus, setTaskFocus] = useState({ id: '', token: 0 });
   const articleFilterRef = useRef(null);
@@ -721,7 +721,7 @@ export default function BlogArticlePage({
 
     setArticles(getBlogArticleDrafts(project));
     setTasks(getAiCreationTasks(project.id));
-    setToast({
+    toast.show({
       id: creationNotice.id,
       message: creationNotice.message,
       type: creationNotice.type ?? 'success',
@@ -738,15 +738,6 @@ export default function BlogArticlePage({
     }
     onCreationNoticeConsumed?.(creationNotice.id);
   }, [creationNotice, onCreationNoticeConsumed, project]);
-
-  useEffect(() => {
-    if (!toast) {
-      return undefined;
-    }
-
-    const timer = window.setTimeout(() => setToast(null), 2200);
-    return () => window.clearTimeout(timer);
-  }, [toast]);
 
   useEffect(() => {
     // 两个高级筛选弹层共用外部点击关闭逻辑。
@@ -981,7 +972,7 @@ export default function BlogArticlePage({
     setArticles(saved);
 
     if (message) {
-      setToast({ id: Date.now(), message, type });
+      toast.show({ message, type });
     }
 
     return saved;
@@ -992,7 +983,7 @@ export default function BlogArticlePage({
     setTasks(getAiCreationTasks(project.id));
 
     if (message) {
-      setToast({ id: Date.now(), message, type });
+      toast.show({ message, type });
     }
   }
 
@@ -1096,7 +1087,7 @@ export default function BlogArticlePage({
   }
 
   function openPublishSettings() {
-    setToast({ id: Date.now(), message: copy.toast.publishSettingsComingSoon, type: 'info' });
+    toast.info(copy.toast.publishSettingsComingSoon);
   }
 
   function stopTask(task) {
@@ -1125,7 +1116,7 @@ export default function BlogArticlePage({
     const { article: nextArticle } = saveAiTaskAsBlogArticle(project, task);
 
     setArticles(getBlogArticleDrafts(project));
-    setToast({ id: Date.now(), message: copy.taskList.toast.saved, type: 'success' });
+    toast.success(copy.taskList.toast.saved);
     setTasks(getAiCreationTasks(project.id));
     onOpenEditor(nextArticle);
   }
@@ -1145,7 +1136,7 @@ export default function BlogArticlePage({
     setTasks(nextTasks);
 
     if (!targetArticle) {
-      setToast({ id: Date.now(), message: copy.taskList.toast.articleMissing, type: 'warning' });
+      toast.warning(copy.taskList.toast.articleMissing);
       return;
     }
 
@@ -1238,8 +1229,6 @@ export default function BlogArticlePage({
 
   return (
     <div className="mx-auto max-w-[1600px]">
-      {toast ? <Toast key={toast.id} message={toast.message} testId="blog-article-toast" type={toast.type} /> : null}
-
       {deleteTarget ? (
         <ConfirmDialog
           cancelLabel={copy.cancel}

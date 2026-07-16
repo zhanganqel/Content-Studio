@@ -22,10 +22,11 @@ export function TextInput({ onChange, placeholder = '', value = '' }) {
   return <input className={controlClass} value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} />;
 }
 
-export function SelectInput({ onChange, options = [], value = '' }) {
+export function SelectInput({ onChange, options = [], placeholder = '', value = '' }) {
   return (
     <span className="relative block">
       <select className={`${controlClass} appearance-none pr-9`} value={value} onChange={(event) => onChange(event.target.value)}>
+        {placeholder ? <option value="">{placeholder}</option> : null}
         {options.map((option) => {
           const normalized = typeof option === 'string' ? { label: option, value: option } : option;
           return <option key={normalized.value} value={normalized.value}>{normalized.label}</option>;
@@ -140,29 +141,88 @@ export function TitleSelector({ locale = 'zh-CN', onSelect, options = [], select
   );
 }
 
-export function ArticleTaskForm({ block, knowledgeFiles, knowledgeItems, locale = 'zh-CN', onChange, onOpenKnowledge }) {
+export function ArticleTaskForm({ block, knowledgeFiles, knowledgeItems, locale = 'zh-CN', onChange, onOpenKnowledge, onSubmit }) {
   const values = block.values ?? {};
   const update = (field, value) => onChange({ ...values, [field]: value });
   const selectedItems = knowledgeItems.filter((item) => block.knowledgeItemIds?.includes(item.id));
   const selectedFiles = knowledgeFiles.filter((item) => block.knowledgeFileIds?.includes(item.id));
   const zh = locale !== 'en-US';
+  const articleLanguage = values.articleLanguage ?? values.language ?? '';
+  const articleTopic = values.articleTopic ?? values.topic ?? '';
+  const additionalRequirements = values.additionalRequirements ?? values.requirements ?? '';
+  const requiredValues = {
+    articleLanguage,
+    articleLength: values.articleLength,
+    articleTopic,
+    articleType: values.articleType,
+    businessGoal: values.businessGoal,
+    person: values.person,
+    primaryKeywords: values.primaryKeywords,
+    targetAudience: values.targetAudience,
+    targetRegion: values.targetRegion,
+    tone: values.tone,
+  };
+  const missingFields = Object.entries(requiredValues)
+    .filter(([, value]) => (Array.isArray(value) ? !value.length : !String(value ?? '').trim()))
+    .map(([field]) => field);
+  const referenceText = (values.referenceArticles ?? []).map((item) => item.url).filter(Boolean).join('\n');
+  if (
+    block.missingFields?.includes('referenceArticles') &&
+    !referenceText &&
+    !selectedItems.length &&
+    !selectedFiles.length
+  ) {
+    missingFields.push('referenceArticles');
+  }
+  const withCurrentOption = (options, current) => current && !options.includes(current) ? [current, ...options] : options;
+
+  function updateReferences(text) {
+    const previousByUrl = new Map((values.referenceArticles ?? []).map((item) => [item.url, item]));
+    const referenceArticles = text.split('\n').map((url) => url.trim()).filter(Boolean).map((url, index) => ({
+      ...(previousByUrl.get(url) ?? {}),
+      id: previousByUrl.get(url)?.id ?? `copilot-reference-${index + 1}`,
+      url,
+    }));
+    update('referenceArticles', referenceArticles);
+  }
+
+  const normalizedValues = {
+    ...values,
+    additionalRequirements,
+    articleLanguage,
+    articleTopic,
+    primaryKeywords: values.primaryKeywords ?? [],
+    referenceArticles: values.referenceArticles ?? [],
+    secondaryKeywords: values.secondaryKeywords ?? [],
+  };
 
   return (
     <div className="rounded-[8px] border border-[#EBEEF5] bg-white p-5 shadow-[0_1px_4px_rgba(15,23,42,0.04)]">
       <div className="grid grid-cols-1 gap-x-5 gap-y-4 lg:grid-cols-2">
-        <FormField label={zh ? '目标地区' : 'Target region'} required><SelectInput value={values.targetRegion} onChange={(value) => update('targetRegion', value)} options={['Global', 'United States', 'Europe']} /></FormField>
-        <FormField label={zh ? '文章语言' : 'Language'} required><SelectInput value={values.language} onChange={(value) => update('language', value)} options={['EN', 'CN']} /></FormField>
-        <div className="lg:col-span-2"><FormField label={zh ? '文章主题' : 'Article topic'} required><TextInput value={values.topic} onChange={(value) => update('topic', value)} placeholder={zh ? '请输入文章主题' : 'Enter article topic'} /></FormField></div>
+        <FormField label={zh ? '目标地区' : 'Target region'} required><SelectInput placeholder={zh ? '请选择目标地区' : 'Select target region'} value={values.targetRegion ?? ''} onChange={(value) => update('targetRegion', value)} options={withCurrentOption(['Global', 'United States', 'Europe'], values.targetRegion)} /></FormField>
+        <FormField label={zh ? '文章语言' : 'Language'} required><SelectInput placeholder={zh ? '请选择文章语言' : 'Select language'} value={articleLanguage} onChange={(value) => update('articleLanguage', value)} options={withCurrentOption(['EN', 'CN'], articleLanguage)} /></FormField>
+        <div className="lg:col-span-2"><FormField label={zh ? '目标受众' : 'Target audience'} required><TextArea minHeight={72} value={values.targetAudience ?? ''} onChange={(value) => update('targetAudience', value)} placeholder={zh ? '描述目标读者及其关注点' : 'Describe the target audience'} /></FormField></div>
+        <div className="lg:col-span-2"><FormField label={zh ? '业务目标' : 'Business goal'} required><TextArea minHeight={72} value={values.businessGoal ?? ''} onChange={(value) => update('businessGoal', value)} placeholder={zh ? '说明文章希望推动的业务结果' : 'Describe the desired business outcome'} /></FormField></div>
+        <div className="lg:col-span-2"><FormField label={zh ? '文章主题' : 'Article topic'} required><TextInput value={articleTopic} onChange={(value) => update('articleTopic', value)} placeholder={zh ? '请输入文章主题' : 'Enter article topic'} /></FormField></div>
         <FormField label={zh ? '主要关键词' : 'Primary keywords'} required><KeywordTagInput maxTags={2} value={values.primaryKeywords ?? []} onChange={(value) => update('primaryKeywords', value)} placeholder={zh ? '输入后按回车添加' : 'Type and press Enter'} /></FormField>
         <FormField label={zh ? '次要关键词' : 'Secondary keywords'}><KeywordTagInput value={values.secondaryKeywords ?? []} onChange={(value) => update('secondaryKeywords', value)} placeholder={zh ? '输入后按回车添加' : 'Type and press Enter'} /></FormField>
         <FormField label={zh ? '知识条目' : 'Knowledge items'}><ResourceSelectField count={selectedItems.length} icon={Layers3} items={selectedItems} label="knowledge items" placeholder={zh ? '选择知识条目' : 'Select knowledge items'} onOpen={() => onOpenKnowledge('items')} /></FormField>
         <FormField label={zh ? '知识文件' : 'Knowledge files'}><ResourceSelectField count={selectedFiles.length} icon={Database} items={selectedFiles} label="knowledge files" placeholder={zh ? '选择知识文件' : 'Select knowledge files'} onOpen={() => onOpenKnowledge('files')} /></FormField>
-        <FormField label={zh ? '文章类型' : 'Article type'} required><SelectInput value={values.articleType} onChange={(value) => update('articleType', value)} options={zh ? ['产品介绍', '比较指南', '行业洞察'] : ['Product Review', 'Comparison Guide', 'Industry Insight']} /></FormField>
-        <FormField label={zh ? '文章长度' : 'Article length'} required><SelectInput value={values.articleLength} onChange={(value) => update('articleLength', value)} options={['1200-1400', '1600-1800', '2000+']} /></FormField>
-        <FormField label={zh ? '语气' : 'Tone'} required><SelectInput value={values.tone} onChange={(value) => update('tone', value)} options={zh ? ['专业', '客观', '易理解'] : ['Professional', 'Objective', 'Accessible']} /></FormField>
-        <FormField label={zh ? '人称' : 'Point of view'} required><SelectInput value={values.person} onChange={(value) => update('person', value)} options={zh ? ['第一人称', '第二人称', '第三人称'] : ['First person', 'Second person', 'Third person']} /></FormField>
-        <div className="lg:col-span-2"><FormField label={zh ? '补充生成要求' : 'Additional requirements'}><TextArea minHeight={94} value={values.requirements} onChange={(value) => update('requirements', value)} placeholder={zh ? '补充格式、FAQ、标题结构或禁用词等要求。' : 'Add formatting, FAQ, structure, or forbidden-word requirements.'} /></FormField></div>
+        <div className="lg:col-span-2"><FormField label={zh ? '参考文章' : 'Reference articles'} hint={zh ? '每行填写一个 URL；只有链接且没有正文时，后端不会推测页面内容。' : 'One URL per line.'}><TextArea minHeight={72} value={referenceText} onChange={updateReferences} placeholder="https://example.com/article" /></FormField></div>
+        <FormField label={zh ? '文章类型' : 'Article type'} required><SelectInput placeholder={zh ? '请选择文章类型' : 'Select article type'} value={values.articleType ?? ''} onChange={(value) => update('articleType', value)} options={withCurrentOption(zh ? ['产品介绍', '比较指南', '行业洞察'] : ['Product Review', 'Comparison Guide', 'Industry Insight'], values.articleType)} /></FormField>
+        <FormField label={zh ? '文章长度' : 'Article length'} required><SelectInput placeholder={zh ? '请选择文章长度' : 'Select article length'} value={values.articleLength ?? ''} onChange={(value) => update('articleLength', value)} options={withCurrentOption(['1200-1400', '1600-1800', '2000+'], values.articleLength)} /></FormField>
+        <FormField label={zh ? '语气' : 'Tone'} required><SelectInput placeholder={zh ? '请选择语气' : 'Select tone'} value={values.tone ?? ''} onChange={(value) => update('tone', value)} options={withCurrentOption(zh ? ['专业', '客观', '易理解'] : ['Professional', 'Objective', 'Accessible'], values.tone)} /></FormField>
+        <FormField label={zh ? '人称' : 'Point of view'} required><SelectInput placeholder={zh ? '请选择人称' : 'Select point of view'} value={values.person ?? ''} onChange={(value) => update('person', value)} options={withCurrentOption(zh ? ['第一人称', '第二人称', '第三人称'] : ['First person', 'Second person', 'Third person'], values.person)} /></FormField>
+        <div className="lg:col-span-2"><FormField label={zh ? '品牌要求' : 'Brand requirements'}><TextArea minHeight={72} value={values.brandRequirements ?? ''} onChange={(value) => update('brandRequirements', value)} placeholder={zh ? '仅填写本次任务需要遵循的品牌表达要求。' : 'Add explicit brand requirements for this task.'} /></FormField></div>
+        <div className="lg:col-span-2"><FormField label={zh ? '补充生成要求' : 'Additional requirements'}><TextArea minHeight={94} value={additionalRequirements} onChange={(value) => update('additionalRequirements', value)} placeholder={zh ? '补充格式、FAQ、标题结构或禁用词等要求。' : 'Add formatting, FAQ, structure, or forbidden-word requirements.'} /></FormField></div>
       </div>
+      {block.uncertainFields?.length ? <p className="mt-4 rounded-[6px] bg-amber-50 px-3 py-2 text-[12px] leading-5 text-amber-700">{zh ? '以下字段来自自动提取，请重点确认：' : 'Please verify extracted fields: '}{block.uncertainFields.join('、')}</p> : null}
+      {onSubmit ? (
+        <div className="mt-5 flex items-center justify-between gap-4 border-t border-[#EBEEF5] pt-4">
+          <span className="text-[12px] text-[#909399]">{missingFields.length ? (zh ? `还需补充 ${missingFields.length} 个必填字段` : `${missingFields.length} required fields missing`) : (zh ? '字段已完整，请确认后开始执行。' : 'Ready to start after confirmation.')}</span>
+          <button type="button" disabled={missingFields.length > 0 || block.submitted} className="inline-flex h-9 items-center rounded-[6px] bg-[#365EFF] px-4 text-[14px] font-semibold text-white transition hover:bg-[#2547D0] disabled:cursor-not-allowed disabled:bg-[#C0C4CC]" onClick={() => onSubmit(normalizedValues)}>{block.submitted ? (zh ? '已提交' : 'Submitted') : block.submitLabel || (zh ? '确认并生成策划' : 'Confirm and generate')}</button>
+        </div>
+      ) : null}
     </div>
   );
 }

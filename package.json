@@ -7,21 +7,30 @@
     "dev": "vite --host 127.0.0.1 --port 5173 --strictPort",
     "dev:fresh": "vite --host 127.0.0.1 --port 5173 --strictPort --force",
     "build": "vite build",
-    "preview": "vite preview --host 127.0.0.1"
+    "preview": "vite preview --host 127.0.0.1",
+    "test:article-workflow": "node --test tests/blog-article-ai-stage-data.test.mjs tests/collaborative-stages.test.mjs",
+    "test:collaborative": "node --test tests/collaborative-stages.test.mjs",
+    "test:copilot": "node --test tests/copilot-contracts.test.mjs",
+    "test:toast": "node --test tests/toast-state.test.mjs",
+    "typecheck:edgeone": "tsc --noEmit -p tsconfig.edgeone.json"
   },
   "dependencies": {
+    "@openai/agents": "0.11.4",
     "@vitejs/plugin-react": "^5.0.0",
     "lucide-react": "^0.475.0",
     "mammoth": "^1.12.0",
     "pdfjs-dist": "^6.1.200",
+    "openai": "^6.35.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "vite": "^7.0.0",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "zod": "^4.0.0"
   },
   "devDependencies": {
     "autoprefixer": "^10.4.20",
     "postcss": "^8.5.1",
-    "tailwindcss": "^3.4.17"
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.6.3"
   }
 }

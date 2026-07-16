@@ -19,7 +19,7 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import { adaptivePageLayout } from '../layoutClasses.js';
 import Button from '../ui/Button.jsx';
-import Toast from '../ui/Toast.jsx';
+import { useToast } from '../ui/Toast.jsx';
 import {
   createBlankRow,
   createCustomField,
@@ -934,7 +934,7 @@ export default function KnowledgeItemsPage({ focusItemId = '', project, sidebarW
   const [editRows, setEditRows] = useState([]);
   const [cellErrors, setCellErrors] = useState({});
   const [validationMessage, setValidationMessage] = useState('');
-  const [toast, setToast] = useState(null);
+  const toast = useToast();
   const [showDiscardDialog, setShowDiscardDialog] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState({ preset: true, custom: true });
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -976,12 +976,6 @@ export default function KnowledgeItemsPage({ focusItemId = '', project, sidebarW
     setValidationMessage('');
   }, [draft.types, focusItemId, project]);
 
-  useEffect(() => {
-    if (!toast) return undefined;
-    const timer = window.setTimeout(() => setToast(null), 2200);
-    return () => window.clearTimeout(timer);
-  }, [toast]);
-
   const activeType = useMemo(
     () => draft.types.find((type) => type.id === activeTypeId) ?? draft.types[0],
     [activeTypeId, draft.types],
@@ -1003,7 +997,7 @@ export default function KnowledgeItemsPage({ focusItemId = '', project, sidebarW
     // 所有类型、字段和行变更都通过 persist 写入当前项目草稿。
     const saved = saveKnowledgeItemDraft(project.id, nextDraft);
     setDraft(saved);
-    if (message) setToast({ id: Date.now(), message, type: 'success' });
+    if (message) toast.success(message);
     return saved;
   }
 
@@ -1249,7 +1243,7 @@ export default function KnowledgeItemsPage({ focusItemId = '', project, sidebarW
 
     const editableFieldCount = activeType.fields.filter((field) => !field.readOnly).length;
     if (editableFieldCount <= 1) {
-      setToast({ id: Date.now(), message: copy.validation.oneFieldRequired, type: 'warning' });
+      toast.warning(copy.validation.oneFieldRequired);
       setDeleteFieldTarget(null);
       return;
     }
@@ -1432,7 +1426,6 @@ export default function KnowledgeItemsPage({ focusItemId = '', project, sidebarW
         />
       ) : null}
 
-      {toast ? <Toast key={toast.id} message={toast.message} type={toast.type} /> : null}
     </div>
   );
 }

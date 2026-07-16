@@ -1,25 +1,24 @@
 import {
-  ArrowLeft,
   BookOpen,
-  Check,
   ChevronDown,
   ChevronRight,
   ClipboardList,
   ExternalLink,
   FileText,
-  PauseCircle,
   Save,
   Sparkles,
   X,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import Toast from '../ui/Toast.jsx';
-import AiCreationStepLabel from './AiCreationStepLabel.jsx';
+import { TaskStatusIcon } from '../ai-workflow/AiWorkflowComponents.jsx';
+import { useToast } from '../ui/Toast.jsx';
+import CollaborativeCreationHeader from './CollaborativeCreationHeader.jsx';
 import { formatTaskState, getTaskCompletedText, getTaskName, getTaskRunningText } from './aiTaskText.js';
+import { getCollaborativeStageStatuses } from './collaborativeStages.js';
 import { getAgentDisplay } from './agentDisplay.js';
 import {
   createContentDemoData,
-  resetAiContentTask,
+  restartCollaborativeContentTask,
   splitAiKeywordText,
   updateAiCreationTask,
 } from '../../services/blogArticleAiStore.js';
@@ -147,6 +146,18 @@ function getActiveStepState(task, visibleThinkingCounts, visibleArtifactIds) {
 }
 
 function getInitialPlaybackState(workflow, task) {
+  const playback = task?.content?.playback;
+  if (playback) {
+    return {
+      completedTaskIds: playback.completedTaskIds ?? [],
+      currentTaskIndex: playback.currentTaskIndex ?? 0,
+      isComplete: Boolean(playback.isComplete),
+      selectedArtifactId: playback.selectedArtifactId ?? task?.content?.currentArtifactId ?? '',
+      visibleArtifactIds: playback.visibleArtifactIds ?? [],
+      visibleThinkingCounts: playback.visibleThinkingCounts ?? {},
+    };
+  }
+
   // 根据任务缓存恢复已完成、已中止或首次进入的播放状态。
   const alreadyCompleted = task?.stage === 'content-completed';
   const savedCompletedTaskIds = task?.content?.completedTaskIds ?? [];
@@ -186,27 +197,6 @@ function getInitialPlaybackState(workflow, task) {
   };
 }
 
-function Stepper({ copy }) {
-  return (
-    /* 顶部步骤条固定高亮正文生成阶段。 */
-    <div className="flex flex-1 items-center justify-center gap-5">
-      {copy.steps.map((step, index) => (
-        <div key={step} className="flex items-center gap-3">
-          <span
-            className={`inline-flex h-7 w-7 items-center justify-center rounded-full text-[14px] font-semibold ${
-              index === 3 ? 'bg-[#365EFF] text-white' : 'bg-[#E9ECF2] text-[#A8ABB2]'
-            }`}
-          >
-            {index + 1}
-          </span>
-          <AiCreationStepLabel active={index === 3} step={step} />
-          {index < copy.steps.length - 1 ? <span className="h-px w-16 bg-[#E4E7ED]" /> : null}
-        </div>
-      ))}
-    </div>
-  );
-}
-
 function AgentAvatar({ agentTitle }) {
   // 根据 Agent 名称生成统一头像样式。
   const agentDisplay = getAgentDisplay(agentTitle);
@@ -217,31 +207,6 @@ function AgentAvatar({ agentTitle }) {
     >
       {agentDisplay.initial}
     </div>
-  );
-}
-
-function StatusIcon({ completed, stopped }) {
-  // 步骤图标区分完成、中止和进行中状态。
-  if (completed) {
-    return (
-      <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-[#10B981] text-[#10B981]">
-        <Check className="h-3 w-3" />
-      </span>
-    );
-  }
-
-  if (stopped) {
-    return (
-      <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-[#F59E0B] text-[#F59E0B]">
-        <PauseCircle className="h-3 w-3" />
-      </span>
-    );
-  }
-
-  return (
-    <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border-2 border-[#365EFF] border-t-transparent">
-      <span className="h-1.5 w-1.5 rounded-full bg-[#365EFF]" />
-    </span>
   );
 }
 
@@ -506,17 +471,19 @@ function WorkflowTask({
               steps.slice(0, stepIndex).every((candidate) => isStepDone(candidate, visibleThinkingCounts, showArtifactIds));
             const thinkingCount = visibleThinkingCounts[step.id] ?? 0;
             const taskName = getTaskName(step, locale);
+            const stopped = isStopped && stepActive;
+            const taskLabel = stepCompleted
+              ? getTaskCompletedText(step, copy.status.done, locale)
+              : stopped
+                ? formatTaskState(taskName, copy.status.stopped, locale)
+                : getTaskRunningText(step, locale);
 
             return (
               <div key={step.id} className="flex items-start gap-3">
-                <StatusIcon completed={stepCompleted} stopped={isStopped && stepActive} />
+                <TaskStatusIcon label={taskLabel} status={stepCompleted ? 'done' : stopped ? 'cancelled' : 'running'} />
                 <div className="min-w-0 flex-1">
                   <div className="text-[14px] font-semibold leading-[20px] text-[#303133]">
-                    {stepCompleted
-                      ? getTaskCompletedText(step, copy.status.done, locale)
-                      : isStopped && stepActive
-                        ? formatTaskState(taskName, copy.status.stopped, locale)
-                        : getTaskRunningText(step, locale)}
+                    {taskLabel}
                   </div>
                   <div className="mt-3 space-y-4">
                     {step.thinking.slice(0, Math.min(thinkingCount, step.thinking.length)).map((paragraph, index) => (
@@ -1133,7 +1100,19 @@ function ReferenceDrawer({
   );
 }
 
-export default function BlogArticleAiContentPage({ article, locale, onBack, onClose, onSaveAndEdit, project, t, task }) {
+export default function BlogArticleAiContentPage({
+  article,
+  isHistoricalView = false,
+  locale,
+  onClose,
+  onRestartStage,
+  onSaveAndEdit,
+  onStageChange,
+  onTaskUpdated,
+  project,
+  t,
+  task,
+}) {
   const copy = t.blogArticle.aiCreation;
   // 修改要求会参与 demo 数据重算，形成新的终稿版本。
   const [revisionRequests, setRevisionRequests] = useState(() => task?.content?.revisionRequests ?? []);
@@ -1154,7 +1133,7 @@ export default function BlogArticleAiContentPage({ article, locale, onBack, onCl
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
   const [referenceOpen, setReferenceOpen] = useState(false);
   const [referenceTab, setReferenceTab] = useState('knowledge-items');
-  const [toast, setToast] = useState(null);
+  const toast = useToast({ scope: `blog-ai-content-${task.id}` });
   const workflowRef = useRef(null);
 
   // 当前展示状态由播放进度、可见产物和保存缓存共同决定。
@@ -1165,6 +1144,9 @@ export default function BlogArticleAiContentPage({ article, locale, onBack, onCl
   const finalEvaluationReady = visibleArtifactIds.includes('final-evaluation') || completedTaskIds.includes('final-evaluate');
   const showRevisionRequestBox =
     finalEvaluationReady && isComplete && !isStopped;
+  const stoppedToastId = `blog-ai-content-stopped-${task.id}`;
+  const isContentStopped = isStopped && task?.stage === 'content-stopped';
+  const canRegenerateContent = isContentStopped && !task?.content?.savedArticleId;
 
   useEffect(() => {
     setRevisionInput('');
@@ -1198,84 +1180,6 @@ export default function BlogArticleAiContentPage({ article, locale, onBack, onCl
   }
 
   useEffect(() => {
-    // 首次进入时写回当前内容阶段，保证历史任务列表能恢复进度。
-    updateAiCreationTask(project.id, task.id, {
-      stage: isComplete ? 'content-completed' : isStopped ? 'content-stopped' : 'content',
-      content: buildContentPayload(),
-    });
-  }, []);
-
-  useEffect(() => {
-    // 普通 toast 自动关闭，带操作按钮的 toast 等待用户处理。
-    if (!toast || toast.actionLabel) {
-      return undefined;
-    }
-
-    const timer = window.setTimeout(() => setToast(null), 2200);
-    return () => window.clearTimeout(timer);
-  }, [toast]);
-
-  useEffect(() => {
-    // 工作流按定时器逐段显示思考、来源和产物。
-    if (isStopped || isComplete || !currentTask) {
-      return undefined;
-    }
-
-    const activeStepState = getActiveStepState(currentTask, visibleThinkingCounts, visibleArtifactIds);
-    const { allArtifactsVisible, artifactIds, complete, hasMoreThinking, step } = activeStepState;
-
-    const timer = window.setTimeout(() => {
-      if (step && hasMoreThinking) {
-        setVisibleThinkingCounts((current) => ({
-          ...current,
-          [step.id]: (current[step.id] ?? 0) + 1,
-        }));
-        return;
-      }
-
-      if (!complete && artifactIds.length && !allArtifactsVisible) {
-        setVisibleArtifactIds((current) => [...new Set([...current, ...artifactIds])]);
-        return;
-      }
-
-      const nextCompletedTaskIds = completedTaskIds.includes(currentTask.id)
-        ? completedTaskIds
-        : [...completedTaskIds, currentTask.id];
-      setCompletedTaskIds(nextCompletedTaskIds);
-
-      if (currentTaskIndex + 1 >= workflow.length) {
-        setIsComplete(true);
-        updateAiCreationTask(project.id, task.id, {
-          stage: 'content-completed',
-          content: buildContentPayload(demoData, {
-            completedTaskIds: nextCompletedTaskIds,
-            isStopped: false,
-            visibleArtifactIds: [...new Set([...visibleArtifactIds, ...getTaskArtifactIds(currentTask)])],
-          }),
-        });
-        return;
-      }
-
-      setCurrentTaskIndex((current) => current + 1);
-    }, hasMoreThinking ? 900 : 650);
-
-    return () => window.clearTimeout(timer);
-  }, [
-    completedTaskIds,
-    currentTask,
-    currentTaskIndex,
-    demoData,
-    isComplete,
-    isStopped,
-    project.id,
-    selectedArtifactId,
-    task.id,
-    visibleArtifactIds,
-    visibleThinkingCounts,
-    workflow.length,
-  ]);
-
-  useEffect(() => {
     // 用户未手动上滑时，流程区自动跟随最新生成内容。
     const container = workflowRef.current;
     if (!container || !autoScrollEnabled) return;
@@ -1287,6 +1191,19 @@ export default function BlogArticleAiContentPage({ article, locale, onBack, onCl
       });
     });
   }, [autoScrollEnabled, completedTaskIds, currentTaskIndex, visibleArtifactIds, visibleThinkingCounts]);
+
+  useEffect(() => {
+    if (!isContentStopped) return;
+
+    toast.show({
+      actions: [{ label: copy.actions.regenerate, closeOnClick: false, onClick: handleRegenerate }],
+      duration: 0,
+      id: stoppedToastId,
+      message: locale === 'en-US' ? 'Task stopped. Go back to edit or' : '任务已中止，可返回上一步修改或',
+      showClose: false,
+      type: 'warning',
+    });
+  }, [isContentStopped, locale, stoppedToastId, task.id]);
 
   function handleWorkflowScroll() {
     // 接近底部时继续自动滚动，离开底部则暂停。
@@ -1302,30 +1219,31 @@ export default function BlogArticleAiContentPage({ article, locale, onBack, onCl
     if (isStopped || isComplete) return;
 
     setIsStopped(true);
-    updateAiCreationTask(project.id, task.id, {
+    const nextTask = updateAiCreationTask(project.id, task.id, {
       stage: 'content-stopped',
       content: buildContentPayload(demoData, {
-        completedTaskIds,
-        currentArtifactId: selectedArtifactId,
         isStopped: true,
-        updatedAt: getTodayString(),
-        visibleArtifactIds,
+        playback: {
+          ...(task?.content?.playback ?? {}),
+          completedTaskIds,
+          currentTaskIndex,
+          isComplete: false,
+          selectedArtifactId,
+          visibleArtifactIds,
+          visibleThinkingCounts,
+        },
       }),
     });
-    setToast({
-      actionLabel: copy.actions.regenerate,
-      message:
-        locale === 'en-US'
-          ? 'Task stopped. Go back or regenerate.'
-          : '任务已中止，可返回上一步修改或重新生成',
-      type: 'warning',
-    });
+    onTaskUpdated?.(nextTask ?? task);
   }
 
   function handleRegenerate() {
-    // 重新生成会清空正文阶段缓存后刷新页面。
-    resetAiContentTask(project.id, task.id);
-    window.location.reload();
+    if (!canRegenerateContent) return;
+
+    // 正文重新生成保留任务输入、策划和大纲，只替换正文阶段结果。
+    const nextTask = restartCollaborativeContentTask(project.id, task.id);
+    toast.dismiss(stoppedToastId);
+    onRestartStage?.({ article, stage: 'content', task: nextTask ?? task });
   }
 
   function handleSubmitRevisionRequest() {
@@ -1357,17 +1275,31 @@ export default function BlogArticleAiContentPage({ article, locale, onBack, onCl
       ...current,
       [getTaskSteps(nextDemoData.workflow[nextCurrentTaskIndex])[0]?.id]: 0,
     }));
-    updateAiCreationTask(project.id, task.id, {
+    const nextTask = updateAiCreationTask(project.id, task.id, {
       stage: 'content',
       content: buildContentPayload(nextDemoData, {
         completedTaskIds,
         currentArtifactId: selectedArtifactId,
         isStopped: false,
         revisionRequests: nextDemoData.revisionRequests,
+        playback: {
+          ...(task?.content?.playback ?? {}),
+          completedTaskIds,
+          currentTaskIndex: nextCurrentTaskIndex,
+          isComplete: false,
+          selectedArtifactId,
+          visibleArtifactIds,
+          visibleThinkingCounts: {
+            ...visibleThinkingCounts,
+            [getTaskSteps(nextDemoData.workflow[nextCurrentTaskIndex])[0]?.id]: 0,
+          },
+          version: Number(task?.content?.playback?.version ?? 0) + 1,
+        },
         updatedAt: getTodayString(),
         visibleArtifactIds,
       }),
     });
+    onTaskUpdated?.(nextTask ?? task);
   }
 
   function handleSaveAndEdit() {
@@ -1450,32 +1382,24 @@ export default function BlogArticleAiContentPage({ article, locale, onBack, onCl
           }
         `}
       </style>
-      <header className="fixed left-0 right-0 top-0 z-40 h-[52px] border-b border-[#EBEEF5] bg-white">
-        <div className="mx-auto flex h-full max-w-[1600px] items-center px-6">
+      <CollaborativeCreationHeader
+        copy={copy}
+        onBack={onClose}
+        onStageChange={onStageChange}
+        rightSlot={
           <button
             type="button"
-            className="mr-3 inline-flex h-8 w-8 items-center justify-center rounded-[6px] text-[#232E45] transition hover:bg-[#F5F7FA]"
-            onClick={onClose ?? onBack}
-            aria-label="返回"
+            className="inline-flex h-8 items-center justify-center gap-2 whitespace-nowrap rounded-[6px] bg-white px-3 text-[14px] font-semibold text-[#365EFF] shadow-[0_2px_8px_rgba(31,45,61,0.12)] transition hover:bg-[#F5F7FF]"
+            onClick={() => setReferenceOpen((current) => !current)}
           >
-            <ArrowLeft className="h-5 w-5" />
+            <BookOpen className="h-4 w-4" />
+            {copy.actions.references}
           </button>
-          <h1 className="w-[360px] text-[18px] font-bold leading-[28px] text-[#232E45]">
-            {copy.titles.content}
-          </h1>
-          <Stepper copy={copy} />
-          <div className="flex w-[360px] justify-end">
-            <button
-              type="button"
-              className="inline-flex h-8 items-center justify-center gap-2 whitespace-nowrap rounded-[6px] bg-white px-3 text-[14px] font-semibold text-[#365EFF] shadow-[0_2px_8px_rgba(31,45,61,0.12)] transition hover:bg-[#F5F7FF]"
-              onClick={() => setReferenceOpen((current) => !current)}
-            >
-              <BookOpen className="h-4 w-4" />
-              {copy.actions.references}
-            </button>
-          </div>
-        </div>
-      </header>
+        }
+        stageStatuses={getCollaborativeStageStatuses(task)}
+        title={copy.titles.content}
+        viewStage="content"
+      />
 
       <main
         className={`mx-auto grid max-w-[1600px] gap-4 px-6 pb-[84px] pt-[68px] ${
@@ -1549,19 +1473,12 @@ export default function BlogArticleAiContentPage({ article, locale, onBack, onCl
       </main>
 
       <footer className="fixed bottom-0 left-0 right-0 z-40 h-[60px] border-t border-[#EBEEF5] bg-white/95 backdrop-blur">
-        <div className="mx-auto flex h-full max-w-[1600px] items-center justify-between px-6">
-          <button
-            type="button"
-            className="inline-flex h-8 items-center justify-center whitespace-nowrap rounded-[6px] border border-[#365EFF] px-4 text-[14px] font-semibold text-[#365EFF] transition hover:bg-[#EEF3FF]"
-            onClick={onBack}
-          >
-            {copy.actions.previous}
-          </button>
+        <div className="mx-auto flex h-full max-w-[1600px] items-center justify-end px-6">
           <div className="flex items-center gap-3">
             <button
               type="button"
               className="inline-flex h-8 items-center justify-center whitespace-nowrap rounded-[6px] border border-[#365EFF] px-4 text-[14px] font-semibold text-[#365EFF] transition hover:bg-[#EEF3FF] disabled:cursor-not-allowed disabled:border-[#DCDFE6] disabled:text-[#A8ABB2] disabled:hover:bg-white"
-              disabled={isComplete || isStopped}
+              disabled={isHistoricalView || isComplete || isStopped}
               onClick={handleStopTask}
             >
               {copy.actions.stop}
@@ -1569,25 +1486,16 @@ export default function BlogArticleAiContentPage({ article, locale, onBack, onCl
             <button
               type="button"
               className="inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-[6px] bg-[#365EFF] px-5 text-[14px] font-semibold text-white transition hover:bg-[#2547D0] disabled:cursor-not-allowed disabled:bg-[#A8B9FF]"
-              disabled={!isComplete || isStopped}
-              onClick={handleSaveAndEdit}
+              disabled={isHistoricalView || (isContentStopped ? !canRegenerateContent : !isComplete || isStopped)}
+              onClick={isContentStopped ? handleRegenerate : handleSaveAndEdit}
             >
-              <Save className="h-4 w-4" />
-              {copy.actions.saveAndEdit}
+              {isContentStopped ? null : <Save className="h-4 w-4" />}
+              {isContentStopped ? copy.actions.regenerateContent : copy.actions.saveAndEdit}
             </button>
           </div>
         </div>
       </footer>
 
-      {toast ? (
-        <Toast
-          actionLabel={toast.actionLabel}
-          message={toast.message}
-          onAction={toast.actionLabel ? handleRegenerate : undefined}
-          onClose={toast.actionLabel ? () => setToast(null) : undefined}
-          type={toast.type}
-        />
-      ) : null}
     </div>
   );
 }

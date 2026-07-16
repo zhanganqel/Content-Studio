@@ -26,7 +26,8 @@ import { getAudiencePersonaDrafts } from '../../services/audiencePersonaStore.js
 import { createBlogArticleId } from '../../services/blogArticleStore.js';
 import { getAiTaskArticleContext } from '../../services/blogArticleAiArticleStore.js';
 import { getBrandProfileDraft } from '../../services/brandProfileStore.js';
-import AiCreationStepLabel from './AiCreationStepLabel.jsx';
+import CollaborativeCreationHeader from './CollaborativeCreationHeader.jsx';
+import { getCollaborativeStageStatuses } from './collaborativeStages.js';
 import {
   aiArticleLanguageOptions,
   aiArticleLengthOptions,
@@ -35,6 +36,7 @@ import {
   aiPersonOptions,
   aiReferenceSearchAnalyses,
   aiToneOptions,
+  restartCollaborativePlanningTask,
   saveAiCreationTask,
   splitAiKeywordText,
 } from '../../services/blogArticleAiStore.js';
@@ -1304,10 +1306,13 @@ function SearchResultCard({ added, copy, locale, result, onToggle }) {
 }
 
 export default function BlogArticleAiCreateTaskPage({
+  editingTask,
+  isHistoricalView = false,
   locale,
   mode = 'collaborative',
   onClose,
   onCreated,
+  onStageChange,
   project,
   recreateContext,
   t,
@@ -1344,6 +1349,7 @@ export default function BlogArticleAiCreateTaskPage({
   const [errors, setErrors] = useState({});
   const [modal, setModal] = useState(null);
   const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
+  const [pendingStage, setPendingStage] = useState(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [modelOpen, setModelOpen] = useState(false);
 
@@ -1425,6 +1431,18 @@ export default function BlogArticleAiCreateTaskPage({
     onClose();
   }
 
+  function handleStageChange(stage) {
+    if (stage === 'create' || !onStageChange) return;
+
+    if (hasDirtyChanges) {
+      setPendingStage(stage);
+      setLeaveConfirmOpen(true);
+      return;
+    }
+
+    onStageChange(stage);
+  }
+
   function handleAnalyze() {
     // 参考文章分析当前使用本地模拟延迟，后续可替换为真实检索。
     setAnalyzing(true);
@@ -1469,21 +1487,28 @@ export default function BlogArticleAiCreateTaskPage({
       return;
     }
 
-    const task = saveAiCreationTask(project.id, {
-      articleId: createBlogArticleId(),
-      model: form.model,
-      mode,
-      stage: isAutoMode ? 'auto-generating' : 'planning',
-      taskInput: {
-        ...form,
-        targetAudience: selectedAudience,
-        targetAudienceName: selectedAudience?.name ?? selectedAudience?.title ?? '',
-        articleTypeForStore: getArticleTypeForStore(form.articleType),
-        knowledgeItems: selectedKnowledgeItems,
-        knowledgeAssets: selectedAssets,
-      },
-      searchAnalyses: referenceSearchAnalyses,
-    });
+    const taskInput = {
+      ...form,
+      targetAudience: selectedAudience,
+      targetAudienceName: selectedAudience?.name ?? selectedAudience?.title ?? '',
+      articleTypeForStore: getArticleTypeForStore(form.articleType),
+      knowledgeItems: selectedKnowledgeItems,
+      knowledgeAssets: selectedAssets,
+    };
+    const task = editingTask
+      ? restartCollaborativePlanningTask(project.id, editingTask.id, {
+          model: form.model,
+          searchAnalyses: referenceSearchAnalyses,
+          taskInput,
+        })
+      : saveAiCreationTask(project.id, {
+          articleId: createBlogArticleId(),
+          model: form.model,
+          mode,
+          stage: isAutoMode ? 'auto-generating' : 'planning',
+          taskInput,
+          searchAnalyses: referenceSearchAnalyses,
+        });
     const article = getAiTaskArticleContext(project, task);
 
     onCreated({ article, mode, task });
@@ -1491,41 +1516,30 @@ export default function BlogArticleAiCreateTaskPage({
 
   return (
     <div className="min-h-screen bg-[#F7F8FB] text-[#303133]">
-      <header className="fixed left-0 right-0 top-0 z-40 h-[52px] border-b border-[#EBEEF5] bg-white">
-        <div className="mx-auto flex h-full max-w-[1600px] items-center px-6">
-          <button
-            type="button"
-            className="mr-3 inline-flex h-8 w-8 items-center justify-center rounded-[6px] text-[#232E45] transition hover:bg-[#F5F7FA]"
-            onClick={handleBack}
-            aria-label="返回"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </button>
-          <h1 className="w-[360px] text-[18px] font-bold leading-[28px] text-[#232E45]">
-            {isAutoMode ? copy.titles.autoCreate : copy.titles.create}
-          </h1>
-          {isAutoMode ? (
-            <div className="flex-1" />
-          ) : (
-            <div className="flex flex-1 items-center justify-center gap-5">
-              {copy.steps.map((step, index) => (
-                <div key={step} className="flex items-center gap-3">
-                  <span
-                    className={`inline-flex h-7 w-7 items-center justify-center rounded-full text-[14px] font-bold ${
-                      index === 0 ? 'bg-[#365EFF] text-white' : 'bg-[#EEF0F4] text-[#A8ABB2]'
-                    }`}
-                  >
-                    {index + 1}
-                  </span>
-                  <AiCreationStepLabel active={index === 0} step={step} />
-                  {index < 3 ? <span className="h-px w-12 bg-[#E4E7ED]" /> : null}
-                </div>
-              ))}
-            </div>
-          )}
-          <div className="w-[260px]" />
-        </div>
-      </header>
+      {isAutoMode ? (
+        <header className="fixed left-0 right-0 top-0 z-40 h-[52px] border-b border-[#EBEEF5] bg-white">
+          <div className="mx-auto flex h-full max-w-[1600px] items-center px-6">
+            <button
+              type="button"
+              className="mr-3 inline-flex h-8 w-8 items-center justify-center rounded-[6px] text-[#232E45] transition hover:bg-[#F5F7FA]"
+              onClick={handleBack}
+              aria-label="返回"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </button>
+            <h1 className="text-[18px] font-bold leading-[28px] text-[#232E45]">{copy.titles.autoCreate}</h1>
+          </div>
+        </header>
+      ) : (
+        <CollaborativeCreationHeader
+          copy={copy}
+          onBack={handleBack}
+          onStageChange={handleStageChange}
+          stageStatuses={getCollaborativeStageStatuses(editingTask)}
+          title={copy.titles.create}
+          viewStage="create"
+        />
+      )}
 
       <main className="mx-auto grid max-w-[1600px] grid-cols-2 gap-4 px-6 pb-[84px] pt-[68px]">
         <form
@@ -1797,19 +1811,13 @@ export default function BlogArticleAiCreateTaskPage({
       </main>
 
       <footer className="fixed bottom-0 left-0 right-0 z-40 h-[60px] border-t border-[#E4E7ED] bg-white">
-        <div className="mx-auto flex h-full max-w-[1600px] items-center justify-between px-6">
-          <button
-            type="button"
-            className="h-8 whitespace-nowrap rounded-[6px] border border-[#365EFF] bg-white px-4 text-[14px] font-medium text-[#365EFF] transition hover:bg-[#F4F6FF]"
-            onClick={handleBack}
-          >
-            {copy.actions.back}
-          </button>
+        <div className="mx-auto flex h-full max-w-[1600px] items-center justify-end px-6">
           <div className="flex items-center gap-3">
             <div className="relative">
               <button
                 type="button"
                 className="inline-flex h-[34px] w-[160px] items-center justify-between rounded-[6px] border border-[#DCDFE6] bg-white px-3 text-[14px] text-[#303133] transition hover:border-[#365EFF]"
+                disabled={isHistoricalView}
                 onClick={() => setModelOpen((current) => !current)}
               >
                 <span className="inline-flex items-center gap-2">
@@ -1841,10 +1849,11 @@ export default function BlogArticleAiCreateTaskPage({
             </div>
             <button
               type="button"
-              className="h-8 whitespace-nowrap rounded-[6px] bg-[#365EFF] px-4 text-[14px] font-medium text-white transition hover:bg-[#2448E8]"
+              className="h-8 whitespace-nowrap rounded-[6px] bg-[#365EFF] px-4 text-[14px] font-medium text-white transition hover:bg-[#2448E8] disabled:cursor-not-allowed disabled:bg-[#A8B9FF]"
+              disabled={isHistoricalView}
               onClick={handleCreateTask}
             >
-              {copy.actions.createTask}
+              {editingTask ? copy.actions.generatePlanning : copy.actions.createTask}
             </button>
           </div>
         </div>
@@ -1880,9 +1889,18 @@ export default function BlogArticleAiCreateTaskPage({
       {leaveConfirmOpen ? (
         <ConfirmLeaveDialog
           copy={copy}
-          onCancel={() => setLeaveConfirmOpen(false)}
+          onCancel={() => {
+            setLeaveConfirmOpen(false);
+            setPendingStage(null);
+          }}
           onConfirm={() => {
             setLeaveConfirmOpen(false);
+            const stage = pendingStage;
+            setPendingStage(null);
+            if (stage) {
+              onStageChange?.(stage);
+              return;
+            }
             onClose();
           }}
         />

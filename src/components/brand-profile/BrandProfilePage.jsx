@@ -15,7 +15,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Button from '../ui/Button.jsx';
 import FixedPageLayout from '../ui/FixedPageLayout.jsx';
 import PageHeader from '../ui/PageHeader.jsx';
-import Toast from '../ui/Toast.jsx';
+import { useToast } from '../ui/Toast.jsx';
 import {
   getBrandProfileDraft,
   marketOptions,
@@ -475,7 +475,7 @@ export default function BrandProfilePage({ project, t }) {
   const [editing, setEditing] = useState(false);
   const [errors, setErrors] = useState({});
   const [showDiscardDialog, setShowDiscardDialog] = useState(false);
-  const [toast, setToast] = useState(null);
+  const toast = useToast();
 
   useEffect(() => {
     // 切换项目时重新读取品牌档案，并退出编辑态。
@@ -485,15 +485,6 @@ export default function BrandProfilePage({ project, t }) {
     setEditing(false);
     setErrors({});
   }, [project]);
-
-  useEffect(() => {
-    if (!toast) {
-      return undefined;
-    }
-
-    const timer = window.setTimeout(() => setToast(null), 2200);
-    return () => window.clearTimeout(timer);
-  }, [toast]);
 
   const hasChanges = useMemo(() => !valuesEqual(savedData, draftData), [savedData, draftData]);
   const disabled = !editing;
@@ -527,7 +518,7 @@ export default function BrandProfilePage({ project, t }) {
     setSavedData(saved);
     setDraftData(saved);
     setEditing(false);
-    setToast({ id: Date.now(), message: copy.saveSuccess });
+    toast.success(copy.saveSuccess);
   }
 
   function handleCancel() {
@@ -550,9 +541,6 @@ export default function BrandProfilePage({ project, t }) {
 
   return (
     <div className="h-full min-h-0">
-      {toast ? (
-        <Toast key={toast.id} message={toast.message} testId="brand-profile-toast" type="success" />
-      ) : null}
       {showDiscardDialog ? (
         <ConfirmDialog
           onContinue={() => setShowDiscardDialog(false)}

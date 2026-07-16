@@ -9,7 +9,7 @@ import {
 import Button from '../ui/Button.jsx';
 import FixedPageLayout from '../ui/FixedPageLayout.jsx';
 import PageHeader from '../ui/PageHeader.jsx';
-import Toast from '../ui/Toast.jsx';
+import { useToast } from '../ui/Toast.jsx';
 
 function StatusBadge({ copy, status }) {
   const styles = {
@@ -79,7 +79,7 @@ export default function KnowledgeFileChunksPage({ fileId, onBack, project, t }) 
   const [searchQuery, setSearchQuery] = useState('');
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [discardOpen, setDiscardOpen] = useState(false);
-  const [toast, setToast] = useState(null);
+  const toast = useToast();
 
   useEffect(() => {
     // 文件或项目变化时重新读取分块，并默认选中第一个分块。
@@ -96,11 +96,7 @@ export default function KnowledgeFileChunksPage({ fileId, onBack, project, t }) 
   }, [fileId, project]);
 
   function showToast(message, type = 'success') {
-    const id = Date.now();
-    setToast({ id, message, type });
-    window.setTimeout(() => {
-      setToast((current) => (current?.id === id ? null : current));
-    }, 2200);
+    toast.show({ message, type });
   }
 
   const filteredChunks = useMemo(() => {
@@ -386,7 +382,6 @@ export default function KnowledgeFileChunksPage({ fileId, onBack, project, t }) 
           }}
         />
       ) : null}
-      {toast ? <Toast message={toast.message} type={toast.type} /> : null}
     </div>
   );
 }

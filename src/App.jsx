@@ -6,6 +6,12 @@ import BlogArticleAiContentPage from './components/blog-article/BlogArticleAiCon
 import BlogArticleAiOutlinePage from './components/blog-article/BlogArticleAiOutlinePage.jsx';
 import BlogArticleAiPlanningPage from './components/blog-article/BlogArticleAiPlanningPage.jsx';
 import BlogArticleEditor from './components/blog-article/BlogArticleEditor.jsx';
+import {
+  getCollaborativeExecutionStage,
+  getCollaborativeStageStatuses,
+  isCollaborativeStageRunning,
+} from './components/blog-article/collaborativeStages.js';
+import CollaborativeTaskRunner from './components/blog-article/CollaborativeTaskRunner.jsx';
 import CopilotWorkbenchPage from './components/copilot/CopilotWorkbenchPage.jsx';
 import KnowledgeFilePreviewPage from './components/knowledge-assets/KnowledgeFilePreviewPage.jsx';
 import KnowledgeSourcePreviewPage from './components/knowledge-assets/KnowledgeSourcePreviewPage.jsx';
@@ -131,6 +137,7 @@ export default function App() {
   const [blogAiPlanningContext, setBlogAiPlanningContext] = useState(null);
   const [blogAiOutlineContext, setBlogAiOutlineContext] = useState(null);
   const [blogAiContentContext, setBlogAiContentContext] = useState(null);
+  const [blogAiViewStage, setBlogAiViewStage] = useState(null);
   const [blogArticleNotice, setBlogArticleNotice] = useState(null);
   const [blogAiExitPrompt, setBlogAiExitPrompt] = useState(null);
   const [blogEditorArticle, setBlogEditorArticle] = useState(null);
@@ -186,10 +193,19 @@ export default function App() {
         return;
       }
 
-      const stage =
-        session.stage ??
+      const stage = session.viewStage ??
         (task.stage?.startsWith('content') ? 'content' : task.stage?.startsWith('outline') ? 'outline' : 'planning');
-      if (stage === 'content') {
+      setBlogAiViewStage(stage);
+      if (stage === 'create') {
+        setBlogAiCreateMode('collaborative');
+        setBlogAiRecreateContext({
+          editTaskId: task.id,
+          model: task.model,
+          searchAnalyses: task.searchAnalyses ?? [],
+          taskInput: task.taskInput ?? {},
+        });
+        setBlogAiCreateOpen(true);
+      } else if (stage === 'content') {
         setBlogAiContentContext({ article, task });
       } else if (stage === 'outline') {
         setBlogAiOutlineContext({ article, task });
@@ -275,6 +291,7 @@ export default function App() {
     // 新建任务会重置其他文章创作阶段，避免多个阶段页面同时持有上下文。
     setActiveItemId('blog-article');
     setBlogAiExitPrompt(null);
+    setBlogAiViewStage(null);
     setBlogAiCreateMode(mode);
     setBlogAiRecreateContext(null);
     setBlogAiCreateOpen(true);
@@ -294,6 +311,7 @@ export default function App() {
 
       setActiveItemId('blog-article');
       setBlogAiExitPrompt(null);
+      setBlogAiViewStage(null);
       setBlogAiCreateMode(mode);
       setBlogAiRecreateContext({
         mode,
@@ -332,6 +350,7 @@ export default function App() {
 
       setActiveItemId('blog-article');
       setBlogAiExitPrompt(null);
+      setBlogAiViewStage(null);
       setBlogAiCreateOpen(false);
       setBlogAiAutoContext({ article, task: latestTask });
       setBlogAiPlanningContext(null);
@@ -358,10 +377,99 @@ export default function App() {
     setBlogAiOutlineContext(null);
     setBlogAiContentContext(null);
     setBlogAiRecreateContext(null);
+    setBlogAiViewStage(null);
   }
 
   function getLatestAiTask(task) {
     return getAiCreationTasks(activeProject.id).find((item) => item.id === task?.id) ?? task;
+  }
+
+  function openCollaborativeStage({ article: articleInput, generationStarted = false, stage, task: taskInput }) {
+    const latestTask = getLatestAiTask(taskInput);
+    if (!latestTask || latestTask.mode === 'auto') return;
+
+    const stageStatuses = getCollaborativeStageStatuses(latestTask);
+    if (stageStatuses[stage] === 'unavailable') {
+      return;
+    }
+
+    const article = getAiTaskArticleContext(activeProject, latestTask) ?? articleInput;
+    if (!article) return;
+
+    setActiveItemId('blog-article');
+    setBlogAiExitPrompt(null);
+    setBlogAiAutoContext(null);
+    setBlogAiPlanningContext(null);
+    setBlogAiOutlineContext(null);
+    setBlogAiContentContext(null);
+    setBlogAiViewStage(stage);
+
+    writeAiPlanningSession({
+      articleId: article.id,
+      projectId: activeProject.id,
+      stage: latestTask.stage,
+      taskId: latestTask.id,
+      viewStage: stage,
+    });
+
+    if (stage === 'create') {
+      setBlogAiCreateMode('collaborative');
+      setBlogAiRecreateContext({
+        editTaskId: latestTask.id,
+        model: latestTask.model,
+        searchAnalyses: latestTask.searchAnalyses ?? [],
+        taskInput: latestTask.taskInput ?? {},
+      });
+      setBlogAiCreateOpen(true);
+      return;
+    }
+
+    setBlogAiCreateOpen(false);
+    setBlogAiRecreateContext(null);
+
+    if (stage === 'content') {
+      setBlogAiContentContext({ article, task: latestTask });
+      return;
+    }
+
+    if (stage === 'outline') {
+      setBlogAiOutlineContext({ article, task: latestTask });
+      return;
+    }
+
+    setBlogAiPlanningContext({ article, task: latestTask });
+  }
+
+  const handleCollaborativeTaskUpdate = useCallback(
+    (nextTask) => {
+      if (!nextTask?.id) return;
+      const article = getAiTaskArticleContext(activeProject, nextTask);
+      if (!article) return;
+
+      setBlogAiPlanningContext((current) =>
+        current?.task?.id === nextTask.id ? { article, task: nextTask } : current,
+      );
+      setBlogAiOutlineContext((current) =>
+        current?.task?.id === nextTask.id ? { article, task: nextTask } : current,
+      );
+      setBlogAiContentContext((current) =>
+        current?.task?.id === nextTask.id ? { article, task: nextTask } : current,
+      );
+      setBlogAiRecreateContext((current) =>
+        current?.editTaskId === nextTask.id ? { ...current, taskVersion: Date.now() } : current,
+      );
+    },
+    [activeProject],
+  );
+
+  function renderCollaborativeTaskRunner(task) {
+    if (!task || task.mode === 'auto') return null;
+
+    return <CollaborativeTaskRunner onTaskUpdated={handleCollaborativeTaskUpdate} project={activeProject} task={task} />;
+  }
+
+  function isCollaborativeHistoryView(task, viewStage) {
+    return isCollaborativeStageRunning(task) && getCollaborativeExecutionStage(task) !== viewStage;
   }
 
   function requestCollaborativeExitPrompt({ article, task }) {
@@ -476,10 +584,26 @@ export default function App() {
   }
 
   if (blogAiCreateOpen) {
+    const editingTask = blogAiRecreateContext?.editTaskId
+      ? getAiCreationTasks(activeProject.id).find((item) => item.id === blogAiRecreateContext.editTaskId) ?? null
+      : null;
+
     return (
-      <BlogArticleAiCreateTaskPage
+      <>
+        {renderCollaborativeTaskRunner(editingTask)}
+        <BlogArticleAiCreateTaskPage
+        editingTask={editingTask}
         locale={locale}
         onClose={() => {
+          if (editingTask && requestCollaborativeExitPrompt({ article: getAiTaskArticleContext(activeProject, editingTask), task: editingTask })) {
+            return;
+          }
+
+          if (editingTask) {
+            exitArticleCreationFlow();
+            return;
+          }
+
           setBlogAiCreateOpen(false);
           setBlogAiRecreateContext(null);
         }}
@@ -491,6 +615,7 @@ export default function App() {
             setBlogAiPlanningContext(null);
             setBlogAiOutlineContext(null);
             setBlogAiContentContext(null);
+            setBlogAiViewStage(null);
             writeAiPlanningSession({
               articleId: article.id,
               projectId: activeProject.id,
@@ -502,20 +627,21 @@ export default function App() {
             return;
           }
 
-          setBlogAiAutoContext(null);
-          writeAiPlanningSession({
-            articleId: article.id,
-            projectId: activeProject.id,
-            stage: 'planning',
-            taskId: task.id,
-          });
-          setBlogAiPlanningContext({ article, task });
+          openCollaborativeStage({ article, generationStarted: true, stage: 'planning', task });
         }}
         mode={blogAiCreateMode}
+        isHistoricalView={isCollaborativeHistoryView(editingTask, 'create')}
+        onStageChange={(stage) => {
+          if (editingTask) {
+            openCollaborativeStage({ article: getAiTaskArticleContext(activeProject, editingTask), stage, task: editingTask });
+          }
+        }}
         project={activeProject}
         recreateContext={blogAiRecreateContext}
         t={t}
-      />
+        />
+        {renderCollaborativeExitPromptDialog()}
+      </>
     );
   }
 
@@ -545,16 +671,11 @@ export default function App() {
   if (blogAiPlanningContext) {
     return (
       <>
+        {renderCollaborativeTaskRunner(blogAiPlanningContext.task)}
         <BlogArticleAiPlanningPage
+          key={`${blogAiPlanningContext.task.id}-${blogAiPlanningContext.task.runId ?? 'planning'}-${blogAiViewStage}-${blogAiPlanningContext.task.planning?.playback?.version ?? 0}`}
           article={blogAiPlanningContext.article}
           locale={locale}
-          onBack={() => {
-            clearAiPlanningSession();
-            setBlogAiPlanningContext(null);
-            setBlogAiCreateMode('collaborative');
-            setBlogAiRecreateContext(null);
-            setBlogAiCreateOpen(true);
-          }}
           onClose={() => {
             if (
               requestCollaborativeExitPrompt({
@@ -565,9 +686,7 @@ export default function App() {
               return;
             }
 
-            setActiveItemId('blog-article');
-            clearAiPlanningSession();
-            setBlogAiPlanningContext(null);
+            exitArticleCreationFlow();
             setBlogArticleNotice({
               id: Date.now(),
               articleId: blogAiPlanningContext.article.id,
@@ -576,15 +695,16 @@ export default function App() {
             });
           }}
           onGenerateOutline={({ article, task }) => {
-            writeAiPlanningSession({
-              articleId: article.id,
-              projectId: activeProject.id,
-              stage: 'outline',
-              taskId: task.id,
-            });
-            setBlogAiPlanningContext(null);
-            setBlogAiOutlineContext({ article, task });
+            openCollaborativeStage({ article, generationStarted: true, stage: 'outline', task });
           }}
+          onRestartStage={({ article, stage, task }) =>
+            openCollaborativeStage({ article, generationStarted: true, stage, task })
+          }
+          onStageChange={(stage) =>
+            openCollaborativeStage({ article: blogAiPlanningContext.article, stage, task: blogAiPlanningContext.task })
+          }
+          onTaskUpdated={handleCollaborativeTaskUpdate}
+          isHistoricalView={isCollaborativeHistoryView(blogAiPlanningContext.task, 'planning')}
           project={activeProject}
           t={t}
           task={blogAiPlanningContext.task}
@@ -597,23 +717,11 @@ export default function App() {
   if (blogAiOutlineContext) {
     return (
       <>
+        {renderCollaborativeTaskRunner(blogAiOutlineContext.task)}
         <BlogArticleAiOutlinePage
+          key={`${blogAiOutlineContext.task.id}-${blogAiOutlineContext.task.runId ?? 'outline'}-${blogAiViewStage}-${blogAiOutlineContext.task.outline?.playback?.version ?? 0}`}
           article={blogAiOutlineContext.article}
           locale={locale}
-          onBack={() => {
-            // 从大纲返回策划时重新读取任务，保留大纲页已保存的最新状态。
-            const latestTask =
-              getAiCreationTasks(activeProject.id).find((item) => item.id === blogAiOutlineContext.task.id) ??
-              blogAiOutlineContext.task;
-            writeAiPlanningSession({
-              articleId: blogAiOutlineContext.article.id,
-              projectId: activeProject.id,
-              stage: 'planning',
-              taskId: latestTask.id,
-            });
-            setBlogAiOutlineContext(null);
-            setBlogAiPlanningContext({ article: blogAiOutlineContext.article, task: latestTask });
-          }}
           onClose={() => {
             if (
               requestCollaborativeExitPrompt({
@@ -624,9 +732,7 @@ export default function App() {
               return;
             }
 
-            setActiveItemId('blog-article');
-            clearAiPlanningSession();
-            setBlogAiOutlineContext(null);
+            exitArticleCreationFlow();
             setBlogArticleNotice({
               id: Date.now(),
               articleId: blogAiOutlineContext.article.id,
@@ -635,15 +741,16 @@ export default function App() {
             });
           }}
           onGenerateContent={({ article, task }) => {
-            writeAiPlanningSession({
-              articleId: article.id,
-              projectId: activeProject.id,
-              stage: 'content',
-              taskId: task.id,
-            });
-            setBlogAiOutlineContext(null);
-            setBlogAiContentContext({ article, task });
+            openCollaborativeStage({ article, generationStarted: true, stage: 'content', task });
           }}
+          onRestartStage={({ article, stage, task }) =>
+            openCollaborativeStage({ article, generationStarted: true, stage, task })
+          }
+          onStageChange={(stage) =>
+            openCollaborativeStage({ article: blogAiOutlineContext.article, stage, task: blogAiOutlineContext.task })
+          }
+          onTaskUpdated={handleCollaborativeTaskUpdate}
+          isHistoricalView={isCollaborativeHistoryView(blogAiOutlineContext.task, 'outline')}
           project={activeProject}
           t={t}
           task={blogAiOutlineContext.task}
@@ -656,23 +763,11 @@ export default function App() {
   if (blogAiContentContext) {
     return (
       <>
+        {renderCollaborativeTaskRunner(blogAiContentContext.task)}
         <BlogArticleAiContentPage
+          key={`${blogAiContentContext.task.id}-${blogAiContentContext.task.runId ?? 'content'}-${blogAiViewStage}-${blogAiContentContext.task.content?.playback?.version ?? 0}`}
           article={blogAiContentContext.article}
           locale={locale}
-          onBack={() => {
-            // 从正文返回大纲时重新读取任务，保留正文页已保存的最新状态。
-            const latestTask =
-              getAiCreationTasks(activeProject.id).find((item) => item.id === blogAiContentContext.task.id) ??
-              blogAiContentContext.task;
-            writeAiPlanningSession({
-              articleId: blogAiContentContext.article.id,
-              projectId: activeProject.id,
-              stage: 'outline',
-              taskId: latestTask.id,
-            });
-            setBlogAiContentContext(null);
-            setBlogAiOutlineContext({ article: blogAiContentContext.article, task: latestTask });
-          }}
           onClose={() => {
             if (
               requestCollaborativeExitPrompt({
@@ -688,8 +783,17 @@ export default function App() {
           onSaveAndEdit={(savedArticle) => {
             clearAiPlanningSession();
             setBlogAiContentContext(null);
+            setBlogAiViewStage(null);
             setBlogEditorArticle(savedArticle);
           }}
+          onRestartStage={({ article, stage, task }) =>
+            openCollaborativeStage({ article, generationStarted: true, stage, task })
+          }
+          onStageChange={(stage) =>
+            openCollaborativeStage({ article: blogAiContentContext.article, stage, task: blogAiContentContext.task })
+          }
+          onTaskUpdated={handleCollaborativeTaskUpdate}
+          isHistoricalView={isCollaborativeHistoryView(blogAiContentContext.task, 'content')}
           project={activeProject}
           t={t}
           task={blogAiContentContext.task}

@@ -1,7 +1,7 @@
 import { ArrowLeft, CalendarClock, FileText, Save, UserRound } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import Button from '../ui/Button.jsx';
-import Toast from '../ui/Toast.jsx';
+import { useToast } from '../ui/Toast.jsx';
 import { getTodayString, upsertBlogArticle } from '../../services/blogArticleStore.js';
 
 function valuesEqual(a, b) {
@@ -56,17 +56,8 @@ export default function BlogArticleEditor({ article, onClose, project, t }) {
   const [draft, setDraft] = useState(article);
   const [savedDraft, setSavedDraft] = useState(article);
   const [showDiscardDialog, setShowDiscardDialog] = useState(false);
-  const [toast, setToast] = useState(null);
+  const toast = useToast();
   const hasChanges = useMemo(() => !valuesEqual(draft, savedDraft), [draft, savedDraft]);
-
-  useEffect(() => {
-    if (!toast) {
-      return undefined;
-    }
-
-    const timer = window.setTimeout(() => setToast(null), 2200);
-    return () => window.clearTimeout(timer);
-  }, [toast]);
 
   function updateField(field, value) {
     setDraft((current) => ({
@@ -87,7 +78,7 @@ export default function BlogArticleEditor({ article, onClose, project, t }) {
     upsertBlogArticle(project, updatedArticle);
     setDraft(updatedArticle);
     setSavedDraft(updatedArticle);
-    setToast({ id: Date.now(), message: copy.toast.saved, type: 'success' });
+    toast.success(copy.toast.saved);
   }
 
   function requestClose() {
@@ -102,10 +93,6 @@ export default function BlogArticleEditor({ article, onClose, project, t }) {
 
   return (
     <main className="flex h-screen min-h-0 flex-col bg-white text-slate-900">
-      {toast ? (
-        <Toast key={toast.id} message={toast.message} testId="blog-article-editor-toast" type={toast.type} />
-      ) : null}
-
       {showDiscardDialog ? (
         <ConfirmDialog
           cancelLabel={copy.continueEditing}

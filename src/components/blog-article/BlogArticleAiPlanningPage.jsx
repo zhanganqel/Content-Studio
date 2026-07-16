@@ -1,5 +1,4 @@
 import {
-  ArrowLeft,
   BookOpen,
   Check,
   ChevronDown,
@@ -7,18 +6,20 @@ import {
   ClipboardList,
   Edit3,
   FileText,
-  PauseCircle,
   Save,
   X,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import Toast from '../ui/Toast.jsx';
-import AiCreationStepLabel from './AiCreationStepLabel.jsx';
+import { TaskStatusIcon } from '../ai-workflow/AiWorkflowComponents.jsx';
+import { useToast } from '../ui/Toast.jsx';
+import CollaborativeCreationHeader from './CollaborativeCreationHeader.jsx';
 import { formatTaskState, getTaskCompletedText, getTaskName, getTaskRunningText } from './aiTaskText.js';
+import { getCollaborativeStageStatuses } from './collaborativeStages.js';
 import { getAgentDisplay } from './agentDisplay.js';
 import {
   createPlanningDemoData,
-  resetAiPlanningTask,
+  restartCollaborativePlanningTask,
+  startCollaborativeOutlineTask,
   updateAiCreationTask,
 } from '../../services/blogArticleAiStore.js';
 
@@ -34,6 +35,18 @@ function getArtifactIcon(type) {
 
 // 已完成任务直接恢复完整播放状态，未完成任务从第一个步骤开始。
 function getInitialPlaybackState(workflow, task) {
+  const playback = task?.planning?.playback;
+  if (playback) {
+    return {
+      completedTaskIds: playback.completedTaskIds ?? [],
+      currentTaskIndex: playback.currentTaskIndex ?? 0,
+      isComplete: Boolean(playback.isComplete),
+      selectedArtifactId: playback.selectedArtifactId ?? task?.planning?.currentArtifactId ?? '',
+      visibleArtifactIds: playback.visibleArtifactIds ?? [],
+      visibleThinkingCounts: playback.visibleThinkingCounts ?? {},
+    };
+  }
+
   const alreadyCompleted = task?.stage === 'planning-completed' || task?.stage?.startsWith('outline');
 
   if (!alreadyCompleted) {
@@ -41,6 +54,7 @@ function getInitialPlaybackState(workflow, task) {
       completedTaskIds: [],
       currentTaskIndex: 0,
       isComplete: false,
+      selectedArtifactId: '',
       visibleArtifactIds: [],
       visibleThinkingCounts: {},
     };
@@ -50,29 +64,10 @@ function getInitialPlaybackState(workflow, task) {
     completedTaskIds: workflow.map((item) => item.id),
     currentTaskIndex: workflow.length,
     isComplete: true,
+    selectedArtifactId: task?.planning?.currentArtifactId ?? '',
     visibleArtifactIds: workflow.map((item) => item.artifactId).filter(Boolean),
     visibleThinkingCounts: Object.fromEntries(workflow.map((item) => [item.id, item.thinking.length])),
   };
-}
-
-function Stepper({ copy }) {
-  return (
-    <div className="flex flex-1 items-center justify-center gap-5">
-      {copy.steps.map((step, index) => (
-        <div key={step} className="flex items-center gap-3">
-          <span
-            className={`inline-flex h-7 w-7 items-center justify-center rounded-full text-[14px] font-semibold ${
-              index === 1 ? 'bg-[#365EFF] text-white' : 'bg-[#E9ECF2] text-[#A8ABB2]'
-            }`}
-          >
-            {index + 1}
-          </span>
-          <AiCreationStepLabel active={index === 1} step={step} />
-          {index < copy.steps.length - 1 ? <span className="h-px w-16 bg-[#E4E7ED]" /> : null}
-        </div>
-      ))}
-    </div>
-  );
 }
 
 function AgentAvatar({ agentTitle }) {
@@ -84,30 +79,6 @@ function AgentAvatar({ agentTitle }) {
     >
       {agentDisplay.initial}
     </div>
-  );
-}
-
-function StatusIcon({ completed, stopped }) {
-  if (completed) {
-    return (
-      <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-[#10B981] text-[#10B981]">
-        <Check className="h-3 w-3" />
-      </span>
-    );
-  }
-
-  if (stopped) {
-    return (
-      <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-[#F59E0B] text-[#F59E0B]">
-        <PauseCircle className="h-3 w-3" />
-      </span>
-    );
-  }
-
-  return (
-    <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border-2 border-[#365EFF] border-t-transparent">
-      <span className="h-1.5 w-1.5 rounded-full bg-[#365EFF]" />
-    </span>
   );
 }
 
@@ -178,17 +149,19 @@ function WorkflowTaskItem({
   copy,
 }) {
   const taskName = getTaskName(task, locale);
+  const stopped = isStopped && isCurrent && !completed;
+  const taskLabel = completed
+    ? getTaskCompletedText(task, copy.status.done, locale)
+    : stopped
+      ? formatTaskState(taskName, copy.status.stopped, locale)
+      : getTaskRunningText(task, locale);
 
   return (
     <div className="flex items-start gap-3">
-      <StatusIcon completed={completed} stopped={isStopped && isCurrent && !completed} />
+      <TaskStatusIcon label={taskLabel} status={completed ? 'done' : stopped ? 'cancelled' : 'running'} />
       <div className="min-w-0 flex-1">
         <div className="text-[14px] font-semibold leading-[20px] text-[#303133]">
-          {completed
-            ? getTaskCompletedText(task, copy.status.done, locale)
-            : isStopped && isCurrent
-              ? formatTaskState(taskName, copy.status.stopped, locale)
-              : getTaskRunningText(task, locale)}
+          {taskLabel}
         </div>
         <div className="mt-3 space-y-4">
           {task.thinking.slice(0, thinkingCount).map((paragraph, index) => (
@@ -493,44 +466,172 @@ function ReferencesPreview({ artifact }) {
   );
 }
 
-function StrategyRenderer({ content }) {
+function StrategyInlineText({ children }) {
+  const tokens = String(children ?? '').split(/(\*\*.*?\*\*|<br\s*\/?\s*>|https?:\/\/[^\s）)\]}]+)/gi);
+
+  return tokens.map((token, index) => {
+    if (!token) return null;
+    if (/^<br\s*\/?\s*>$/i.test(token)) return <br key={`break-${index}`} />;
+    if (/^\*\*.*\*\*$/.test(token)) {
+      return <strong key={`strong-${index}`} className="font-semibold text-[#303133]">{token.slice(2, -2)}</strong>;
+    }
+    if (/^https?:\/\//i.test(token)) {
+      return <a key={`link-${index}`} className="break-all font-medium text-[#365EFF] hover:underline" href={token} target="_blank" rel="noreferrer">{token}</a>;
+    }
+    return token;
+  });
+}
+
+function splitStrategyTableRow(line) {
+  const content = line.trim().replace(/^\|/, '').replace(/\|$/, '');
+  const cells = [];
+  let cell = '';
+
+  for (let index = 0; index < content.length; index += 1) {
+    const character = content[index];
+    const nextCharacter = content[index + 1];
+    if (character === '\\' && nextCharacter === '|') {
+      cell += '|';
+      index += 1;
+      continue;
+    }
+    if (character === '|') {
+      cells.push(cell.trim());
+      cell = '';
+      continue;
+    }
+    cell += character;
+  }
+
+  cells.push(cell.trim());
+  return cells;
+}
+
+function StrategyTable({ header, rows }) {
+  const compact = header.length === 2;
+
   return (
-    <div className="space-y-3 text-[15px] leading-[28px] text-[#303133]">
-      {content.split('\n').map((line, index) => {
-        const key = `${index}-${line}`;
-        const displayLine = line.replace(/（参考质量评估模型 P0）/g, '');
-        if (!line.trim()) {
-          return <div key={key} className="h-1" />;
-        }
-
-        if (line.startsWith('# ')) {
-          return (
-            <h2 key={key} className="text-[22px] font-bold leading-[34px] text-[#1F2A44]">
-              {displayLine.replace(/^#\s+/, '')}
-            </h2>
-          );
-        }
-
-        if (line.startsWith('## ')) {
-          return (
-            <h3 key={key} className="mt-6 border-l-4 border-[#365EFF] pl-3 text-[18px] font-bold leading-[28px] text-[#1F2A44]">
-              {displayLine.replace(/^##\s+/, '')}
-            </h3>
-          );
-        }
-
-        if (line.startsWith('### ')) {
-          return (
-            <h4 key={key} className="mt-4 text-[16px] font-semibold leading-[24px] text-[#303133]">
-              {displayLine.replace(/^###\s+/, '')}
-            </h4>
-          );
-        }
-
-        return <p key={key}>{displayLine}</p>;
-      })}
+    <div className="my-3 overflow-x-auto rounded-[6px] border border-[#DCDFE6]">
+      <table className="w-full border-collapse text-left text-[13px] leading-[20px]" style={{ minWidth: compact ? 520 : 860 }}>
+        <thead className="bg-[#F5F7FA] text-[#303133]">
+          <tr>
+            {header.map((cell, index) => (
+              <th key={`${cell}-${index}`} className={`border-b border-[#DCDFE6] px-3 py-2 font-semibold ${compact && index === 0 ? 'w-[132px]' : ''}`}>
+                <StrategyInlineText>{cell}</StrategyInlineText>
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, rowIndex) => (
+            <tr key={`row-${rowIndex}`} className="align-top even:bg-[#FAFBFC]">
+              {header.map((_, cellIndex) => (
+                <td key={`cell-${rowIndex}-${cellIndex}`} className={`border-b border-[#EBEEF5] px-3 py-2.5 last:border-b-0 ${cellIndex === 0 ? 'font-medium text-[#303133]' : 'text-[#606266]'}`}>
+                  <StrategyInlineText>{row[cellIndex] ?? '-'}</StrategyInlineText>
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
+}
+
+function StrategyHighlight({ lines }) {
+  return (
+    <aside className="my-4 rounded-[6px] border border-[#F3D19E] border-l-4 border-l-[#E6A23C] bg-[#FDF6EC] px-4 py-3 text-[#7A4E00]">
+      <div className="space-y-2.5">
+        {lines.map((line, index) => {
+          const bullet = line.match(/^-\s+(.*)$/);
+          if (!bullet) {
+            return <p key={`${line}-${index}`} className="font-semibold"><StrategyInlineText>{line}</StrategyInlineText></p>;
+          }
+          return (
+            <div key={`${line}-${index}`} className="flex items-start gap-2">
+              <span className="mt-[10px] h-1.5 w-1.5 flex-none rounded-full bg-[#E6A23C]" />
+              <p className="min-w-0 flex-1"><StrategyInlineText>{bullet[1]}</StrategyInlineText></p>
+            </div>
+          );
+        })}
+      </div>
+    </aside>
+  );
+}
+
+function StrategyRenderer({ content }) {
+  const lines = content.split('\n');
+  const elements = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const key = `${index}-${line}`;
+    const displayLine = line.replace(/（参考质量评估模型 P0）/g, '');
+
+    if (line.trim().startsWith('>')) {
+      const highlightLines = [];
+      let cursor = index;
+      while (cursor < lines.length && lines[cursor].trim().startsWith('>')) {
+        highlightLines.push(lines[cursor].trim().replace(/^>\s?/, ''));
+        cursor += 1;
+      }
+      elements.push(<StrategyHighlight key={`highlight-${index}`} lines={highlightLines} />);
+      index = cursor - 1;
+      continue;
+    }
+
+    if (line.trim().startsWith('|') && lines[index + 1]?.trim().startsWith('|')) {
+      const delimiterCells = splitStrategyTableRow(lines[index + 1]);
+      const isTable = delimiterCells.length > 0 && delimiterCells.every((cell) => /^:?-{3,}:?$/.test(cell));
+      if (isTable) {
+        const header = splitStrategyTableRow(line);
+        const rows = [];
+        let cursor = index + 2;
+        while (cursor < lines.length && lines[cursor].trim().startsWith('|')) {
+          rows.push(splitStrategyTableRow(lines[cursor]));
+          cursor += 1;
+        }
+        elements.push(<StrategyTable key={`table-${index}`} header={header} rows={rows} />);
+        index = cursor - 1;
+        continue;
+      }
+    }
+
+    if (!line.trim()) {
+      elements.push(<div key={key} className="h-1" />);
+      continue;
+    }
+
+    if (line.startsWith('# ')) {
+      elements.push(<h2 key={key} className="text-[22px] font-bold leading-[34px] text-[#1F2A44]"><StrategyInlineText>{displayLine.replace(/^#\s+/, '')}</StrategyInlineText></h2>);
+      continue;
+    }
+
+    if (line.startsWith('## ')) {
+      elements.push(<h3 key={key} className="mt-6 border-l-4 border-[#365EFF] pl-3 text-[18px] font-bold leading-[28px] text-[#1F2A44]"><StrategyInlineText>{displayLine.replace(/^##\s+/, '')}</StrategyInlineText></h3>);
+      continue;
+    }
+
+    if (line.startsWith('### ')) {
+      elements.push(<h4 key={key} className="mt-4 text-[16px] font-semibold leading-[24px] text-[#303133]"><StrategyInlineText>{displayLine.replace(/^###\s+/, '')}</StrategyInlineText></h4>);
+      continue;
+    }
+
+    const bulletMatch = displayLine.match(/^(\s*)-\s+(.*)$/);
+    if (bulletMatch) {
+      elements.push(
+        <div key={key} className={`flex items-start gap-2 ${bulletMatch[1].length ? 'ml-5' : ''}`}>
+          <span className="mt-[11px] h-1.5 w-1.5 flex-none rounded-full bg-[#7B8BAA]" />
+          <p className="min-w-0 flex-1"><StrategyInlineText>{bulletMatch[2]}</StrategyInlineText></p>
+        </div>,
+      );
+      continue;
+    }
+
+    elements.push(<p key={key}><StrategyInlineText>{displayLine}</StrategyInlineText></p>);
+  }
+
+  return <div className="space-y-3 text-[15px] leading-[28px] text-[#303133]">{elements}</div>;
 }
 
 function StrategyPreview({
@@ -679,7 +780,19 @@ function UnsavedDialog({ copy, onClose, onDiscard }) {
   );
 }
 
-export default function BlogArticleAiPlanningPage({ article, locale, onBack, onClose, onGenerateOutline, project, t, task }) {
+export default function BlogArticleAiPlanningPage({
+  article,
+  isHistoricalView = false,
+  locale,
+  onClose,
+  onGenerateOutline,
+  onRestartStage,
+  onStageChange,
+  onTaskUpdated,
+  project,
+  t,
+  task,
+}) {
   // 策划页用播放状态控制左侧任务流，并把策划产物保存回当前任务。
   const copy = t.blogArticle.aiCreation;
   const demoData = useMemo(() => createPlanningDemoData(task, project), [project, task]);
@@ -691,9 +804,9 @@ export default function BlogArticleAiPlanningPage({ article, locale, onBack, onC
   const [completedTaskIds, setCompletedTaskIds] = useState(initialPlaybackState.completedTaskIds);
   const [isComplete, setIsComplete] = useState(initialPlaybackState.isComplete);
   const [isStopped, setIsStopped] = useState(task?.stage === 'planning-stopped' || Boolean(task?.planning?.isStopped));
-  const [selectedArtifactId, setSelectedArtifactId] = useState('');
+  const [selectedArtifactId, setSelectedArtifactId] = useState(initialPlaybackState.selectedArtifactId);
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
-  const [toast, setToast] = useState(null);
+  const toast = useToast({ scope: `blog-ai-planning-${task.id}` });
   const [strategyContent, setStrategyContent] = useState(demoData.artifacts.strategy.content);
   const [strategyDraft, setStrategyDraft] = useState(demoData.artifacts.strategy.content);
   const [isEditingStrategy, setIsEditingStrategy] = useState(false);
@@ -705,95 +818,8 @@ export default function BlogArticleAiPlanningPage({ article, locale, onBack, onC
   const selectedArtifact = selectedArtifactId ? demoData.artifacts[selectedArtifactId] : null;
   const strategyDirty = isEditingStrategy && strategyDraft !== strategyContent;
   const currentTask = workflow[currentTaskIndex];
-
-  useEffect(() => {
-    // 首次进入时把当前播放快照写回任务，刷新后可以恢复阶段。
-    updateAiCreationTask(project.id, task.id, {
-      stage: isComplete ? 'planning-completed' : isStopped ? 'planning-stopped' : 'planning',
-      planning: {
-        completedTaskIds,
-        currentArtifactId: selectedArtifactId,
-        isStopped,
-        strategyContent,
-        updatedAt: getTodayString(),
-      },
-    });
-  }, []);
-
-  useEffect(() => {
-    if (!toast || toast.actionLabel) {
-      return undefined;
-    }
-
-    const timer = window.setTimeout(() => setToast(null), 2200);
-    return () => window.clearTimeout(timer);
-  }, [toast]);
-
-  useEffect(() => {
-    // 未停止且未完成时，按节奏逐条展示思考文本和产物卡片。
-    if (isStopped || isComplete || !currentTask) {
-      return undefined;
-    }
-
-    const thinkingCount = visibleThinkingCounts[currentTask.id] ?? 0;
-    const hasMoreThinking = thinkingCount < currentTask.thinking.length;
-    const artifactVisible =
-      !currentTask.artifactId || visibleArtifactIds.includes(currentTask.artifactId);
-
-    const timer = window.setTimeout(() => {
-      if (hasMoreThinking) {
-        setVisibleThinkingCounts((current) => ({
-          ...current,
-          [currentTask.id]: (current[currentTask.id] ?? 0) + 1,
-        }));
-        return;
-      }
-
-      if (!artifactVisible && currentTask.artifactId) {
-        setVisibleArtifactIds((current) =>
-          current.includes(currentTask.artifactId) ? current : [...current, currentTask.artifactId],
-        );
-        return;
-      }
-
-      const nextCompletedTaskIds = completedTaskIds.includes(currentTask.id)
-        ? completedTaskIds
-        : [...completedTaskIds, currentTask.id];
-      setCompletedTaskIds(nextCompletedTaskIds);
-
-      if (currentTaskIndex + 1 >= workflow.length) {
-        setIsComplete(true);
-        updateAiCreationTask(project.id, task.id, {
-          stage: 'planning-completed',
-          planning: {
-            completedTaskIds: nextCompletedTaskIds,
-            currentArtifactId: selectedArtifactId,
-            isStopped: false,
-            strategyContent,
-            updatedAt: getTodayString(),
-          },
-        });
-        return;
-      }
-
-      setCurrentTaskIndex((current) => current + 1);
-    }, hasMoreThinking ? 950 : 650);
-
-    return () => window.clearTimeout(timer);
-  }, [
-    completedTaskIds,
-    currentTask,
-    currentTaskIndex,
-    isComplete,
-    isStopped,
-    project.id,
-    selectedArtifactId,
-    strategyContent,
-    task.id,
-    visibleArtifactIds,
-    visibleThinkingCounts,
-    workflow.length,
-  ]);
+  const stoppedToastId = `blog-ai-planning-stopped-${task.id}`;
+  const isPlanningStopped = isStopped && task?.stage === 'planning-stopped';
 
   useEffect(() => {
     // 用户没有手动离开底部时，任务流自动跟随最新步骤。
@@ -807,6 +833,19 @@ export default function BlogArticleAiPlanningPage({ article, locale, onBack, onC
       });
     });
   }, [autoScrollEnabled, completedTaskIds, currentTaskIndex, visibleArtifactIds, visibleThinkingCounts]);
+
+  useEffect(() => {
+    if (!isPlanningStopped) return;
+
+    toast.show({
+      actions: [{ label: copy.actions.regenerate, closeOnClick: false, onClick: handleRegenerate }],
+      duration: 0,
+      id: stoppedToastId,
+      message: locale === 'en-US' ? 'Task stopped. Go back to edit or' : '任务已中止，可返回上一步修改或',
+      showClose: false,
+      type: 'warning',
+    });
+  }, [isPlanningStopped, locale, stoppedToastId, task.id]);
 
   function handleWorkflowScroll() {
     // 距离底部较远说明用户正在查看历史步骤，暂停自动滚动。
@@ -826,13 +865,13 @@ export default function BlogArticleAiPlanningPage({ article, locale, onBack, onC
       return;
     }
 
-    if (action.type === 'back') {
-      onBack();
+    if (action.type === 'close') {
+      onClose();
       return;
     }
 
-    if (action.type === 'close') {
-      onClose();
+    if (action.type === 'view-stage') {
+      onStageChange?.(action.stage);
       return;
     }
 
@@ -860,40 +899,40 @@ export default function BlogArticleAiPlanningPage({ article, locale, onBack, onC
     if (isStopped || isComplete) return;
 
     setIsStopped(true);
-    updateAiCreationTask(project.id, task.id, {
+    const nextTask = updateAiCreationTask(project.id, task.id, {
       stage: 'planning-stopped',
       planning: {
         completedTaskIds,
         currentArtifactId: selectedArtifactId,
         isStopped: true,
+        playback: {
+          ...(task?.planning?.playback ?? {}),
+          completedTaskIds,
+          currentTaskIndex,
+          isComplete: false,
+          selectedArtifactId,
+          visibleArtifactIds,
+          visibleThinkingCounts,
+        },
         strategyContent,
         updatedAt: getTodayString(),
       },
     });
-    setToast({
-      actionLabel: copy.actions.regenerate,
-      message:
-        locale === 'en-US'
-          ? 'Task stopped. Go back or regenerate.'
-          : '任务已中止，可返回上一步修改或重新生成',
-      type: 'warning',
-    });
+    onTaskUpdated?.(nextTask ?? task);
   }
 
   function handleRegenerate() {
-    // 重新生成先清空策划阶段状态，再刷新页面进入初始播放。
-    resetAiPlanningTask(project.id, task.id);
-    window.location.reload();
+    // 从当前任务输入重启策划，同时清空大纲、正文和中止提示。
+    const nextTask = restartCollaborativePlanningTask(project.id, task.id);
+    toast.dismiss(stoppedToastId);
+    onRestartStage?.({ article, stage: 'planning', task: nextTask ?? task });
   }
 
   function handleSaveStrategy() {
     // 策划方案保存后同步任务 planning payload，供大纲阶段读取。
     const nextContent = strategyDraft.trim();
     if (!nextContent) {
-      setToast({
-        message: locale === 'en-US' ? 'Plan cannot be empty.' : '文章策划方案不能为空，无法保存',
-        type: 'error',
-      });
+      toast.error(locale === 'en-US' ? 'Plan cannot be empty.' : '文章策划方案不能为空，无法保存');
       return;
     }
 
@@ -907,7 +946,7 @@ export default function BlogArticleAiPlanningPage({ article, locale, onBack, onC
         updatedAt: getTodayString(),
       },
     });
-    setToast({ message: locale === 'en-US' ? 'Saved' : '保存成功', type: 'success' });
+    toast.success(locale === 'en-US' ? 'Saved' : '保存成功');
   }
 
   function handleCancelStrategy() {
@@ -933,17 +972,27 @@ export default function BlogArticleAiPlanningPage({ article, locale, onBack, onC
 
   function goToOutline() {
     // 进入大纲前最后一次持久化策划阶段结果。
+    if (isPlanningStopped) {
+      handleRegenerate();
+      return;
+    }
+
     if (!isComplete || isStopped) return;
 
-    const nextTask = updateAiCreationTask(project.id, task.id, {
-      stage: 'outline',
-      planning: {
+    const nextTask = startCollaborativeOutlineTask(project.id, task.id, {
+      completedTaskIds,
+      currentArtifactId: selectedArtifactId,
+      isStopped: false,
+      playback: {
         completedTaskIds,
-        currentArtifactId: selectedArtifactId,
-        isStopped: false,
-        strategyContent,
-        updatedAt: getTodayString(),
+        currentTaskIndex,
+        isComplete: true,
+        selectedArtifactId,
+        visibleArtifactIds,
+        visibleThinkingCounts,
       },
+      strategyContent,
+      updatedAt: getTodayString(),
     });
 
     onGenerateOutline?.({ article, task: nextTask ?? task });
@@ -963,23 +1012,14 @@ export default function BlogArticleAiPlanningPage({ article, locale, onBack, onC
           }
         `}
       </style>
-      <header className="fixed left-0 right-0 top-0 z-40 h-[52px] border-b border-[#EBEEF5] bg-white">
-        <div className="mx-auto flex h-full max-w-[1600px] items-center px-6">
-          <button
-            type="button"
-            className="mr-3 inline-flex h-8 w-8 items-center justify-center rounded-[6px] text-[#232E45] transition hover:bg-[#F5F7FA]"
-            onClick={() => requestAction({ type: 'close' })}
-            aria-label="返回"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </button>
-          <h1 className="w-[360px] text-[18px] font-bold leading-[28px] text-[#232E45]">
-            {copy.titles.planning}
-          </h1>
-          <Stepper copy={copy} />
-          <div className="w-[360px]" />
-        </div>
-      </header>
+      <CollaborativeCreationHeader
+        copy={copy}
+        onBack={() => requestAction({ type: 'close' })}
+        onStageChange={(stage) => requestAction({ stage, type: 'view-stage' })}
+        stageStatuses={getCollaborativeStageStatuses(task)}
+        title={copy.titles.planning}
+        viewStage="planning"
+      />
 
       <main className="mx-auto grid max-w-[1600px] grid-cols-2 gap-4 px-6 pb-[84px] pt-[68px]">
         <section
@@ -1027,19 +1067,12 @@ export default function BlogArticleAiPlanningPage({ article, locale, onBack, onC
       </main>
 
       <footer className="fixed bottom-0 left-0 right-0 z-40 h-[60px] border-t border-[#EBEEF5] bg-white/95 backdrop-blur">
-        <div className="mx-auto flex h-full max-w-[1600px] items-center justify-between px-6">
-          <button
-            type="button"
-            className="inline-flex h-8 items-center justify-center whitespace-nowrap rounded-[6px] border border-[#365EFF] px-4 text-[14px] font-semibold text-[#365EFF] transition hover:bg-[#EEF3FF]"
-            onClick={() => requestAction({ type: 'back' })}
-          >
-            {copy.actions.previous}
-          </button>
+        <div className="mx-auto flex h-full max-w-[1600px] items-center justify-end px-6">
           <div className="flex items-center gap-3">
             <button
               type="button"
               className="inline-flex h-8 items-center justify-center whitespace-nowrap rounded-[6px] border border-[#365EFF] px-4 text-[14px] font-semibold text-[#365EFF] transition hover:bg-[#EEF3FF] disabled:cursor-not-allowed disabled:border-[#DCDFE6] disabled:text-[#A8ABB2] disabled:hover:bg-white"
-              disabled={isComplete || isStopped}
+              disabled={isHistoricalView || isComplete || isStopped}
               onClick={handleStopTask}
             >
               {copy.actions.stop}
@@ -1047,24 +1080,14 @@ export default function BlogArticleAiPlanningPage({ article, locale, onBack, onC
             <button
               type="button"
               className="inline-flex h-8 items-center justify-center whitespace-nowrap rounded-[6px] bg-[#365EFF] px-5 text-[14px] font-semibold text-white transition hover:bg-[#2547D0] disabled:cursor-not-allowed disabled:bg-[#A8B9FF]"
-              disabled={!isComplete || isStopped}
+              disabled={isHistoricalView || (isPlanningStopped ? false : !isComplete || isStopped)}
               onClick={handleGenerateOutline}
             >
-              {copy.actions.generateOutline}
+              {isPlanningStopped ? copy.actions.regeneratePlanning : copy.actions.generateOutline}
             </button>
           </div>
         </div>
       </footer>
-
-      {toast ? (
-        <Toast
-          actionLabel={toast.actionLabel}
-          message={toast.message}
-          onAction={toast.actionLabel ? handleRegenerate : undefined}
-          onClose={toast.actionLabel ? () => setToast(null) : undefined}
-          type={toast.type}
-        />
-      ) : null}
 
       {pendingAction ? (
         <UnsavedDialog copy={copy} onClose={() => setPendingAction(null)} onDiscard={handleDiscardUnsaved} />

@@ -34,7 +34,7 @@ import {
 import Button from '../ui/Button.jsx';
 import FixedPageLayout from '../ui/FixedPageLayout.jsx';
 import PageHeader from '../ui/PageHeader.jsx';
-import Toast from '../ui/Toast.jsx';
+import { useToast } from '../ui/Toast.jsx';
 import KnowledgeFileChunksPage from './KnowledgeFileChunksPage.jsx';
 
 const mediaCategoryIds = ['all', 'brand', 'services', 'products', 'cases', 'materials-process'];
@@ -634,7 +634,7 @@ export default function KnowledgeAssetsPage({ project, t }) {
   const [deletingItem, setDeletingItem] = useState(null);
   const [webParseOpen, setWebParseOpen] = useState(false);
   const [chunkFileId, setChunkFileId] = useState('');
-  const [toast, setToast] = useState(null);
+  const toast = useToast();
   const fileUploadInputRef = useRef(null);
   const mediaUploadInputRef = useRef(null);
   const bodyScrollRef = useRef(null);
@@ -661,11 +661,7 @@ export default function KnowledgeAssetsPage({ project, t }) {
   }, [activeTab]);
 
   function showToast(message, type = 'success') {
-    const id = Date.now();
-    setToast({ id, message, type });
-    window.setTimeout(() => {
-      setToast((current) => (current?.id === id ? null : current));
-    }, 2200);
+    toast.show({ message, type });
   }
 
   const activeItems = activeTab === 'files' ? files : mediaAssets;
@@ -1018,7 +1014,6 @@ export default function KnowledgeAssetsPage({ project, t }) {
           onSubmit={handleParseWebPage}
         />
       ) : null}
-      {toast ? <Toast message={toast.message} type={toast.type} /> : null}
     </div>
   );
 }

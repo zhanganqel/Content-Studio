@@ -21,7 +21,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { adaptivePageLayout } from '../layoutClasses.js';
 import Button from '../ui/Button.jsx';
 import ListCard from '../ui/ListCard.jsx';
-import Toast from '../ui/Toast.jsx';
+import { useToast } from '../ui/Toast.jsx';
 import {
   contentDepthOptions,
   contentTypeOptions,
@@ -662,7 +662,7 @@ export default function AudiencePersonaPage({ project, sidebarWidth = 300, t }) 
   const [draftTypeFilter, setDraftTypeFilter] = useState('all');
   const [drawerState, setDrawerState] = useState(null);
   const [errors, setErrors] = useState({});
-  const [toast, setToast] = useState(null);
+  const toast = useToast();
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [showDiscardDialog, setShowDiscardDialog] = useState(false);
   const filterRef = useRef(null);
@@ -681,15 +681,6 @@ export default function AudiencePersonaPage({ project, sidebarWidth = 300, t }) 
     setDrawerState(null);
     setErrors({});
   }, [project]);
-
-  useEffect(() => {
-    if (!toast) {
-      return undefined;
-    }
-
-    const timer = window.setTimeout(() => setToast(null), 2200);
-    return () => window.clearTimeout(timer);
-  }, [toast]);
 
   useEffect(() => {
     // 筛选弹层只在打开时监听外部点击，关闭后移除监听。
@@ -730,7 +721,7 @@ export default function AudiencePersonaPage({ project, sidebarWidth = 300, t }) 
     // 所有增删改都通过 persist 写入当前项目缓存并触发提示。
     const saved = saveAudiencePersonaDrafts(project.id, nextPersonas);
     setPersonas(saved);
-    setToast({ id: Date.now(), message, type: 'success' });
+    toast.success(message);
   }
 
   function openCreateDrawer() {
@@ -871,15 +862,6 @@ export default function AudiencePersonaPage({ project, sidebarWidth = 300, t }) 
 
   return (
     <div className={`mx-auto max-w-[1600px] ${adaptivePageLayout.pageStack}`}>
-      {toast ? (
-        <Toast
-          key={toast.id}
-          message={toast.message}
-          testId="audience-persona-toast"
-          type={toast.type}
-        />
-      ) : null}
-
       {drawerState ? (
         <PersonaDrawer
           copy={copy}
