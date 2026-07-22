@@ -22,6 +22,7 @@ import { defaultLocale, messages } from './i18n/messages.js';
 import {
   convertCollaborativeTaskToAuto,
   createContentDemoData,
+  deleteAiCreationTask,
   getAiCreationTasks,
 } from './services/blogArticleAiStore.js';
 import {
@@ -499,6 +500,19 @@ export default function App() {
     exitArticleCreationFlow();
   }
 
+  function handleDiscardCollaborativeTask() {
+    const prompt = blogAiExitPrompt;
+    if (!prompt?.task) return;
+
+    const latestTask = getLatestAiTask(prompt.task);
+    if (isUnsavedCollaborativeTask(latestTask)) {
+      deleteAiCreationTask(activeProject.id, latestTask.id);
+    }
+
+    setBlogAiExitPrompt(null);
+    exitArticleCreationFlow();
+  }
+
   function renderCollaborativeExitPromptDialog() {
     return blogAiExitPrompt ? (
       <ConfirmDialog
@@ -513,10 +527,7 @@ export default function App() {
           {
             key: 'exit',
             label: t.blogArticle.aiCreation.actions.exit,
-            onClick: () => {
-              setBlogAiExitPrompt(null);
-              exitArticleCreationFlow();
-            },
+            onClick: handleDiscardCollaborativeTask,
             variant: 'danger',
           },
           {
@@ -822,7 +833,6 @@ export default function App() {
       sidebarCollapsed={sidebarCollapsed}
       sidebarWidth={sidebarWidth}
       t={t}
-      userMenuItems={localizedUserMenuItems}
       blogArticleNotice={blogArticleNotice}
       knowledgeItemFocusId={externalView?.view === 'knowledge-items' ? externalView.knowledgeItemId : ''}
       onBlogArticleNoticeConsumed={clearBlogArticleNotice}

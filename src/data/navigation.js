@@ -8,36 +8,35 @@ export const navSections = [
   {
     id: 'brand-knowledge',
     items: [
-      { id: 'brand-profile' },
-      { id: 'audience-persona' },
-      { id: 'knowledge-items' },
-      { id: 'knowledge-assets' },
+      { id: 'brand-profile', available: true },
+      { id: 'audience-persona', available: true },
+      { id: 'knowledge-items', available: true },
+      { id: 'knowledge-assets', available: true },
     ],
   },
   {
     id: 'site-builder',
     items: [
-      { id: 'home-page' },
-      { id: 'product-page' },
-      { id: 'landing-page' },
-      { id: 'blog-page' },
+      { id: 'navigation-structure', available: false },
+      { id: 'page-management', available: false },
+      { id: 'brand-component-library', available: false },
     ],
   },
   {
     id: 'content-factory',
     items: [
-      { id: 'blog-article' },
-      { id: 'social-post' },
-      { id: 'video-ad' },
-      { id: 'email-copy' },
+      { id: 'blog-article', available: true },
+      { id: 'social-post', available: false },
+      { id: 'video-ad', available: true },
+      { id: 'email-copy', available: false },
     ],
   },
   {
     id: 'growth-dashboard',
     items: [
-      { id: 'seo-traffic' },
-      { id: 'ai-visibility' },
-      { id: 'social-traffic' },
+      { id: 'seo-traffic', available: false },
+      { id: 'ai-visibility', available: false },
+      { id: 'social-traffic', available: false },
     ],
   },
 ];

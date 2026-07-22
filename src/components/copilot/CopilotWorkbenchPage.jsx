@@ -66,6 +66,7 @@ import {
   ArtifactCard,
   ArtifactPreview,
 } from '../ai-workflow/ArtifactComponents.jsx';
+import userAvatar from '../../assets/user/zhanganqel-avatar.png';
 
 const userMenuIcons = {
   switchAccount: UsersRound,
@@ -1421,7 +1422,7 @@ export default function CopilotWorkbenchPage({
           ) : null}
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-5">
           <button
             data-testid="copilot-home-button"
             type="button"
@@ -1437,14 +1438,13 @@ export default function CopilotWorkbenchPage({
             <button
               data-testid="copilot-user-menu-button"
               type="button"
-              className="flex h-11 items-center gap-3 rounded-full pl-1 pr-2 transition hover:bg-white"
+              className="grid h-11 w-11 place-items-center overflow-hidden rounded-full ring-1 ring-transparent transition hover:ring-blue-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
               onClick={() => setUserMenuOpen((open) => !open)}
               aria-expanded={userMenuOpen}
+              aria-label={t.topbar.accountMenu}
+              title={t.topbar.accountMenu}
             >
-              <span className="grid h-11 w-11 place-items-center rounded-full bg-blue-600 text-sm font-bold text-white">
-                A
-              </span>
-              <span className="text-[15px] font-bold text-slate-800">Angel</span>
+              <img className="h-full w-full object-cover" src={userAvatar} alt="" />
             </button>
 
             {userMenuOpen ? (

@@ -1,7 +1,6 @@
 import {
   BookOpenText,
   ChartNoAxesCombined,
-  Check,
   ChevronDown,
   ChevronRight,
   Factory,
@@ -9,9 +8,11 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Settings,
+  Sparkles,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { locales } from '../i18n/messages.js';
+import SquareIconButton from './ui/SquareIconButton.jsx';
+import { useToast } from './ui/Toast.jsx';
 
 const sectionIcons = {
   'brand-knowledge': BookOpenText,
@@ -50,39 +51,32 @@ function SidebarIconTooltip({ children, label }) {
   );
 }
 
-// 侧栏负责项目切换、导航展开、折叠态浮层和语言设置入口。
+// 侧栏负责项目切换、导航展开、折叠态浮层和项目设置入口。
 export default function Sidebar({
   activeItemId,
   activeProject,
   expandedSections,
-  locale,
   navSections,
   projects,
   sidebarCollapsed,
   sidebarWidth,
   t,
-  onLocaleChange,
   onProjectChange,
+  onHome,
   onSectionToggle,
   onSelectItem,
   onSidebarCollapsedToggle,
 }) {
+  const toast = useToast({ scope: 'sidebar-project-settings' });
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [hoveredSectionId, setHoveredSectionId] = useState(null);
   const projectMenuRef = useRef(null);
-  const settingsRef = useRef(null);
   const sectionMenuCloseTimerRef = useRef(null);
-
   useEffect(() => {
-    // 项目菜单和设置菜单都通过外部点击关闭，避免浮层残留。
+    // 项目菜单通过外部点击关闭，避免浮层残留。
     function handleClickOutside(event) {
       if (projectMenuRef.current && !projectMenuRef.current.contains(event.target)) {
         setProjectMenuOpen(false);
-      }
-
-      if (settingsRef.current && !settingsRef.current.contains(event.target)) {
-        setSettingsOpen(false);
       }
     }
 
@@ -93,7 +87,6 @@ export default function Sidebar({
   useEffect(() => {
     // 切换折叠状态时关闭所有临时浮层，保证新布局从稳定状态开始。
     setProjectMenuOpen(false);
-    setSettingsOpen(false);
     setHoveredSectionId(null);
   }, [sidebarCollapsed]);
 
@@ -109,11 +102,6 @@ export default function Sidebar({
   function selectProject(projectId) {
     onProjectChange(projectId);
     setProjectMenuOpen(false);
-  }
-
-  function selectLocale(nextLocale) {
-    onLocaleChange(nextLocale);
-    setSettingsOpen(false);
   }
 
   function openCollapsedSectionMenu(sectionId) {
@@ -145,7 +133,7 @@ export default function Sidebar({
   return (
     <aside
       className={`fixed inset-y-0 left-0 z-30 flex flex-col bg-slate-950 text-slate-100 transition-[width] duration-200 ${
-        sidebarCollapsed ? 'px-3 py-5' : 'px-6 py-8'
+        sidebarCollapsed ? 'px-3 py-6' : 'px-6 py-6'
       }`}
       style={{ width: sidebarWidth }}
     >
@@ -153,35 +141,34 @@ export default function Sidebar({
         className={
           sidebarCollapsed
             ? 'mb-3 flex justify-center'
-            : 'mb-7 flex items-start justify-between gap-4'
+            : 'mb-6 flex items-center justify-between gap-4'
         }
       >
         {!sidebarCollapsed ? (
-          <h1 className="min-w-0 tracking-normal">
-            <span className="block text-[38px] font-extrabold leading-[0.95] text-blue-500">
-              Content
-            </span>
-            <span className="mt-1 block text-[30px] font-bold leading-none text-white">
-              Studio
-            </span>
-          </h1>
+          <button
+            data-testid="studio-home-button"
+            type="button"
+            className="flex min-w-0 items-center gap-2.5 rounded-md text-left tracking-normal text-white transition hover:text-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+            onClick={onHome}
+            aria-label={t.home.openHome}
+            title={t.home.openHome}
+          >
+            <Sparkles className="h-6 w-6 flex-none text-blue-500" aria-hidden="true" />
+            <span className="truncate text-xl font-bold leading-none">Content Studio</span>
+          </button>
         ) : null}
         <SidebarIconTooltip label={sidebarToggleLabel}>
-          <button
+          <SquareIconButton
             data-testid="sidebar-collapse-toggle"
-            type="button"
-            className={`grid flex-none place-items-center text-slate-300 transition hover:bg-slate-800 hover:text-white ${
-              sidebarCollapsed ? 'h-11 w-11 rounded-xl' : 'h-9 w-9 rounded-lg'
+            className={`flex-none !border-0 !bg-transparent !text-slate-300 hover:!bg-slate-800 hover:!text-white ${
+              sidebarCollapsed ? '!h-11 !w-11 !rounded-xl [&_svg]:!h-5 [&_svg]:!w-5' : ''
             }`}
+            icon={sidebarCollapsed ? PanelLeftOpen : PanelLeftClose}
+            size={sidebarCollapsed ? 'md' : 'sm'}
+            variant="ghost"
             onClick={onSidebarCollapsedToggle}
             aria-label={sidebarToggleLabel}
-          >
-            {sidebarCollapsed ? (
-              <PanelLeftOpen className="h-5 w-5" />
-            ) : (
-              <PanelLeftClose className="h-5 w-5" />
-            )}
-          </button>
+          />
         </SidebarIconTooltip>
       </div>
 
@@ -316,6 +303,7 @@ export default function Sidebar({
                       <div className="py-1">
                         {section.items.map((item) => {
                           const selected = activeItemId === item.id;
+                          const available = item.available !== false;
 
                           return (
                             <button
@@ -323,17 +311,28 @@ export default function Sidebar({
                               data-testid={`nav-item-${item.id}`}
                               type="button"
                               role="menuitem"
+                              disabled={!available}
+                              aria-disabled={!available}
+                              title={available ? undefined : sidebarCopy.comingSoon}
                               className={`flex min-h-[36px] w-full items-center rounded-lg px-3 text-left text-sm font-medium transition ${
-                                selected
+                                !available
+                                  ? 'cursor-not-allowed text-slate-400 opacity-60'
+                                  : selected
                                   ? 'bg-blue-50 text-blue-700'
                                   : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                               }`}
                               onClick={() => {
+                                if (!available) return;
                                 onSelectItem(item.id);
                                 setHoveredSectionId(null);
                               }}
                             >
-                              {item.title}
+                              <span className="min-w-0 flex-1 truncate">{item.title}</span>
+                              {!available ? (
+                                <span className="ml-2 flex-none text-[11px] font-medium text-slate-400">
+                                  {sidebarCopy.comingSoon}
+                                </span>
+                              ) : null}
                             </button>
                           );
                         })}
@@ -367,23 +366,36 @@ export default function Sidebar({
                   <div className="mt-3 space-y-1">
                     {section.items.map((item) => {
                       const selected = activeItemId === item.id;
+                      const available = item.available !== false;
 
                       return (
                         <button
                           key={item.id}
                           data-testid={`nav-item-${item.id}`}
                           type="button"
+                          disabled={!available}
+                          aria-disabled={!available}
+                          title={available ? undefined : sidebarCopy.comingSoon}
                           className={`relative flex min-h-[38px] w-full items-center rounded-lg pl-9 pr-3 text-left text-[14px] transition ${
-                            selected
+                            !available
+                              ? 'cursor-not-allowed text-slate-600 opacity-60'
+                              : selected
                               ? 'bg-slate-800 text-slate-100'
                               : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'
                           }`}
-                          onClick={() => onSelectItem(item.id)}
+                          onClick={() => {
+                            if (available) onSelectItem(item.id);
+                          }}
                         >
-                          {selected ? (
+                          {selected && available ? (
                             <span className="absolute left-0 top-1/2 h-[31px] w-1 -translate-y-1/2 rounded-full bg-blue-500" />
                           ) : null}
-                          {item.title}
+                          <span className="min-w-0 flex-1 truncate">{item.title}</span>
+                          {!available ? (
+                            <span className="ml-2 flex-none text-[11px] font-medium text-slate-600">
+                              {sidebarCopy.comingSoon}
+                            </span>
+                          ) : null}
                         </button>
                       );
                     })}
@@ -399,60 +411,25 @@ export default function Sidebar({
         </div>
       </nav>
 
-      <div ref={settingsRef} className={`relative mt-7 ${sidebarCollapsed ? 'flex justify-center' : ''}`}>
-        {/* 设置菜单当前只承载界面语言选择 */}
-        {settingsOpen ? (
-          <div
-            className={`absolute z-50 rounded-lg border border-slate-700 bg-slate-900 p-3 shadow-menu ${
-              sidebarCollapsed ? 'bottom-0 w-[220px]' : 'bottom-[44px] left-0 right-0'
-            }`}
-            style={sidebarCollapsed ? { left: 'calc(100% + 12px)' } : undefined}
-          >
-            <div className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
-              {t.settings.interfaceLanguage}
-            </div>
-            <div className="space-y-1">
-              {locales.map((item) => {
-                const selected = item.code === locale;
-
-                return (
-                  <button
-                    key={item.code}
-                    data-testid={`locale-option-${item.code}`}
-                    type="button"
-                    className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-sm font-medium transition ${
-                      selected
-                        ? 'bg-blue-600 text-white'
-                        : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                    }`}
-                    onClick={() => selectLocale(item.code)}
-                  >
-                    {item.label}
-                    {selected ? <Check className="h-4 w-4" /> : null}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        ) : null}
-
+      <div className={`mt-9 ${sidebarCollapsed ? 'flex justify-center' : ''}`}>
+        {/* 两种侧栏状态使用相同高度与容器底部留白，保证设置图标距屏幕底部一致。 */}
         <button
           data-testid="settings-button"
           type="button"
           className={
             sidebarCollapsed
-              ? 'grid h-11 w-11 place-items-center rounded-xl text-slate-400 transition hover:bg-slate-800 hover:text-white'
-              : 'flex w-full items-center justify-end gap-2 rounded-md py-2 text-sm font-semibold text-slate-300 transition hover:text-white'
+              ? 'grid h-11 w-11 place-items-center rounded-xl text-slate-400 transition hover:bg-slate-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950'
+              : 'flex h-11 w-full items-center justify-start gap-2 rounded-md px-2 text-sm font-semibold text-slate-300 transition hover:bg-slate-900 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950'
           }
-          onClick={() => setSettingsOpen((open) => !open)}
-          aria-expanded={settingsOpen}
-          aria-label={t.settings.entry}
-          title={sidebarCollapsed ? t.settings.entry : undefined}
+          onClick={() => toast.info(t.settings.projectSettingsUnavailable)}
+          aria-label={t.settings.projectEntry}
+          title={sidebarCollapsed ? t.settings.projectEntry : undefined}
         >
           <Settings className="h-4 w-4" />
-          {sidebarCollapsed ? null : t.settings.entry}
+          {sidebarCollapsed ? null : t.settings.projectEntry}
         </button>
       </div>
+
     </aside>
   );
 }

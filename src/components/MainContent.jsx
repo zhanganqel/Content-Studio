@@ -4,6 +4,7 @@ import BlogArticlePage from './blog-article/BlogArticlePage.jsx';
 import KnowledgeAssetsPage from './knowledge-assets/KnowledgeAssetsPage.jsx';
 import KnowledgeItemsPage from './knowledge-items/KnowledgeItemsPage.jsx';
 import VideoAdPage from './video-ad/VideoAdPage.jsx';
+import StudioHomePage from './home/StudioHomePage.jsx';
 
 // 根据当前导航项选择页面，并统一处理侧栏宽度带来的内容区偏移。
 export default function MainContent({
@@ -16,11 +17,29 @@ export default function MainContent({
   onOpenBlogAiTask,
   onOpenBlogAiRecreateTask,
   onOpenBlogArticleEditor,
+  onOpenCopilot,
   onOpenVideoGeneration,
+  onSelectItem,
   sidebarWidth,
   t,
 }) {
   const mainOffsetStyle = { marginLeft: sidebarWidth };
+
+  if (!activeItem) {
+    return (
+      <main
+        className="h-screen overflow-y-auto bg-[#F7F9FC] pt-[64px] transition-[margin-left] duration-200"
+        style={mainOffsetStyle}
+      >
+        <StudioHomePage
+          activeProject={activeProject}
+          onOpenCopilot={onOpenCopilot}
+          onSelectItem={onSelectItem}
+          t={t}
+        />
+      </main>
+    );
+  }
 
   // 品牌档案使用内部滚动，避免固定操作区随页面滚动丢失。
   if (activeItem?.id === 'brand-profile') {
@@ -106,15 +125,13 @@ export default function MainContent({
         <div className="max-w-3xl">
           <p className="text-sm font-medium text-slate-400">{activeProject.name}</p>
           <h2 className="mt-3 text-2xl font-semibold tracking-normal text-slate-900">
-            {activeItem ? activeItem.title : t.mainContent.welcomeTitle}
+            {activeItem.title}
           </h2>
           <p className="mt-3 text-base leading-7 text-slate-500">
-            {activeItem
-              ? t.mainContent.itemPlaceholder({
-                  sectionTitle: activeItem.sectionTitle,
-                  itemTitle: activeItem.title,
-                })
-              : t.mainContent.welcomeBody}
+            {t.mainContent.itemPlaceholder({
+              sectionTitle: activeItem.sectionTitle,
+              itemTitle: activeItem.title,
+            })}
           </p>
         </div>
       </div>

@@ -17,7 +17,6 @@ export default function AppShell({
   sidebarCollapsed,
   sidebarWidth,
   t,
-  userMenuItems,
   blogArticleNotice,
   knowledgeItemFocusId,
   onBlogArticleNoticeConsumed,
@@ -42,26 +41,26 @@ export default function AppShell({
         activeItemId={activeItemId}
         activeProject={activeProject}
         expandedSections={expandedSections}
-        locale={locale}
         navSections={navSections}
         projects={projects}
         sidebarCollapsed={sidebarCollapsed}
         sidebarWidth={sidebarWidth}
         t={t}
-        onLocaleChange={onLocaleChange}
         onProjectChange={onProjectChange}
         onSectionToggle={onSectionToggle}
         onSelectItem={onSelectItem}
+        onHome={() => onSelectItem(null)}
         onSidebarCollapsedToggle={onSidebarCollapsedToggle}
       />
       {/* 顶栏负责全局搜索、搜索范围选择和 Copilot 入口 */}
       <Topbar
+        locale={locale}
         searchQuery={searchQuery}
         searchScope={searchScope}
         searchScopes={searchScopes}
         sidebarWidth={sidebarWidth}
         t={t}
-        userMenuItems={userMenuItems}
+        onLocaleChange={onLocaleChange}
         onOpenCopilot={onOpenCopilot}
         onSearchQueryChange={onSearchQueryChange}
         onSearchScopeChange={onSearchScopeChange}
@@ -77,7 +76,9 @@ export default function AppShell({
         onOpenBlogAiTask={onOpenBlogAiTask}
         onOpenBlogAiRecreateTask={onOpenBlogAiRecreateTask}
         onOpenBlogArticleEditor={onOpenBlogArticleEditor}
+        onOpenCopilot={onOpenCopilot}
         onOpenVideoGeneration={onOpenVideoGeneration}
+        onSelectItem={onSelectItem}
         sidebarWidth={sidebarWidth}
         t={t}
       />
